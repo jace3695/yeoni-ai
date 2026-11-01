@@ -204,3 +204,19 @@ test("직접 입력은 공백·문장 부호와 단어 읽기 입력을 허용�
  assert.ok(BEGINNER_ORDER.indexOf('na-adjective') < BEGINNER_ORDER.indexOf('masu'));
  assert.equal(normalizeGrammarInput(' です '), 'です');
  });
+
+ test("목적지와 명사 부정의 유효한 대체 표현을 인정한다", async () => {
+ const { GRAMMAR_WRITING_PRACTICE: primary, GRAMMAR_WRITING_ALTERNATES: alternate } = await import("../../data/grammarWritingPractice.ts");
+ for (const map of [primary, alternate]) {
+ for (const answer of ['に','へ']) assert.ok(map.ni.answers.includes(answer));
+ for (const answer of ['ではありません','じゃありません','ではないです','じゃないです']) assert.ok(map['desu-negative'].answers.includes(answer));
+ assert.ok(!map.ni.answers.includes('で'));
+ }
+ assert.ok(primary['i-adjective'].answers.includes('美味しい'));
+ });
+
+test("저것 구분 질문은 두 사람 모두에게서 먼 위치를 명시한다", () => {
+ const lesson = GRAMMAR_LESSONS.find(x => x.id === 'kore-sore-are');
+ assert.ok(lesson);
+ assert.match(lesson.quiz.question, /말하는 사람과 듣는 사람 모두/);
+});
