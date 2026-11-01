@@ -219,3 +219,44 @@ test('delete malformed latest store fails closed preserving draft', () => {
   const before = Object.fromEntries(f.data); f.remove();
   assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.dirty, true); assert.equal(f.state.published, 0);
 });
+
+for (const date of ['2026-11-02', '2026-02-30']) {
+  test(`confirmed cleanup permits existing future/invalid legacy date ${date}`, () => {
+    const f = fixture(date); let confirmations = 0;
+    f.context.window.confirm = () => { confirmations++; return true; };
+    f.remove();
+    assert.equal(confirmations, 1);
+    assert.equal(JSON.parse(f.data.get('weights')!)[date], undefined);
+    assert.equal(JSON.parse(f.data.get('inbody')!)[date], undefined);
+    assert.deepEqual(JSON.parse(f.data.get('weights')!)['2026-10-30'], f.weights['2026-10-30']);
+    assert.deepEqual(JSON.parse(f.data.get('inbody')!)['2026-10-30'], f.inbody['2026-10-30']);
+    assert.equal(f.state.published, 1);
+  });
+
+  test(`loading or cancelling cleanup does not mutate legacy date ${date}`, () => {
+    const f = fixture(date); const before = Object.fromEntries(f.data);
+    const source = readFileSync(new URL('../app/components/BodyRecordCard.tsx', import.meta.url), 'utf8');
+    const start = source.indexOf('    // A save in another panel refreshes');
+    const end = source.indexOf('  }, [currentInbody, currentWeight, dateKey]);', start);
+    assert.ok(start >= 0 && end > start);
+    f.manualEdit.current.dirty = false;
+    const loadingEffect = ts.transpileModule('(function () {\n' + source.slice(start, end) + '\n})();', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+    vm.runInNewContext(loadingEffect, f.context);
+    assert.deepEqual(Object.fromEntries(f.data), before);
+    f.context.window.confirm = () => false; f.remove();
+    assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.published, 0); assert.equal(f.state.notifications, 0);
+  });
+
+  test(`legacy date ${date} cleanup still rejects a changed target`, () => {
+    const f = fixture(date);
+    f.storage.setItem('inbody', JSON.stringify({ ...f.inbody, [date]: { ...f.inbody[date], memo: 'external correction' } }));
+    const before = Object.fromEntries(f.data); f.remove();
+    assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.published, 0); assert.equal(f.state.dirty, true);
+  });
+
+  test(`legacy date ${date} cleanup still rejects account change`, () => {
+    const f = fixture(date); f.storage.setItem('fitness-cloud-sync-user', 'another-synthetic-owner');
+    const before = Object.fromEntries(f.data); f.remove();
+    assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.published, 0); assert.equal(f.state.dirty, true);
+  });
+}
