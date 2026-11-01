@@ -15,7 +15,7 @@ import {
 import { parseOaReport, type OaDraftMeasurement } from "../lib/oaReportParser";
 import { INBODY_270S_INVENTORY, parseInbody270sReport, type InbodyOcrAssets } from "../lib/inbodyReportParser";
 import { bodyForm, bodyImportOwner, mergeBodyImport, validMeasurementDate } from "../lib/bodyImport";
-import { bodyManualBaseline, mergeBodyManualEdit, readBodyManualStore, type BodyManualDraft } from "../lib/bodyManualEdit";
+import { bodyManualBaseline, deleteBodyManualRecord, mergeBodyManualEdit, readBodyManualStore, type BodyManualDraft } from "../lib/bodyManualEdit";
 import { getLocalDateKey } from "../data/dietPlans";
 import { notifyRecordsChanged, recoverStorageTransaction, writeStorageBatch } from "../data/storageTransaction";
 import { useUnsavedChanges } from "../../components/useUnsavedChanges";
@@ -321,6 +321,7 @@ export default function BodyRecordCard({
   };
 
   const remove = () => {
+    const intended = manualEdit.current;
     if (
       !window.confirm(
         `${dateKey}의 체중과 인바디 기록을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.`,
@@ -328,25 +329,32 @@ export default function BodyRecordCard({
     ) {
       return;
     }
-    const nextWeights = { ...weights };
-    const nextInbody = { ...inbody };
-    delete nextWeights[dateKey];
-    delete nextInbody[dateKey];
     try {
-      writeStorageBatch(window.localStorage, {
-        [WEIGHT_RECORDS_KEY]: JSON.stringify(nextWeights),
-        [INBODY_RECORDS_KEY]: JSON.stringify(nextInbody),
-      });
-    } catch {
-      setRecordMessage("삭제하지 못했습니다. 입력 내용은 유지합니다. 기기 저장 공간을 확인한 뒤 다시 시도해 주세요. 이전 기록 복구가 필요한 경우 다음 저장 전에 복구를 다시 시도합니다.");
-      return;
+      const storage = window.localStorage;
+      const isCurrent = () => intended.date === dateKey && activeDate.current === dateKey && intended.owner !== null && bodyImportOwner(storage) === intended.owner;
+      if (!isCurrent()) throw new Error("계정 또는 날짜가 변경되었습니다. 날짜를 다시 열어 기록을 확인해 주세요.");
+      recoverStorageTransaction(storage);
+      const weightSnapshot = storage.getItem(WEIGHT_RECORDS_KEY);
+      const bodySnapshot = storage.getItem(INBODY_RECORDS_KEY);
+      const latestWeights = readBodyManualStore<WeightRecordStore>(weightSnapshot);
+      const latestInbody = readBodyManualStore<InbodyRecordStore>(bodySnapshot);
+      const next = deleteBodyManualRecord(latestWeights, latestInbody, dateKey, intended.baseline);
+      if (!isCurrent() || storage.getItem(WEIGHT_RECORDS_KEY) !== weightSnapshot || storage.getItem(INBODY_RECORDS_KEY) !== bodySnapshot) throw new Error("기록이 변경되었습니다. 삭제하지 않았습니다. 최신 기록을 다시 확인해 주세요.");
+      if (!next.alreadyDeleted) {
+        writeStorageBatch(storage, {
+          [WEIGHT_RECORDS_KEY]: JSON.stringify(next.weights),
+          [INBODY_RECORDS_KEY]: JSON.stringify(next.inbody),
+        });
+        notifyRecordsChanged();
+      }
+      manualEdit.current = { ...intended, dirty: false, dirtyFields: [], baseline: {} };
+      setManualDirty(false);
+      onChange({ weights: next.weights, inbody: next.inbody });
+      setForm({});
+      setRecordMessage(next.alreadyDeleted ? `${dateKey} 기록은 이미 삭제되어 있습니다.` : `${dateKey} 체중·인바디 기록을 삭제했습니다.`);
+    } catch (error) {
+      setRecordMessage(error instanceof Error ? `${error.message} 삭제하지 못했습니다. 입력 내용은 유지합니다.` : "삭제하지 못했습니다. 입력 내용은 유지합니다. 기기 저장 공간을 확인한 뒤 다시 시도해 주세요.");
     }
-    notifyRecordsChanged();
-    manualEdit.current.dirty = false;
-    setManualDirty(false);
-    onChange({ weights: nextWeights, inbody: nextInbody });
-    setForm({});
-    setRecordMessage(`${dateKey} 체중·인바디 기록을 삭제했습니다.`);
   };
 
   const importOaReport = async (event: ChangeEvent<HTMLInputElement>) => {

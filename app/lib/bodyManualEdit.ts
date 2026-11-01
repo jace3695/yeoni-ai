@@ -69,3 +69,15 @@ export function mergeBodyManualEdit(weights: WeightRecordStore, inbody: InbodyRe
   else delete nextInbody[date];
   return { weights: nextWeights, inbody: nextInbody };
 }
+
+/** Destruction is scoped to the exact date-row snapshot the user saw. */
+export function deleteBodyManualRecord(weights: WeightRecordStore, inbody: InbodyRecordStore, date: string, baseline: BodyManualBaseline) {
+  if (!weights[date] && !inbody[date]) return { weights, inbody, alreadyDeleted: true };
+  const latest = { weight: weights[date], inbody: inbody[date] };
+  if (JSON.stringify(latest) !== JSON.stringify(baseline)) throw new Error('이 날짜 기록이 다른 곳에서 변경되었습니다. 삭제하지 않았습니다. 날짜를 다시 열어 최신 기록을 확인해 주세요.');
+  const nextWeights = { ...weights };
+  const nextInbody = { ...inbody };
+  delete nextWeights[date];
+  delete nextInbody[date];
+  return { weights: nextWeights, inbody: nextInbody, alreadyDeleted: false };
+}

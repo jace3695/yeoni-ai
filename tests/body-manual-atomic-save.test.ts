@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { bodyForm, bodyImportOwner, validMeasurementDate, mergeBodyFields } from '../app/lib/bodyImport.ts';
-import { bodyManualBaseline, mergeBodyManualEdit, readBodyManualStore } from '../app/lib/bodyManualEdit.ts';
+import { bodyManualBaseline, deleteBodyManualRecord, mergeBodyManualEdit, readBodyManualStore } from '../app/lib/bodyManualEdit.ts';
 import { recoverStorageTransaction, writeStorageBatch } from '../app/data/storageTransaction.ts';
 
 function fixture() {
@@ -26,8 +26,8 @@ function fixture() {
   const context = {
     window: { localStorage: storage, confirm: () => true }, form, weights, inbody, dateKey: '2026-11-01',
     currentWeight: weights['2026-11-01'], currentInbody: inbody['2026-11-01'], hasRecord: true,
-    getLocalDateKey: () => '2026-11-01', bodyForm, bodyImportOwner, validMeasurementDate, bodyManualBaseline, mergeBodyManualEdit, readBodyManualStore, recoverStorageTransaction, inbodyFields: [{ key: 'bmi', label: 'BMI' }], mergeBodyFields, writeStorageBatch,
-    WEIGHT_RECORDS_KEY: 'weights', INBODY_RECORDS_KEY: 'inbody',
+    getLocalDateKey: () => '2026-11-01', bodyForm, bodyImportOwner, validMeasurementDate, bodyManualBaseline, deleteBodyManualRecord, mergeBodyManualEdit, readBodyManualStore, recoverStorageTransaction, inbodyFields: [{ key: 'bmi', label: 'BMI' }], mergeBodyFields, writeStorageBatch,
+    activeDate: { current: '2026-11-01' }, WEIGHT_RECORDS_KEY: 'weights', INBODY_RECORDS_KEY: 'inbody',
     writeJson: (key: string, value: unknown) => storage.setItem(key, JSON.stringify(value)),
     notifyRecordsChanged: () => { state.notified++; },
     manualEdit: { current: { date: '2026-11-01', dirty: true, owner: bodyImportOwner(storage), baseline: bodyManualBaseline(weights['2026-11-01'], inbody['2026-11-01']), dirtyFields: ['weight', 'bmi', 'memo'] } }, setManualDirty: (value: boolean) => { state.dirty = value; },

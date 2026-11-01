@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { getLocalDateKey } from '../app/data/dietPlans.ts';
 import ts from 'typescript';
 import { bodyForm, bodyImportOwner, mergeBodyFields, validMeasurementDate } from '../app/lib/bodyImport.ts';
-import { bodyManualBaseline, mergeBodyManualEdit, readBodyManualStore } from '../app/lib/bodyManualEdit.ts';
+import { bodyManualBaseline, deleteBodyManualRecord, mergeBodyManualEdit, readBodyManualStore } from '../app/lib/bodyManualEdit.ts';
 import { recoverStorageTransaction, writeStorageBatch } from '../app/data/storageTransaction.ts';
 
 function fixture(dateKey = '2026-11-01') {
@@ -16,16 +16,18 @@ function fixture(dateKey = '2026-11-01') {
   const form = { weight: '69', bodyFatPercent: '20', memo: 'keep' };
   const state = { dirty: true, message: '', published: 0, notifications: 0 };
   const manualEdit = { current: { date: dateKey, dirty: true, owner: bodyImportOwner(storage), baseline: { weight: structuredClone(weights[dateKey]), inbody: structuredClone(inbody[dateKey]) }, dirtyFields: ['weight'] } };
-  const context = { Error, window: { localStorage: storage }, dateKey, form, weights, inbody, currentWeight: weights[dateKey], currentInbody: inbody[dateKey], hasRecord: true,
-    setForm: () => {}, bodyForm, bodyManualBaseline, mergeBodyManualEdit, readBodyManualStore, inbodyFields: [{ key: 'bodyFatPercent', label: '체지방률' }], mergeBodyFields, bodyImportOwner, validMeasurementDate, getLocalDateKey: () => '2026-11-01', recoverStorageTransaction, writeStorageBatch,
-    WEIGHT_RECORDS_KEY: 'weights', INBODY_RECORDS_KEY: 'inbody', manualEdit,
+  const context = { Error, window: { localStorage: storage, confirm: () => true }, dateKey, form, weights, inbody, currentWeight: weights[dateKey], currentInbody: inbody[dateKey], hasRecord: true,
+    setForm: () => {}, bodyForm, bodyManualBaseline, deleteBodyManualRecord, mergeBodyManualEdit, readBodyManualStore, inbodyFields: [{ key: 'bodyFatPercent', label: '체지방률' }], mergeBodyFields, bodyImportOwner, validMeasurementDate, getLocalDateKey: () => '2026-11-01', recoverStorageTransaction, writeStorageBatch,
+    WEIGHT_RECORDS_KEY: 'weights', INBODY_RECORDS_KEY: 'inbody', manualEdit, activeDate: { current: dateKey },
     notifyRecordsChanged: () => { state.notifications++; }, setManualDirty: (dirty: boolean) => { state.dirty = dirty; },
     onChange: () => { state.published++; }, setRecordMessage: (message: string) => { state.message = message; },
   };
   const source = readFileSync(new URL('../app/components/BodyRecordCard.tsx', import.meta.url), 'utf8');
   const code = ts.transpileModule(source.slice(source.indexOf('  const save ='), source.indexOf('  const remove =')), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const save = vm.runInNewContext(code + '\n save;', context) as () => void;
-  return { data, storage, form, state, manualEdit, save, weights, inbody, dateKey };
+  const removeCode = ts.transpileModule(source.slice(source.indexOf('  const remove ='), source.indexOf('  const importOaReport')), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const remove = vm.runInNewContext(removeCode + '\n remove;', context) as () => void;
+  return { data, storage, form, state, manualEdit, save, remove, context, weights, inbody, dateKey };
 }
 
 test('manual save preserves a concurrent different-field correction and other metadata', () => {
@@ -153,4 +155,67 @@ test('unrelated edit does not resurrect externally deleted modern weight from le
   const before = Object.fromEntries(f.data); f.save();
   assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.dirty, true);
   assert.match(f.state.message, /삭제/);
+});
+
+
+test('delete preserves concurrent new dates and unrelated updates', () => {
+  const f = fixture();
+  f.storage.setItem('weights', JSON.stringify({ ...f.weights, '2026-10-29': { weight: 74, recordedAt: 'new' } }));
+  f.storage.setItem('inbody', JSON.stringify({ ...f.inbody, '2026-10-29': { memo: 'new' }, '2026-10-30': { memo: 'changed elsewhere' } }));
+  f.remove();
+  assert.equal(JSON.parse(f.data.get('weights')!)[f.dateKey], undefined);
+  assert.equal(JSON.parse(f.data.get('weights')!)['2026-10-29'].weight, 74);
+  assert.equal(JSON.parse(f.data.get('inbody')!)['2026-10-30'].memo, 'changed elsewhere');
+});
+
+test('delete refuses a changed same-date target and preserves draft', () => {
+  const f = fixture(); f.storage.setItem('inbody', JSON.stringify({ ...f.inbody, [f.dateKey]: { ...f.inbody[f.dateKey], bodyFatPercent: 21 } }));
+  const before = Object.fromEntries(f.data); f.remove();
+  assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.dirty, true); assert.equal(f.state.published, 0);
+});
+
+test('delete refuses changed owner epoch', () => {
+  const f = fixture(); f.storage.setItem('fitness-cloud-sync-epoch', '2');
+  const before = Object.fromEntries(f.data); f.remove();
+  assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.published, 0);
+});
+
+test('delete cancellation leaves storage and draft untouched', () => {
+  const f = fixture(); f.context.window.confirm = () => false;
+  const before = Object.fromEntries(f.data); f.remove();
+  assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.published, 0); assert.equal(f.state.dirty, true);
+});
+
+test('already-deleted target is a safe no-op without republishing stale stores', () => {
+  const f = fixture();
+  f.storage.setItem('weights', JSON.stringify({ '2026-10-29': { weight: 74, recordedAt: 'new' } }));
+  f.storage.setItem('inbody', JSON.stringify({ '2026-10-29': { memo: 'new' } }));
+  const before = Object.fromEntries(f.data); f.remove();
+  assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.notifications, 0); assert.match(f.state.message, /이미 삭제/);
+});
+
+for (const boundary of ['owner', 'date', 'same-date correction'] as const) test(`delete rejects ${boundary} change while confirmation is open`, () => {
+  const f = fixture();
+  f.context.window.confirm = () => {
+    if (boundary === 'owner') f.storage.setItem('fitness-cloud-sync-user', 'different-synthetic-owner');
+    if (boundary === 'date') f.context.activeDate.current = '2026-10-28';
+    if (boundary === 'same-date correction') f.storage.setItem('inbody', JSON.stringify({ ...f.inbody, [f.dateKey]: { ...f.inbody[f.dateKey], memo: 'new correction' } }));
+    return true;
+  };
+  f.remove();
+  assert.equal(f.state.published, 0); assert.equal(f.state.dirty, true);
+  assert.notEqual(JSON.parse(f.data.get('weights')!)[f.dateKey], undefined);
+  assert.match(f.state.message, /변경/);
+});
+
+test('delete without initialized owner baseline cannot write', () => {
+  const f = fixture(); Reflect.set(f.manualEdit.current, 'owner', null);
+  const before = Object.fromEntries(f.data); f.remove();
+  assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.published, 0);
+});
+
+test('delete malformed latest store fails closed preserving draft', () => {
+  const f = fixture(); f.storage.setItem('inbody', 'null');
+  const before = Object.fromEntries(f.data); f.remove();
+  assert.deepEqual(Object.fromEntries(f.data), before); assert.equal(f.state.dirty, true); assert.equal(f.state.published, 0);
 });
