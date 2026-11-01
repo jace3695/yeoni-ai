@@ -1,13 +1,5 @@
-import {createServerSupabaseClient} from '@/lib/supabase-server';
-import {createSpeechRetentionApiAssessmentRoute} from '@/lib/speech-retention-api-route';
-
-export const runtime='nodejs';
-export const dynamic='force-dynamic';
-
-// V2 remains unavailable while retention/cleanup policy is null or unreviewed.
-// Source wiring only: no migration, activation, scheduler or deployment is performed.
-// No direct DB login, administrator key, or fallback path.
-export async function POST(request:Request){
- return createSpeechRetentionApiAssessmentRoute({env:process.env,createClient:createServerSupabaseClient,request:fetch})(request);
+// Retired product feature: never authenticate, read audio, or invoke a provider.
+export function POST() {
+  return Response.json({ error: "이 연습은 종료했어요. 일본어 문자 학습을 이용해 주세요.", code: "FEATURE_RETIRED" }, { status: 410 });
 }
-export const GET=POST;
+export const GET = POST;

@@ -1,0 +1,11 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import Growth from '../../app/growth/page';
+import Language from '../../app/language/page';
+import Kana from '../../app/language/kana/page';
+import Words from '../../app/language/words/page';
+import Grammar from '../../app/language/grammar/page';
+import Retired from '../../components/RetiredPractice';
+const path=location.pathname;
+const Content = path==='/growth' ? Growth : path==='/language/kana' ? Kana : path==='/language/words' ? Words : path==='/language/grammar' ? Grammar : path==='/language' ? Language : () => <Retired language={path.startsWith('/language')} />;
+createRoot(document.getElementById('root')!).render(<><p style={{padding:12,background:'#fff3cc'}}>합성 데이터 UI 검사 · 실제 인증/DB/기기 음성 검증 아님</p><Content /></>);

@@ -25,7 +25,7 @@ export function isGrowthCompletionIntent(message: string) {
 export function parseGrowthCompletion(message: string): GrowthCompletion {
   if (/(어제|그제|내일|모레|지난|다음|\d\s*(월|일)|\d{4}[-./])/.test(message)) throw new Error('자기계발 완료 명령은 오늘 기록만 지원합니다. 과거 기록은 자기계발 화면에서 입력해 주세요.');
   const match = message.trim().match(/^(?:오늘\s*)?(?:(?:자기계발|성장)\s+)?(.+?)\s+(?:(\d+)\s*분\s*)?(?:완료(?:했(?:어|어요|습니다)|해\s*줘|해주세요)?|끝(?:냈(?:어|어요|습니다)|났(?:어|어요))|마쳤(?:어|어요|습니다)|(?:다\s*)?했(?:어|어요|습니다))(?:\s*(?:로\s*)?(?:기록|저장)(?:해\s*줘|해주세요|해요))?[.!。]*$/);
-  if (!match || match[1].length > 60 || /(?:안\s*|못\s*|일부\s*)$/.test(match[1])) throw new Error('오늘의 루틴 하나를 완료했다는 명령을 입력해 주세요. 예: ‘오늘 타자 연습 완료했어’, ‘오늘 손글씨 15분 완료했어’.');
+  if (!match || match[1].length > 60 || /(?:안\s*|못\s*|일부\s*)$/.test(match[1])) throw new Error('오늘의 루틴 하나를 완료했다는 명령을 입력해 주세요. 예: ‘오늘 손글씨 15분 완료했어’.');
   const actualMinutes = match[2] === undefined ? null : Number(match[2]);
   if (actualMinutes !== null && (!Number.isInteger(actualMinutes) || actualMinutes < 1 || actualMinutes > 1440)) throw new Error('실제로 수행한 시간을 1~1,440분 사이의 정수로 말씀해 주세요.');
   return { target: match[1].trim(), actualMinutes };

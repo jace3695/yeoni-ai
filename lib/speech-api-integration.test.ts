@@ -9,8 +9,6 @@ import {pgcrypto} from '@electric-sql/pglite/contrib/pgcrypto';
 import {createSpeechRetentionUsageLedger} from './speech-retention-usage.ts';
 import {createAzureAssessmentHandler} from './azure-pronunciation-server.ts';
 import {createSpeechRetentionApiAssessmentRoute} from './speech-retention-api-route.ts';
-import vm from 'node:vm';
-import ts from 'typescript';
 
 const A='00000000-0000-4000-8000-000000000001',B='00000000-0000-4000-8000-000000000002',R='00000000-0000-4000-8000-000000000003',S='00000000-0000-4000-8000-000000000004';
 // Deliberately synthetic fixtures, never loaded from environment or credentials.
@@ -53,15 +51,13 @@ async function fixture(){
  const handle=(request:typeof fetch=async()=>score())=>createAzureAssessmentHandler({env,retention,authenticate:async()=>behavior.authenticate?behavior.authenticate(++authCalls):owner,usageForOwner:uid=>createSpeechRetentionUsageLedger(uid,client(uid),{keyId:'synthetic',key,boundaryReviewed:behavior.boundaryReviewed,policy:syntheticPolicy}),request:async(...args)=>{provider++;return request(...args);}});
  const route=(providerRequest:typeof fetch=async()=>score())=>{
   const routeEnv={...env,YEONI_SPEECH_RETENTION_POLICY_JSON:JSON.stringify(syntheticPolicy),NEXT_PUBLIC_SUPABASE_URL:'https://piqqukiiacncfbztktga.supabase.co',NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:'sb_publishable_synthetic_not_real',YEONI_SPEECH_API_BOUNDARY_REVIEWED:behavior.boundaryReviewed?'trial-retention-api-boundary-v2':'',YEONI_SPEECH_API_SCHEMA:'yeoni_speech_retention_candidate',YEONI_SPEECH_PROOF_KEY_ID:'synthetic',YEONI_SPEECH_PROOF_KEY_BASE64:Buffer.from(key).toString('base64')};
-  const modules:Record<string,unknown>={'@/lib/speech-retention-api-route':{createSpeechRetentionApiAssessmentRoute},'@/lib/supabase-server':{createServerSupabaseClient:async()=>({...client(owner),auth:{getUser:async()=>({data:{user:{id:behavior.authenticate?behavior.authenticate(++authCalls):owner}},error:null})}})}};
-  const context={exports:{},process:{env:routeEnv},fetch:async(...args:Parameters<typeof fetch>)=>{provider++;return providerRequest(...args);},require:(name:string)=>{assert.ok(name in modules);return modules[name];}};
-  vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../app/api/language/assessment/route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
-  return (context.exports as {POST:(request:Request)=>Promise<Response>}).POST;
+  return createSpeechRetentionApiAssessmentRoute({env:routeEnv,createClient:async()=>({...client(owner),auth:{getUser:async()=>({data:{user:{id:behavior.authenticate?behavior.authenticate(++authCalls):owner}},error:null})}}), request:async(...args:Parameters<typeof fetch>)=>{provider++;return providerRequest(...args);}});
+
  };
  return{db,behavior,handle,route,counts:()=>({calls,provider}),setOwner:(id:string)=>{owner=id;},total:async()=>(await db.query<{consumed:boolean}>('select consumed from yeoni_speech_retention_candidate.total')).rows[0],receiptCount:async()=>(await db.query<{n:number}>('select count(*)::int n from yeoni_speech_retention_candidate.receipt')).rows[0].n};
 }
 
-test('actual handler + proof adapter + pgcrypto SQL: 5-second request consumes once; no proof/secret in response',async()=>{
+test('retained backend factory (not exposed route) + proof adapter + pgcrypto SQL: 5-second request consumes once; no proof/secret in response',async()=>{
  const f=await fixture();try{
   const handle=f.route();const response=await handle(post());assert.equal(response.status,200);const text=await response.text();assert.ok(text.includes('accuracy'));for(const secret of ['syntheticKeyNotReal000',Buffer.from(key).toString('hex'),Buffer.from(key).toString('base64'),'p_mac','key_bytes'])assert.equal(text.includes(secret),false);
   assert.deepEqual(await f.total(),{consumed:true});assert.equal(await f.receiptCount(),0);

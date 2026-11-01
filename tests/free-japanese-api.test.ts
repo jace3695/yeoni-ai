@@ -19,17 +19,13 @@ function fixture(authenticated = true) {
   return { run, calls: () => calls };
 }
 const input = { message: 'こんにちは', situation: '일상', history: [], freeDataUseAcknowledged: true };
-test('practice API requires verified authentication before generation', async () => {
-  const f = fixture(false); assert.equal((await f.run(input)).status, 401); assert.equal(f.calls(), 0);
-});
-test('practice API rejects consent omission, unrelated data and malformed requests', async () => {
-  const f = fixture();
-  for (const body of ['{bad', { ...input, freeDataUseAcknowledged: false }, { ...input, records: { weight: 70 } }]) assert.equal((await f.run(body)).status, 400);
-  assert.equal((await f.run('x'.repeat(30001))).status, 413); assert.equal(f.calls(), 0);
-});
-test('approved bounded request generates once with no record-reading client methods', async () => {
-  const f = fixture(); const response = await f.run(input);
-  assert.equal(response.status, 200); assert.equal(f.calls(), 1);
-  assert.match(response.headers.get('cache-control')!, /no-store/);
-  assert.equal((await response.json()).source, 'ai');
+test('retired practice API rejects every request without auth, generation or body reads', async () => {
+  for (const authenticated of [false, true]) {
+    const f = fixture(authenticated);
+    for (const body of [input, '{bad', { ...input, freeDataUseAcknowledged: false }, 'x'.repeat(30001)]) {
+      const response = await f.run(body); assert.equal(response.status, 410);
+      assert.equal((await response.json()).code, 'FEATURE_RETIRED');
+    }
+    assert.equal(f.calls(), 0);
+  }
 });

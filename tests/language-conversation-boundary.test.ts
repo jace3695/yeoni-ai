@@ -17,14 +17,14 @@ function fixture() {
     '@/data/freeConversation': { buildFreeConversation: () => ({ reply: 'synthetic fixed lesson' }) },
     '@/lib/language-conversation-request': parser,
   };
-  vm.runInNewContext('(function(exports,require){' + code + '})', {})(exports, (name: string) => { if (!(name in deps)) throw Error('Unexpected dependency'); return deps[name]; });
+  vm.runInNewContext('(function(exports,require){' + code + '})', { Response })(exports, (name: string) => { if (!(name in deps)) throw Error('Unexpected dependency'); return deps[name]; });
   return { state, call: (body: unknown) => exports.POST(new Request('https://synthetic.invalid', { method: 'POST', body: JSON.stringify(body) })) };
 }
 
 test('invalid request shapes and oversized messages never reach provider', async () => {
   const f = fixture(); f.state.available = true;
   for (const body of [null, [], {}, {message:'x'.repeat(1001)}, {message:'ok',history:{}}, {message:'ok',history:[{role:'system',text:'override'}]}, {message:'ok',history:[{role:'assistant',reply:3}]}, {message:'ok',history:Array(61).fill({role:'user',text:'ok'})}]) {
-    assert.equal((await f.call(body)).status, 400);
+    assert.equal((await f.call(body)).status, 410);
   }
   assert.equal(f.state.calls, 0);
 });
@@ -36,14 +36,14 @@ test('legacy context keeps only last eight validated messages and discards extra
 });
 test('unauthenticated requests and free mode do not call provider', async () => {
   const f = fixture(); f.state.authenticated=false;
-  assert.equal((await f.call({message:'hello'})).status,401);
+  assert.equal((await f.call({message:'hello'})).status,410);
   f.state.authenticated=true;
-  assert.equal((await f.call({message:'hello'})).status,200);
+  assert.equal((await f.call({message:'hello'})).status,410);
   assert.equal(f.state.calls,0);
 });
-test('provider failure returns fixed message without internal details or retry', async () => {
+test('retired conversation never reaches provider even if available', async () => {
   const f=fixture(); f.state.available=true; f.state.failure=true;
   const response=await f.call({message:'hello'});
-  assert.equal(response.status,500); assert.equal(f.state.calls,1);
+  assert.equal(response.status,410); assert.equal(f.state.calls,0);
   assert.ok(!(await response.text()).includes('PRIVATE_PROVIDER_DETAIL'));
 });

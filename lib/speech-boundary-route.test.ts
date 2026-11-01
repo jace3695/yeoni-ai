@@ -53,19 +53,14 @@ test('server-only Preview gate rejects every omitted/mismatched condition, inclu
   assert.equal(gate('http://127.0.0.1:54321')(allowedEnv), null);
 });
 
-test('dynamic page hides without gate and serializes only owner hash, never configured account ID', () => {
-  let allowed = true;
+test('retired diagnostic page cannot initialize its boundary client', () => {
   const page = load('../app/language/practice/access-check/page.tsx', {
     'react/jsx-runtime': { jsx, jsxs: jsx },
-    'next/navigation': { notFound: () => { throw Error('404'); } },
-    '@/lib/speech-boundary-gate': { speechBoundaryOwnerHash: () => allowed ? hash : null },
-    './AccessCheckClient': { default: 'panel' },
-  }, { process: { env: allowedEnv } });
-  assert.equal(page.dynamic, 'force-dynamic'); assert.equal(page.runtime, 'nodejs');
+    '@/components/RetiredPractice': { default: 'retired' },
+  });
   const render = page.default as () => Element;
-  assert.deepEqual({ ...render().props }, { ownerHash: hash });
-  assert.ok(!JSON.stringify(render()).includes(owner));
-  allowed = false; assert.throws(render, /404/);
+  assert.equal(render().type, 'retired');
+  assert.equal(render().props.language, true);
 });
 
 function routeHarness(path: string | null, gateAllowed = true, delays: { beforeDigest?: () => Promise<void>; beforeProbe?: () => Promise<void> } = {}) {

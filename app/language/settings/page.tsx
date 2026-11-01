@@ -481,16 +481,14 @@ export default function SettingsPage() {
           <label><input type="checkbox" checked={integratedSettings.showKoreanHint} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, showKoreanHint: event.target.checked }))} /> 수업의 한글 발음 보조 표시</label>
           <label><input type="checkbox" checked={integratedSettings.showReading} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, showReading: event.target.checked }))} /> 읽는 법 표시</label>
           <label><input type="checkbox" checked={integratedSettings.showMeaning} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, showMeaning: event.target.checked }))} /> 한국어 뜻 표시</label>
-          <label><input type="checkbox" checked={integratedSettings.autoPlayDialogue} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, autoPlayDialogue: event.target.checked }))} /> 대화 자동 재생</label>
-          <label><input type="checkbox" checked={integratedSettings.includeSpeaking} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, includeSpeaking: event.target.checked }))} /> 말하기 연습 포함</label>
         </div>
-        <p className="muted">5분은 확인 3문제, 10분은 5문제, 20분은 8문제예요. 5분에는 별도 말하기 단계를 생략해요. 시간과 문제 방식은 새로 시작하는 수업에 적용되고, 이어하는 수업은 시작할 때의 분량을 유지해요.</p>
+        <p className="muted">5분은 확인 3문제, 10분은 5문제, 20분은 8문제예요. 시간과 문제 방식은 새로 시작하는 수업에 적용되고, 이어하는 수업은 시작할 때의 분량을 유지해요.</p>
         <button type="button" className="btn settings-save-btn" onClick={handleSaveLearningSettings}>학습 설정 저장</button>
         {saveMessage && <p role="status" className="settings-save-message">{saveMessage}</p>}
       </div>
 
       <div style={{ display: "grid", gap: "12px" }}>
-        {(["kana", "words", "sentences", "speaking", "conversation"] as LearningSection[]).map((section) =>
+        {(["kana", "words", "sentences"] as LearningSection[]).map((section) =>
           renderSectionCard(section),
         )}
       </div>

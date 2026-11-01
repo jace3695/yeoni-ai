@@ -13,14 +13,14 @@ export function useLearningAudio() {
     document.addEventListener("visibilitychange", onVisibility);
     return () => { controller.current?.abort(); controller.current = null; document.removeEventListener("visibilitychange", onVisibility); };
   }, [stop]);
-  const play = useCallback(async (text: string, rate = 0.9, repeatCount = 1) => {
+  const play = useCallback(async (text: string, rate = 0.9, repeatCount = 1, repeatDelayMs = 500) => {
     controller.current?.abort();
     const request = new AbortController();
     controller.current = request;
     setPlaying(true);
     setAudioError("");
     try {
-      await speakJapaneseWithPreferredTts(text, { rate, repeatCount, repeatDelayMs: 500, signal: request.signal });
+      await speakJapaneseWithPreferredTts(text, { rate, repeatCount, repeatDelayMs, signal: request.signal });
     } catch (error) {
       if (!request.signal.aborted) setAudioError(japaneseAudioErrorMessage(error));
     } finally {

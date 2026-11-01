@@ -242,7 +242,8 @@ test('account-keyed unmount blocks old retry; new account payload is never impor
   const b = button(f.render(), '탭 저장만 다시 시도'); f.unmount(); f.state.failWrite = false; b.props.onClick();
   assert.equal(f.state.writes, 1);
   const source = readFileSync(new URL('../app/language/practice/page.tsx', import.meta.url), 'utf8');
-  assert.match(source, /PracticeWorkspace key=\{owner\} owner=\{owner\}/);
+  assert.match(source, /RetiredPractice/);
+  assert.doesNotMatch(source, /PracticeWorkspace/);
 });
 test('late synthetic response after unmount cannot create a draft or save', async () => {
   let resolve!: (value: unknown) => void;

@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
 import { FREE_MODE } from "@/lib/free-mode";
-import { japaneseAudioErrorMessage, speakJapaneseWithPreferredTts } from "@/utils/speakJapanese";
+import { useLearningAudio } from "@/components/language/useLearningAudio";
 import { authenticatedJsonHeaders } from "@/app/lib/authenticatedHeaders";
 
 function getStrokeSvgPaths(char: string, tab: "hiragana" | "katakana") {
@@ -433,7 +433,6 @@ const DEFAULT_SETTINGS: SectionSettings = {
   repeatCount: 1,
   repeatDelayMs: 500,
 };
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   あ: {
@@ -1259,86 +1258,6 @@ const katakanaStrokeOrderData: Record<string, StrokeOrderInfo> = Object.fromEntr
     .filter((entry): entry is [string, StrokeOrderInfo] => entry !== null)
 );
 
-async function speakKanaFallback(
-  char: string,
-  settings: SectionSettings,
-  onStart?: () => void,
-  onEnd?: () => void
-) {
-  if (typeof window === "undefined" || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-
-  const makeUtter = (text: string) => {
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "ja-JP";
-    utter.rate = settings.ttsRate;
-    utter.pitch = 1;
-    utter.volume = 1;
-    const voices = window.speechSynthesis.getVoices();
-    const jaVoice = voices.find((v) => v.lang === "ja-JP" || v.lang.startsWith("ja"));
-    if (jaVoice) utter.voice = jaVoice;
-    return utter;
-  };
-
-  for (let i = 0; i < settings.repeatCount; i += 1) {
-    const utter = makeUtter(char);
-    if (i === 0) {
-      utter.onstart = () => { if (onStart) onStart(); };
-    }
-    await new Promise<void>((resolve) => {
-      utter.onend = () => resolve();
-      utter.onerror = () => resolve();
-      setTimeout(() => {
-        window.speechSynthesis.speak(utter);
-      }, 80);
-    });
-    if (i < settings.repeatCount - 1 && settings.repeatDelayMs > 0) {
-      await wait(settings.repeatDelayMs);
-    }
-  }
-
-  if (onEnd) onEnd();
-}
-
-async function speakKana(
-  char: string,
-  settings: SectionSettings,
-  onStart?: () => void,
-  onEnd?: () => void
-) {
-  if (FREE_MODE) {
-    await speakJapaneseWithPreferredTts(char, { rate: settings.ttsRate, repeatCount: settings.repeatCount, repeatDelayMs: settings.repeatDelayMs, onStart, onEnd });
-    return;
-  }
-  try {
-    if (onStart) onStart();
-    const res = await fetch("/api/language/tts", {
-      method: "POST",
-      headers: await authenticatedJsonHeaders(),
-      body: JSON.stringify({ text: char }),
-    });
-    if (!res.ok) throw new Error("TTS API error");
-    const { audioContent } = await res.json();
-    if (!audioContent) throw new Error("No audioContent");
-
-    for (let i = 0; i < settings.repeatCount; i += 1) {
-      const audio = new Audio(`data:audio/mp3;base64,${audioContent}`);
-      audio.playbackRate = settings.ttsRate;
-      await new Promise<void>((resolve, reject) => {
-        audio.onended = () => resolve();
-        audio.onerror = () => reject(new Error("Audio playback failed"));
-        audio.play().catch(reject);
-      });
-      if (i < settings.repeatCount - 1 && settings.repeatDelayMs > 0) {
-        await wait(settings.repeatDelayMs);
-      }
-    }
-    if (onEnd) onEnd();
-  } catch {
-    await speakKanaFallback(char, settings, onStart, onEnd);
-  }
-}
-
 function getKanaType(char: string): "hiragana" | "katakana" {
   const code = char.codePointAt(0) ?? 0;
   // Hiragana: U+3041–U+309F, Katakana: U+30A0–U+30FF
@@ -1518,7 +1437,6 @@ export default function KanaPage() {
   // 발음 재생 중 표시
   const [playingChar, setPlayingChar] = useState<string | null>(null);
   const [settings, setSettings] = useState<SectionSettings>(DEFAULT_SETTINGS);
-  const playingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     try {
@@ -1563,7 +1481,7 @@ export default function KanaPage() {
   const [writingQuizScore, setWritingQuizScore] = useState({ correct: 0, wrong: 0, total: 0 });
   const [writingFeedback, setWritingFeedback] = useState<HandwritingFeedback | null>(null);
   const [writingFeedbackLoading, setWritingFeedbackLoading] = useState(false);
-  const [audioError, setAudioError] = useState("");
+  const audio = useLearningAudio();
   const [writingFeedbackError, setWritingFeedbackError] = useState<string | null>(null);
   const writingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const writingAreaRef = useRef<HTMLDivElement | null>(null);
@@ -1572,21 +1490,10 @@ export default function KanaPage() {
   const lastQuizResetKeyRef = useRef<string>("");
   const prevModeRef = useRef(mode);
 
-  const handleSpeak = useCallback((char: string) => {
-    if (playingTimerRef.current) clearTimeout(playingTimerRef.current);
+  const handleSpeak = (char: string) => {
     setPlayingChar(char);
-    setAudioError("");
-    void speakKana(
-      char,
-      settings,
-      () => { setPlayingChar(char); },
-      () => {
-        playingTimerRef.current = setTimeout(() => setPlayingChar(null), 300);
-      }
-    ).catch(error => { setAudioError(japaneseAudioErrorMessage(error)); setPlayingChar(null); });
-    // 최대 6초 후 강제 초기화 (onEnd 미발동 대비)
-    playingTimerRef.current = setTimeout(() => setPlayingChar(null), 6000);
-  }, [settings]);
+    void audio.play(char, settings.ttsRate, settings.repeatCount, settings.repeatDelayMs);
+  };
 
   const loadNextQuestion = useCallback(
     (currentData: KanaItem[]) => {
@@ -2041,7 +1948,8 @@ export default function KanaPage() {
 
   return (
     <>
-    {audioError ? <p role="alert" className="mb-3 text-sm text-amber-800">{audioError}</p> : null}
+    {audio.audioError && <p role="status" className="mb-3 text-sm text-amber-800">{audio.audioError}</p>}
+    {audio.playing && <button type="button" className="btn" onClick={audio.stop}>소리 멈추기</button>}
     <div style={{ padding: "1.25rem 0 2.25rem", maxWidth: "72rem", margin: "0 auto" }}>
       <div style={{ marginBottom: "1rem", border: "1px solid #dbeafe", background: "linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)", borderRadius: "16px", padding: "1rem 1.1rem", boxShadow: "0 8px 24px rgba(59,130,246,0.08)" }}>
         <h1 style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "0.35rem", color: "#1e3a8a" }}>
@@ -2154,10 +2062,14 @@ export default function KanaPage() {
           }}
         >
           {data.map((item) => {
-            const isPlaying = playingChar === item.char;
+            const isPlaying = audio.playing && playingChar === item.char;
             return (
               <div
                 key={`${item.kind ?? "kana"}-${item.char}-${item.roman}`}
+                role="button"
+                tabIndex={0}
+                aria-label={`${item.char} 발음 듣기`}
+                onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handleSpeak(item.char); } }}
                 onClick={() => handleSpeak(item.char)}
                 style={{
                   display: "flex",
@@ -2938,7 +2850,7 @@ export default function KanaPage() {
                   {/* 글자 쌍 */}
                   <div style={{ display: "flex", borderBottom: "1px solid #f3f4f6" }}>
                     {[pair.a, pair.b].map((item, j) => {
-                      const isPlaying = playingChar === item.char;
+                      const isPlaying = audio.playing && playingChar === item.char;
                       return (
                         <div
                           key={j}
@@ -3053,8 +2965,8 @@ export default function KanaPage() {
                   width: "100%",
                   height: "150px",
                   borderRadius: "12px",
-                  border: `2px solid ${playingChar === confusingQuiz.question.char ? "#6366f1" : "#e5e7eb"}`,
-                  background: playingChar === confusingQuiz.question.char ? "#eef2ff" : "#fff",
+                  border: `2px solid ${audio.playing && playingChar === confusingQuiz.question.char ? "#6366f1" : "#e5e7eb"}`,
+                  background: audio.playing && playingChar === confusingQuiz.question.char ? "#eef2ff" : "#fff",
                   marginBottom: "1.5rem",
                   cursor: "pointer",
                   userSelect: "none",
@@ -3063,7 +2975,7 @@ export default function KanaPage() {
                 }}
               >
                 <span style={{ fontSize: "6rem", lineHeight: 1 }}>{confusingQuiz.question.char}</span>
-                {playingChar === confusingQuiz.question.char && (
+                {audio.playing && playingChar === confusingQuiz.question.char && (
                   <span style={{ fontSize: "0.75rem", color: "#6366f1", fontWeight: "600", marginTop: "0.25rem" }}>
                     재생 중...
                   </span>

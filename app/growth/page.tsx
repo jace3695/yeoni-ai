@@ -1,420 +1,113 @@
 "use client";
 
-import { growthSessionTimeLabel } from "@/lib/assistant-growth-command";
-
-import AppCompanion from "@/components/AppCompanion";
-import RoutineElapsedTime from "@/components/RoutineElapsedTime";
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import AppIdentity from "../components/AppIdentity";
-import {
-  buildFitnessDailyStatus,
-  buildLanguageDailyStatus,
-  EMPTY_FITNESS_DAILY_STATUS,
-  EMPTY_LANGUAGE_DAILY_STATUS,
-  parseStateObject,
-} from "../data/dailyAppStatus";
-import { buildGrowthComparison, GROWTH_STOP_REASONS, normalizeGrowthStopReason, type GrowthStopReason, type GrowthSessionStatus } from "../data/growthPlatform";
-import {
-  ALL_GROWTH_WEEKDAYS,
-  GROWTH_WEEKDAYS,
-  formatGrowthPreferredDays,
-  isGrowthRoutineScheduled,
-  normalizeGrowthPreferredDays,
-  normalizeGrowthWeeklyTarget,
-  summarizeGrowthRoutineWeek,
-} from "../data/growthSchedule";
-import { GROWTH_CATEGORIES, GROWTH_ROUTINE_LIMIT, growthCategoryLabel, isRetiredGrowthRoutine, type GrowthCategoryId } from "../data/growthRoutines";
-import { supabase } from "../lib/supabase";
+import { GROWTH_ROUTINE_LIMIT, isRetiredGrowthRoutine } from "../data/growthRoutines";
+import { ALL_GROWTH_WEEKDAYS, GROWTH_WEEKDAYS, formatGrowthPreferredDays, isGrowthRoutineScheduled } from "../data/growthSchedule";
+import { shiftDateKey } from "../data/growthPlatform";
+import type { GrowthRoutineRow } from "../data/growthPlatform";
+import { checklistCompleted } from "@/lib/growth-checklist";
 import { getLocalDateKey } from "@/utils/dateKey";
 import { useGrowthData } from "./useGrowthData";
-
-function comparisonLabel(delta: number, unit: string) {
-  if (delta === 0) return "이전과 같음";
-  return `이전보다 ${Math.abs(delta)}${unit} ${delta > 0 ? "증가" : "감소"}`;
-}
+import styles from "./checklist.module.css";
 
 export default function GrowthPage() {
   const growth = useGrowthData(90);
-  const [fitness, setFitness] = useState(EMPTY_FITNESS_DAILY_STATUS);
-  const [language, setLanguage] = useState(EMPTY_LANGUAGE_DAILY_STATUS);
-  const [linkedLoading, setLinkedLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
+  const [today, setToday] = useState(getLocalDateKey);
+  const [date, setDate] = useState(getLocalDateKey);
+  const [editing, setEditing] = useState<string | null>(null);
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<GrowthCategoryId>("custom");
-  const [targetMinutes, setTargetMinutes] = useState(15);
-  const [preferredDays, setPreferredDays] = useState<number[]>([...ALL_GROWTH_WEEKDAYS]);
-  const [targetSessionsPerWeek, setTargetSessionsPerWeek] = useState(3);
-  const [activeRoutineId, setActiveRoutineId] = useState<string | null>(null);
-  const [startedAt, setStartedAt] = useState<string | null>(null);
-  const [sessionMemo, setSessionMemo] = useState("");
-  const [stopReason, setStopReason] = useState<GrowthStopReason>("unrecorded");
-  const [recordStopReason, setRecordStopReason] = useState<GrowthStopReason>("unrecorded");
-  const [recordOpen, setRecordOpen] = useState(false);
-  const [recordRoutineId, setRecordRoutineId] = useState("");
-  const [recordDate, setRecordDate] = useState(getLocalDateKey());
-  const [recordStatus, setRecordStatus] = useState<GrowthSessionStatus>("completed");
-  const [recordMinutes, setRecordMinutes] = useState(10);
-  const [recordMemo, setRecordMemo] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [legacyImporting, setLegacyImporting] = useState(false);
-  const todayKey = useMemo(() => getLocalDateKey(), []);
-  const todayLabel = useMemo(() => new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "long" }).format(new Date()), []);
+  const [days, setDays] = useState<number[]>([...ALL_GROWTH_WEEKDAYS]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const inFlight = useRef(false);
+  const editor = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    let active = true;
-    const loadLinked = async () => {
-      if (!supabase) { setLinkedLoading(false); return; }
-      const { data: auth } = await supabase.auth.getUser();
-      if (!auth.user || !active) { setLinkedLoading(false); return; }
-      const [fitnessResult, languageResult] = await Promise.all([
-        supabase.from("user_app_state").select("state").eq("user_id", auth.user.id).maybeSingle(),
-        supabase.from("language_user_state").select("state").eq("user_id", auth.user.id).maybeSingle(),
-      ]);
-      if (!active) return;
-      setFitness(fitnessResult.data?.state ? buildFitnessDailyStatus(parseStateObject(fitnessResult.data.state), todayKey) : EMPTY_FITNESS_DAILY_STATUS);
-      setLanguage(languageResult.data?.state ? buildLanguageDailyStatus(parseStateObject(languageResult.data.state), todayKey) : EMPTY_LANGUAGE_DAILY_STATUS);
-      setLinkedLoading(false);
+    const refreshDate = () => {
+      const next = getLocalDateKey();
+      setToday(previous => {
+        if (previous !== next) setDate(selected => selected === previous ? next : selected);
+        return next;
+      });
     };
-    void loadLinked();
-    return () => { active = false; };
-  }, [todayKey]);
+    const timer = setInterval(refreshDate, 1000);
+    window.addEventListener('focus', refreshDate);
+    return () => { clearInterval(timer); window.removeEventListener('focus', refreshDate); };
+  }, []);
 
-  const retiredRoutineIds = new Set(growth.routines.filter(isRetiredGrowthRoutine).map((routine) => routine.id));
-  const visibleRoutines = growth.routines.filter((routine) => !retiredRoutineIds.has(routine.id));
-  const visibleSessions = growth.sessions.filter((session) => !session.routine_id || !retiredRoutineIds.has(session.routine_id));
-  const enabledRoutines = visibleRoutines.filter((routine) => routine.enabled);
-  const todayCompletedIds = new Set(visibleSessions.filter((session) => session.session_date === todayKey && session.status === "completed" && session.routine_id).map((session) => session.routine_id));
-  const routineWeek = new Map(enabledRoutines.map((routine) => [
-    routine.id,
-    summarizeGrowthRoutineWeek(routine, visibleSessions, todayKey),
-  ]));
-  const scheduledRoutines = enabledRoutines.filter((routine) => {
-    const summary = routineWeek.get(routine.id);
-    return isGrowthRoutineScheduled(routine, todayKey) && (!summary?.achieved || todayCompletedIds.has(routine.id));
-  });
-  const optionalRoutines = enabledRoutines.filter((routine) => !scheduledRoutines.some((scheduled) => scheduled.id === routine.id));
-  const priorityRoutines = scheduledRoutines.filter(routine => !todayCompletedIds.has(routine.id)).slice(0, 3);
-  const remainingRoutines = scheduledRoutines.filter(routine => !priorityRoutines.some(priority => priority.id === routine.id));
-  const completedPersonalCount = scheduledRoutines.filter((routine) => todayCompletedIds.has(routine.id)).length;
-  const fitnessDone = fitness.synced && (fitness.completed || fitness.isRest);
-  const languageDone = language.synced && language.completed >= language.total;
-  const totalCount = scheduledRoutines.length + 2;
-  const completedCount = completedPersonalCount + Number(fitnessDone) + Number(languageDone);
-  const progress = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
-  const week = buildGrowthComparison(visibleSessions, todayKey, 7);
-  const month = buildGrowthComparison(visibleSessions, todayKey, 30);
-  const activeRoutine = visibleRoutines.find((routine) => routine.id === activeRoutineId) ?? null;
-  const recentSessions = visibleSessions.slice(0, 12);
-
-  const startRoutine = (routineId: string) => {
-    setActiveRoutineId(routineId);
-    setStartedAt(new Date().toISOString());
-    setSessionMemo(""); setStopReason("unrecorded");
-    growth.setNotice("타이머를 시작했어요. 실제 시작 시각으로 계산합니다.");
+  const routines = growth.routines.filter(row => !isRetiredGrowthRoutine(row));
+  const active = routines.filter(row => row.enabled);
+  const archived = routines.filter(row => !row.enabled);
+  const scheduled = active.filter(row => isGrowthRoutineScheduled(row, date));
+  const other = active.filter(row => !isGrowthRoutineScheduled(row, date));
+  const ready = growth.dataReady && !growth.loading && !busy;
+  const run = async (action: () => Promise<void>, success: string) => {
+    if (inFlight.current || !growth.dataReady) return;
+    inFlight.current = true;
+    setBusy(true); setMessage(""); growth.setNotice("");
+    try { await action(); setMessage(success); }
+    catch { setMessage("저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요."); }
+    finally { inFlight.current = false; setBusy(false); }
   };
-
-  const finishActive = async (status: GrowthSessionStatus) => {
-    if (!activeRoutine || !startedAt) return;
-    setSaving(true);
-    const endedAt = new Date().toISOString();
-    const result = await growth.saveSession({
-      routineId: activeRoutine.id,
-      sessionDate: todayKey,
-      status,
-      plannedMinutes: activeRoutine.target_minutes,
-      actualMinutes: Math.max(1, Math.round(Math.max(0, Date.parse(endedAt) - Date.parse(startedAt)) / 60_000)),
-      memo: sessionMemo,
-      metrics: status === "completed" ? {} : { stopReason },
-      startedAt,
-      endedAt,
-    });
-    setSaving(false);
-    if (result.error) { growth.setNotice("실행 기록을 저장하지 못했어요. 다시 시도해 주세요."); return; }
-    setActiveRoutineId(null); setStartedAt(null); setSessionMemo("");
-    growth.setNotice(status === "completed" ? "완료 기록을 클라우드에 저장했어요." : status === "partial" ? "진행 기록을 저장했어요." : "중단 지점까지 안전하게 저장했어요.");
-  };
-
-  const quickToggle = async (routineId: string) => {
-    const routine = visibleRoutines.find((item) => item.id === routineId);
-    if (!routine || saving) return;
-    setSaving(true);
-    const completed = growth.sessions.filter((session) => session.routine_id === routineId && session.session_date === todayKey && session.status === "completed");
-    const result = completed.length
-      ? { error: (await Promise.all(completed.map((session) => growth.deleteSession(session.id)))).find((item) => item.error)?.error ?? null }
-      : await growth.saveSession({ routineId, sessionDate: todayKey, status: "completed", plannedMinutes: routine.target_minutes, actualMinutes: routine.target_minutes, memo: "빠른 완료 기록" });
-    setSaving(false);
-    growth.setNotice(result.error ? "완료 상태를 저장하지 못했어요." : completed.length ? "오늘 완료 기록을 모두 취소했어요." : "오늘 완료로 기록했어요.");
-  };
-
-  const addRoutine = async (event: FormEvent) => {
+  const resetEditor = () => { setEditing(null); setTitle(""); setDays([...ALL_GROWTH_WEEKDAYS]); };
+  const save = (event: FormEvent) => {
     event.preventDefault();
-    const value = title.trim();
-    if (!value || visibleRoutines.length >= GROWTH_ROUTINE_LIMIT) return;
-    if (isRetiredGrowthRoutine({ title: value })) {
-      growth.setNotice("사용이 종료된 과정 이름입니다. 다른 이름을 입력해 주세요.");
-      return;
-    }
-    setSaving(true);
-    const result = await growth.addRoutine({
-      title: value,
-      category,
-      targetMinutes,
-      preferredDays,
-      targetSessionsPerWeek,
-    });
-    setSaving(false);
-    if (result.error) { growth.setNotice("루틴을 추가하지 못했어요."); return; }
-    setTitle(""); setCategory("custom"); setTargetMinutes(15);
-    setPreferredDays([...ALL_GROWTH_WEEKDAYS]); setTargetSessionsPerWeek(3);
-    growth.setNotice("새 루틴을 모든 기기에서 볼 수 있게 저장했어요.");
+    if (!title.trim() || !days.length || (!editing && routines.length >= GROWTH_ROUTINE_LIMIT)) return;
+    if (isRetiredGrowthRoutine({ title })) { setMessage("종료된 기본 과정 이름이에요. 다른 활동 이름을 입력해 주세요."); return; }
+    void run(async () => {
+      const result = editing
+        ? await growth.updateRoutine(editing, { title: title.trim(), preferred_days: [...days].sort((a,b) => a-b), target_sessions_per_week: days.length })
+        : await growth.addRoutine({ title, category: "custom", targetMinutes: 5, preferredDays: days, targetSessionsPerWeek: days.length });
+      if (result.error) throw result.error;
+      resetEditor();
+    }, editing ? "활동을 수정했어요. 이전 완료 기록은 그대로예요." : "활동을 추가했어요.");
+  };
+  const edit = (routine: GrowthRoutineRow) => {
+    setEditing(routine.id); setTitle(routine.title); setDays([...routine.preferred_days]);
+    editor.current?.focus();
+    editor.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  const archive = (routine: GrowthRoutineRow) => void run(async () => {
+    const result = await growth.updateRoutine(routine.id, { enabled: !routine.enabled });
+    if (result.error) throw result.error;
+    if (editing === routine.id) resetEditor();
+  }, routine.enabled ? "보관했어요. 완료 기록과 요일은 유지됩니다." : "활동을 복원했어요.");
+  const renderActivity = (routine: GrowthRoutineRow) => {
+    const checked = checklistCompleted(growth.sessions, routine.id, date);
+    return <li key={routine.id} className={styles.activity}>
+      <label className={styles.check}><input type="checkbox" checked={checked} disabled={!ready} onChange={event => {
+        const completed = event.target.checked;
+        void run(() => growth.setCompleted(routine, date, completed), completed ? `${date} 완료로 저장했어요.` : `${date} 완료 체크를 해제했어요.`);
+      }} /><span><strong>{routine.title}</strong><small>{formatGrowthPreferredDays(routine.preferred_days)}{checked ? " · 완료" : ""}</small></span></label>
+      <div className={styles.actions}><button disabled={!ready} onClick={() => edit(routine)}>수정</button><button disabled={!ready} onClick={() => archive(routine)}>보관</button></div>
+    </li>;
   };
 
-  const saveManualRecord = async (event: FormEvent) => {
-    event.preventDefault();
-    const routine = visibleRoutines.find((item) => item.id === recordRoutineId);
-    if (!routine) return;
-    setSaving(true);
-    const result = await growth.saveSession({ routineId: routine.id, sessionDate: recordDate, status: recordStatus, plannedMinutes: routine.target_minutes, actualMinutes: recordMinutes, memo: recordMemo, metrics: recordStatus === "completed" ? {} : { stopReason: recordStopReason } });
-    setSaving(false);
-    if (result.error) { growth.setNotice("기록을 저장하지 못했어요."); return; }
-    setRecordOpen(false); setRecordMemo("");
-    growth.setNotice(`${recordDate} 기록을 저장했어요.`);
-  };
-
-  const importLegacyBackup = async () => {
-    if (legacyImporting) return;
-    setLegacyImporting(true);
-    const result = await growth.importLegacyBackup();
-    setLegacyImporting(false);
-    if (result.error) growth.setNotice(result.error.message);
-  };
-
-  const toggleNewRoutineDay = (day: number) => {
-    const next = preferredDays.includes(day)
-      ? preferredDays.length === 1 ? preferredDays : preferredDays.filter((value) => value !== day)
-      : normalizeGrowthPreferredDays([...preferredDays, day]);
-    setPreferredDays(next);
-    setTargetSessionsPerWeek((target) => Math.min(target, next.length));
-  };
-
-  const updateRoutineDays = async (routineId: string, day: number) => {
-    const routine = visibleRoutines.find((item) => item.id === routineId);
-    if (!routine || saving) return;
-    const currentDays = normalizeGrowthPreferredDays(routine.preferred_days);
-    if (currentDays.length === 1 && currentDays.includes(day)) {
-      growth.setNotice("루틴 요일은 한 개 이상 선택해야 해요.");
-      return;
-    }
-    const nextDays = currentDays.includes(day)
-      ? currentDays.filter((value) => value !== day)
-      : normalizeGrowthPreferredDays([...currentDays, day]);
-    const nextTarget = Math.min(
-      normalizeGrowthWeeklyTarget(routine.target_sessions_per_week, currentDays),
-      nextDays.length,
-    );
-    setSaving(true);
-    const result = await growth.updateRoutine(routineId, {
-      preferred_days: nextDays,
-      target_sessions_per_week: nextTarget,
-    });
-    setSaving(false);
-    growth.setNotice(result.error ? "루틴 일정을 저장하지 못했어요." : "루틴 요일을 저장했어요.");
-  };
-
-  const updateRoutineWeeklyTarget = async (routineId: string, target: number) => {
-    const routine = visibleRoutines.find((item) => item.id === routineId);
-    if (!routine || saving) return;
-    setSaving(true);
-    const result = await growth.updateRoutine(routineId, {
-      target_sessions_per_week: normalizeGrowthWeeklyTarget(target, routine.preferred_days),
-    });
-    setSaving(false);
-    growth.setNotice(result.error ? "주간 목표를 저장하지 못했어요." : "주간 목표를 저장했어요.");
-  };
-
-  const routineCard = (routine: typeof enabledRoutines[number], optional = false) => {
-    const completed = todayCompletedIds.has(routine.id);
-    const weekSummary = routineWeek.get(routine.id);
-    return (
-      <article
-        key={routine.id}
-        className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border p-4 ${
-          completed ? "border-emerald-100 bg-emerald-50" : optional ? "border-dashed border-gray-200 bg-gray-50/60" : "border-gray-100"
-        }`}
-      >
-        <button
-          disabled={saving}
-          type="button"
-          onClick={() => void quickToggle(routine.id)}
-          aria-label={`${routine.title} ${completed ? "완료 취소" : "빠른 완료"}`}
-          className={`grid h-11 w-11 place-items-center rounded-full border-2 text-lg font-bold ${
-            completed ? "border-emerald-600 bg-emerald-600 text-white" : "border-gray-300 text-transparent"
-          }`}
-        >
-          ✓
-        </button>
-        <div className="min-w-0">
-          <p className="text-xs font-bold text-violet-600">{growthCategoryLabel(routine.category)}</p>
-          <h3 className={`mt-1 truncate font-bold ${completed ? "text-gray-500 line-through" : "text-gray-900"}`}>
-            {routine.title}
-          </h3>
-          <p className="mt-1 text-xs text-gray-500">
-            목표 {routine.target_minutes}분 · {formatGrowthPreferredDays(routine.preferred_days)} · 이번 주 {weekSummary?.completed ?? 0}/{weekSummary?.target ?? 7}회
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={Boolean(activeRoutine) || completed}
-          onClick={() => startRoutine(routine.id)}
-          className="min-h-11 rounded-xl bg-violet-600 px-4 text-xs font-bold text-white disabled:bg-gray-200 disabled:text-gray-500"
-        >
-          {completed ? "완료" : activeRoutineId === routine.id ? "진행 중" : "시작"}
-        </button>
-      </article>
-    );
-  };
-
-  return (
-    <main className="min-h-dvh bg-yeoni-bg pb-10 text-[#242231]">
-      <header className="app-module-header"><div className="app-module-header-inner"><AppIdentity kind="growth" title="자기계발" subtitle="시작부터 기록과 성장 확인까지" /><div className="flex flex-wrap items-center gap-3"><span className="hidden text-sm font-semibold text-gray-500 sm:inline">{todayLabel}</span><Link href="/growth/settings" className="inline-flex min-h-11 items-center px-3 text-sm font-bold">설정</Link></div></div></header>
-      <div className="yeoni-page-content">
-        <AppCompanion home compact={Boolean(activeRoutine)} quiet={Boolean(activeRoutine) || editing || recordOpen}>{activeRoutine ? "지금은 루틴에 집중해봐요. 마치면 느낀 점을 짧게 남겨 주세요." : growth.loading || linkedLoading ? "오늘의 루틴을 준비하고 있어요." : `오늘 ${completedCount}/${totalCount}개 완료! 내 속도로 이어가요.`}</AppCompanion>
-        <section className="rounded-[30px] yeoni-summary p-6 text-white shadow-[0_22px_55px_rgba(91,75,180,0.22)] sm:p-8">
-          <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-bold text-white/75">오늘의 자기계발</p><strong className="mt-3 block text-4xl">{completedCount}/{totalCount}</strong><p className="mt-2 text-sm text-white/80">오늘 루틴 완료</p></div><strong className="text-2xl">{progress}%</strong></div>
-          <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/20" aria-label={`오늘 자기계발 ${progress}% 완료`}><div className="h-full rounded-full bg-white transition-[width]" style={{ width: `${progress}%` }} /></div>
-          <div className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap"><button type="button" onClick={() => setRecordOpen((value) => !value)} className="min-h-11 rounded-xl bg-white px-3 text-xs font-bold text-violet-700 sm:px-4 sm:text-sm">지난 기록 추가</button><Link href="/growth/review" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white/15 px-3 text-xs font-bold ring-1 ring-white/30 sm:px-4 sm:text-sm">주간 코칭 보기</Link></div>
-        </section>
-
-        {recordOpen && <section className="mt-4 rounded-[26px] bg-white p-5 shadow-sm"><h2 className="text-lg font-bold">날짜를 골라 기록하기</h2><form onSubmit={saveManualRecord} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><select required value={recordRoutineId} onChange={(event) => { const id = event.target.value; setRecordRoutineId(id); const routine = visibleRoutines.find((item) => item.id === id); if (routine) setRecordMinutes(routine.target_minutes); }} className="min-h-12 rounded-xl bg-gray-50 px-3 text-sm ring-1 ring-gray-200"><option value="">루틴 선택</option>{enabledRoutines.map((routine) => <option key={routine.id} value={routine.id}>{routine.title}</option>)}</select><input aria-label="기록 날짜" type="date" required max={todayKey} value={recordDate} onChange={(event) => setRecordDate(event.target.value)} className="min-h-12 rounded-xl bg-gray-50 px-3 text-sm ring-1 ring-gray-200" /><select aria-label="실행 상태" value={recordStatus} onChange={(event) => setRecordStatus(event.target.value as GrowthSessionStatus)} className="min-h-12 rounded-xl bg-gray-50 px-3 text-sm ring-1 ring-gray-200"><option value="completed">완료</option><option value="partial">진행</option><option value="stopped">중단</option></select><label className="flex min-h-12 items-center gap-2 rounded-xl bg-gray-50 px-3 text-sm ring-1 ring-gray-200"><span>실행</span><input aria-label="실행 시간" type="number" min={0} max={1440} value={recordMinutes} onChange={(event) => setRecordMinutes(Number(event.target.value))} className="w-14 bg-transparent font-bold outline-none" />분</label><button disabled={saving || !recordRoutineId} className="min-h-12 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white disabled:bg-gray-300">기록 저장</button>{recordStatus !== 'completed' ? <label className="text-sm">중단·미완료 이유<select aria-label="지난 기록 중단 이유" value={recordStopReason} onChange={event => setRecordStopReason(normalizeGrowthStopReason(event.target.value))} className="mt-2 min-h-11 w-full rounded-xl bg-gray-50 px-3 ring-1 ring-gray-200">{Object.entries(GROWTH_STOP_REASONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : null}<textarea value={recordMemo} onChange={(event) => setRecordMemo(event.target.value)} maxLength={500} placeholder="메모(선택)" className="min-h-20 rounded-xl bg-gray-50 p-3 text-sm ring-1 ring-gray-200 sm:col-span-2 lg:col-span-5" /></form></section>}
-
-        <section className="mt-5 grid gap-4 sm:grid-cols-2">
-          {[{ label: "최근 7일", value: week }, { label: "최근 30일", value: month }].map((item) => <article key={item.label} className="rounded-[26px] bg-white p-5 shadow-sm"><p className="text-xs font-bold text-violet-600">{item.label} 성장 기록</p><div className="mt-3 flex items-end justify-between gap-3"><div><strong className="text-3xl">{item.value.current.totalMinutes}분</strong><p className="mt-1 text-xs text-gray-500">{item.value.current.activeDays}일 실행 · 완료율 {item.value.current.completionRate}%</p></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${item.value.minuteDelta >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{comparisonLabel(item.value.minuteDelta, "분")}</span></div></article>)}
-        </section>
-
-        <nav aria-label="자기계발 연습과 자료" className="mt-5 grid grid-cols-3 gap-3">
-          <Link href="/growth/typing" className="rounded-3xl bg-blue-50 p-4 text-center ring-1 ring-blue-100"><span className="text-2xl" aria-hidden="true">⌨️</span><strong className="mt-2 block text-sm text-blue-900">타자 연습</strong><span className="mt-1 block text-xs text-blue-700">속도·정확도 저장</span></Link>
-          <Link href="/growth/drawing" className="rounded-3xl bg-rose-50 p-4 text-center ring-1 ring-rose-100"><span className="text-2xl" aria-hidden="true">🎨</span><strong className="mt-2 block text-sm text-rose-900">그림 연습</strong><span className="mt-1 block text-xs text-rose-700">캐릭터로 한 부분씩</span></Link>
-          <Link href="/growth/handwriting" className="rounded-3xl bg-amber-50 p-4 text-center ring-1 ring-amber-100"><span className="text-2xl" aria-hidden="true">✍️</span><strong className="mt-2 block text-sm text-amber-900">손글씨 연습</strong><span className="mt-1 block text-xs text-amber-700">필림 자료 · 53개 수업</span></Link>
-          <Link href="/growth/resources" className="rounded-3xl bg-emerald-50 p-4 text-center ring-1 ring-emerald-100"><span className="text-2xl" aria-hidden="true">📚</span><strong className="mt-2 block text-sm text-emerald-900">내 자료</strong><span className="mt-1 block text-xs text-emerald-700">비공개 보관·검색</span></Link>
-        </nav>
-
-        {activeRoutine && <section className="mt-5 rounded-[28px] bg-[#242231] p-6 text-white shadow-xl"><p className="text-xs font-bold text-violet-300">실행 중</p><h2 className="mt-2 text-2xl font-bold">{activeRoutine.title}</h2><p className="mt-5 font-mono text-5xl font-bold tracking-tight"><RoutineElapsedTime startedAt={startedAt!} /></p><p className="mt-2 text-sm text-white/60">목표 {activeRoutine.target_minutes}분</p><textarea value={sessionMemo} onChange={(event) => setSessionMemo(event.target.value)} maxLength={500} placeholder="지금 느낀 점이나 다음에 할 일을 적어두세요" className="mt-5 min-h-20 w-full rounded-2xl border-0 bg-white/10 p-4 text-sm text-white placeholder:text-white/40 ring-1 ring-white/15" /><label className="mt-4 block text-sm" htmlFor="growth-stop-reason">중단·미완료 이유 (선택)<select id="growth-stop-reason" aria-label="중단·미완료 이유 (선택)" value={stopReason} onChange={event => setStopReason(normalizeGrowthStopReason(event.target.value))} className="mt-2 min-h-11 w-full rounded-xl bg-white px-3 text-gray-900">{Object.entries(GROWTH_STOP_REASONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><div className="mt-4 grid grid-cols-3 gap-2"><button disabled={saving} onClick={() => void finishActive("stopped")} className="min-h-12 rounded-xl bg-white/10 text-sm font-bold">중단 저장</button><button disabled={saving} onClick={() => void finishActive("partial")} className="min-h-12 rounded-xl bg-violet-400/30 text-sm font-bold">진행 저장</button><button disabled={saving} onClick={() => void finishActive("completed")} className="min-h-12 rounded-xl bg-emerald-500 text-sm font-bold">완료 저장</button></div></section>}
-
-        <section className="mt-5 rounded-[28px] bg-white p-4 shadow-sm sm:p-6">
-          <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold text-violet-600">클라우드 동기화</p><h2 className="mt-1 text-xl font-bold">나의 루틴</h2></div><button type="button" aria-expanded={editing} onClick={() => setEditing((value) => !value)} className="min-h-11 rounded-full bg-gray-100 px-4 text-xs font-bold text-gray-700">{editing ? "편집 닫기" : "루틴 편집"}</button></div>
-          <p className="mt-2 text-xs leading-5 text-gray-500">운동과 일본어는 각 앱의 오늘 기록이 자동으로 반영됩니다.</p>
-          {growth.legacyBackupAvailable ? <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-950 ring-1 ring-amber-200"><strong>이전 기기 루틴 백업이 있습니다</strong><p className="mt-1">공용 기기의 다른 계정 기록과 섞이지 않도록 자동으로 가져오지 않았습니다. 이 백업이 본인 것일 때만 현재 계정으로 가져오세요.</p><button type="button" disabled={legacyImporting || growth.loading} onClick={() => void importLegacyBackup()} className="mt-3 min-h-11 rounded-xl bg-amber-800 px-4 text-xs font-bold text-white disabled:opacity-40">{legacyImporting ? "안전하게 가져오는 중…" : "이 계정으로 가져오기"}</button></div> : null}
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <article className={`rounded-2xl border p-4 ${languageDone ? "border-emerald-100 bg-emerald-50" : "border-blue-100 bg-blue-50"}`}>
-              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-blue-700">일본어</p><h3 className="mt-1 font-bold text-blue-950">{linkedLoading ? "기록 불러오는 중" : `${language.completed}/${language.total} 완료`}</h3></div><span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${languageDone ? "bg-emerald-100 text-emerald-700" : "bg-white text-blue-700"}`}>{languageDone ? "완료" : "학습"}</span></div>
-              <p className="mt-2 text-xs text-gray-600">{linkedLoading ? "일본어 앱 기록을 확인하고 있어요." : language.nextLabel}</p>
-              <Link href={language.nextHref} className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-4 text-xs font-bold text-white">{languageDone ? "일본어 앱 보기" : "이어하기"} →</Link>
-            </article>
-            <article className={`rounded-2xl border p-4 ${fitnessDone ? "border-emerald-100 bg-emerald-50" : "border-orange-100 bg-orange-50"}`}>
-              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-orange-700">운동</p><h3 className="mt-1 font-bold text-orange-950">{linkedLoading ? "기록 불러오는 중" : fitness.title}</h3></div><span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${fitnessDone ? "bg-emerald-100 text-emerald-700" : "bg-white text-orange-700"}`}>{fitnessDone ? fitness.isRest ? "회복일" : "완료" : "운동"}</span></div>
-              <p className="mt-2 text-xs text-gray-600">{linkedLoading ? "운동 앱 기록을 확인하고 있어요." : fitness.detail}</p>
-              <Link href="/fitness" className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-orange-600 px-4 text-xs font-bold text-white">운동 앱 열기 →</Link>
-            </article>
-          </div>
-          <p className="mt-4 text-xs font-bold text-violet-700">먼저 시작할 루틴 최대 3개</p>
-          <div className="mt-3 space-y-3">
-            {growth.loading
-              ? <p className="py-8 text-center text-sm text-gray-400">개인 루틴을 안전하게 동기화하고 있어요…</p>
-              : priorityRoutines.length
-                ? priorityRoutines.map((routine) => routineCard(routine))
-                : <p className="rounded-2xl bg-emerald-50 px-4 py-5 text-center text-sm font-semibold text-emerald-800">오늘 예정된 개인 루틴을 모두 마쳤어요.</p>}
-          </div>
-          {!growth.loading && remainingRoutines.length > 0 ? <details className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-3"><summary className="min-h-11 cursor-pointer text-xs font-bold text-gray-700">나머지 예정·완료 루틴 {remainingRoutines.length}개</summary><div className="mt-3 space-y-3">{remainingRoutines.map(routine => routineCard(routine))}</div></details> : null}
-          {!growth.loading && optionalRoutines.length > 0 && (
-            <details className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-3">
-              <summary className="cursor-pointer text-xs font-bold text-gray-700">
-                오늘 일정 아님 · 추가로 하기 {optionalRoutines.length}개
-              </summary>
-              <div className="mt-3 space-y-3">
-                {optionalRoutines.map((routine) => routineCard(routine, true))}
-              </div>
-            </details>
-          )}
-          {growth.notice && <p role="status" className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">{growth.notice}</p>}
-          {editing && (
-            <div className="mt-5 rounded-3xl bg-[#F7F6FF] p-4 sm:p-5">
-              <h3 className="font-bold">개인 루틴 편집</h3>
-              <p className="mt-1 text-xs leading-5 text-gray-500">
-                실행할 요일과 주간 목표를 정하면 오늘 일정에 해당하는 루틴만 위에 표시됩니다. 기존 루틴은 변경 전과 같이 매일 일정으로 유지됩니다.
-              </p>
-              <form onSubmit={addRoutine} className="mt-4 rounded-2xl bg-white p-4">
-                <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto_auto]">
-                  <select value={category} onChange={(event) => setCategory(event.target.value as GrowthCategoryId)} className="min-h-12 rounded-xl bg-gray-50 px-3 text-sm ring-1 ring-gray-200">
-                    {GROWTH_CATEGORIES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-                  </select>
-                  <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={60} placeholder="예: 타자 정확도 연습" className="min-h-12 rounded-xl bg-gray-50 px-4 text-sm ring-1 ring-gray-200" />
-                  <label className="flex min-h-12 items-center gap-2 rounded-xl bg-gray-50 px-3 text-sm ring-1 ring-gray-200">
-                    1회 <input aria-label="새 루틴 목표 시간" type="number" min={5} max={240} step={5} value={targetMinutes} onChange={(event) => setTargetMinutes(Number(event.target.value))} className="w-14 bg-transparent font-bold outline-none" />분
-                  </label>
-                  <button disabled={saving || !title.trim() || visibleRoutines.length >= GROWTH_ROUTINE_LIMIT} className="min-h-12 rounded-xl bg-violet-600 px-5 text-sm font-bold text-white disabled:bg-gray-300">추가</button>
-                </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                  <fieldset>
-                    <legend className="text-xs font-bold text-gray-700">실행 요일</legend>
-                    <div className="mt-2 grid grid-cols-7 gap-1.5">
-                      {GROWTH_WEEKDAYS.map((day) => (
-                        <button key={day.id} type="button" aria-pressed={preferredDays.includes(day.id)} onClick={() => toggleNewRoutineDay(day.id)} className={`min-h-11 rounded-xl text-xs font-bold ${preferredDays.includes(day.id) ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-500"}`}>
-                          {day.label}
-                        </button>
-                      ))}
-                    </div>
-                  </fieldset>
-                  <label className="text-xs font-bold text-gray-700">
-                    주간 목표
-                    <select value={targetSessionsPerWeek} onChange={(event) => setTargetSessionsPerWeek(Number(event.target.value))} className="mt-2 min-h-11 w-full rounded-xl bg-gray-50 px-3 text-sm ring-1 ring-gray-200">
-                      {preferredDays.map((_, index) => <option key={index + 1} value={index + 1}>{index + 1}회</option>)}
-                    </select>
-                  </label>
-                </div>
-              </form>
-              <div className="mt-4 space-y-3">
-                {visibleRoutines.map((routine) => {
-                  const routineDays = normalizeGrowthPreferredDays(routine.preferred_days);
-                  const routineTarget = normalizeGrowthWeeklyTarget(routine.target_sessions_per_week, routineDays);
-                  return (
-                    <div key={routine.id} className="rounded-2xl bg-white p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <button type="button" disabled={saving} onClick={() => void growth.updateRoutine(routine.id, { enabled: !routine.enabled })} className={`min-h-10 rounded-lg px-3 text-xs font-bold ${routine.enabled ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-                          {routine.enabled ? "사용 중" : "숨김"}
-                        </button>
-                        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{routine.title} · {routine.target_minutes}분</span>
-                        <button type="button" disabled={saving} onClick={() => void growth.removeRoutine(routine.id)} className="min-h-10 rounded-lg bg-red-50 px-3 text-xs font-bold text-red-600">삭제</button>
-                      </div>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                        <fieldset>
-                          <legend className="text-[11px] font-bold text-gray-600">실행 요일</legend>
-                          <div className="mt-2 grid grid-cols-7 gap-1.5">
-                            {GROWTH_WEEKDAYS.map((day) => (
-                              <button key={day.id} type="button" disabled={saving} aria-label={`${routine.title} ${day.label}요일`} aria-pressed={routineDays.includes(day.id)} onClick={() => void updateRoutineDays(routine.id, day.id)} className={`min-h-10 rounded-lg text-[11px] font-bold disabled:opacity-50 ${routineDays.includes(day.id) ? "bg-violet-100 text-violet-800" : "bg-gray-100 text-gray-400"}`}>
-                                {day.label}
-                              </button>
-                            ))}
-                          </div>
-                        </fieldset>
-                        <label className="text-[11px] font-bold text-gray-600">
-                          주간 목표
-                          <select aria-label={`${routine.title} 주간 목표`} disabled={saving} value={routineTarget} onChange={(event) => void updateRoutineWeeklyTarget(routine.id, Number(event.target.value))} className="mt-2 min-h-10 w-full rounded-lg bg-gray-50 px-3 text-xs ring-1 ring-gray-200 disabled:opacity-50">
-                            {routineDays.map((_, index) => <option key={index + 1} value={index + 1}>{index + 1}회</option>)}
-                          </select>
-                        </label>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </section>
-
-        <section className="mt-5 rounded-[28px] bg-white p-4 shadow-sm sm:p-6"><div className="flex items-center justify-between"><div><p className="text-xs font-bold text-violet-600">실행 이력</p><h2 className="mt-1 text-xl font-bold">최근 기록</h2></div><button type="button" onClick={() => void growth.refresh()} className="rounded-full bg-gray-100 px-3 py-2 text-xs font-bold text-gray-600">새로고침</button></div><div className="mt-4 space-y-2">{recentSessions.length ? recentSessions.map((session) => { const routine = visibleRoutines.find((item) => item.id === session.routine_id); const statusLabel = session.status === "completed" ? "완료" : session.status === "partial" ? "진행" : "중단"; return <article key={session.id} className="grid grid-cols-[1fr_auto] gap-3 rounded-2xl bg-gray-50 p-4"><div><div className="flex flex-wrap items-center gap-2"><strong>{routine?.title ?? "삭제된 루틴"}</strong><span className={`rounded-full px-2 py-1 text-[11px] font-bold ${session.status === "completed" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{statusLabel}</span></div><p className="mt-1 text-xs text-gray-500">{session.session_date} · {growthSessionTimeLabel(session)}{session.memo ? ` · ${session.memo}` : ""}</p></div><button type="button" aria-label="기록 삭제" onClick={() => void growth.deleteSession(session.id)} className="text-xl text-gray-300">×</button></article>; }) : <p className="py-7 text-center text-sm text-gray-400">아직 실행 기록이 없습니다.</p>}</div></section>
-
-      </div>
-    </main>
-  );
+  return <main className={styles.page}>
+    <header className={styles.header}><AppIdentity kind="growth" title="자기계발" subtitle="내가 정하는 작은 실천" /><Link href="/">홈</Link></header>
+    <section className={styles.hero}><h1>내가 하고 싶은 일, 하나씩</h1><p>활동과 요일을 정하고, 마친 날에 체크해요.</p></section>
+    <form className={styles.panel} onSubmit={save}>
+      <h2>{editing ? "활동 수정" : "새 활동"}</h2>
+      <fieldset disabled={!ready}><label className={styles.name}>활동 이름<input ref={editor} value={title} maxLength={60} required placeholder="예: 책 10쪽 읽기" onChange={event => setTitle(event.target.value)} /></label>
+      <fieldset className={styles.days}><legend>진행할 요일 · 하나 이상 선택</legend>{GROWTH_WEEKDAYS.map(day => <label key={day.id}><input type="checkbox" checked={days.includes(day.id)} onChange={event => setDays(previous => event.target.checked ? [...new Set([...previous, day.id])] : previous.filter(value => value !== day.id))} /><span>{day.label}</span></label>)}</fieldset>
+      {!days.length && <p role="status">진행할 요일을 하나 이상 선택해 주세요.</p>}
+      <div className={styles.actions}><button className={styles.primary} disabled={!title.trim() || !days.length || (!editing && routines.length >= GROWTH_ROUTINE_LIMIT)}>{editing ? "수정 저장" : "활동 추가"}</button>{editing && <button type="button" onClick={resetEditor}>취소</button>}</div>
+      {!editing && routines.length >= GROWTH_ROUTINE_LIMIT && <p>활동은 보관한 항목을 포함해 {GROWTH_ROUTINE_LIMIT}개까지 등록할 수 있어요. 기존 활동을 수정해 주세요.</p>}</fieldset>
+    </form>
+    {(message || growth.notice) && <p role="status" className={styles.notice}>{growth.notice || message}</p>}
+    {growth.loading && <p role="status">기록을 불러오고 있어요.</p>}
+    {!growth.loading && !growth.dataReady && <button onClick={() => void growth.refresh()}>다시 불러오기</button>}
+    {growth.legacyBackupAvailable && <button disabled={busy} onClick={() => void run(async () => { const result = await growth.importLegacyBackup(); if (result.error) throw result.error; }, "이전 기록을 가져왔어요.")}>이전 기기 기록 가져오기</button>}
+    <section className={styles.panel}>
+      <div className={styles.dateRow}><h2>{date === today ? "오늘 할 일" : "날짜별 체크"}</h2><label>날짜<input type="date" value={date} max={today} min={shiftDateKey(today, -89)} onChange={event => { if (event.target.value >= shiftDateKey(today, -89) && event.target.value <= today) setDate(event.target.value); }} /></label></div>
+      <p className={styles.hint}>기기의 현지 날짜를 기준으로 저장해요. 최근 90일을 확인할 수 있어요.</p>
+      {growth.dataReady && <><p>{scheduled.filter(row => checklistCompleted(growth.sessions, row.id, date)).length} / {scheduled.length} 완료</p>
+      {scheduled.length ? <ul>{scheduled.map(renderActivity)}</ul> : <p className={styles.empty}>{active.length ? "이 날짜에 예정된 활동이 없어요. 편하게 쉬어도 좋아요." : "아직 활동이 없어요. 위에서 하고 싶은 일을 추가해 주세요."}</p>}
+      {!!other.length && <details><summary>다른 요일의 활동 ({other.length})</summary><p className={styles.hint}>예정에 없는 날은 미완료로 계산하지 않아요. 원하면 체크할 수 있어요.</p><ul>{other.map(renderActivity)}</ul></details>}</>}
+    </section>
+    {!!archived.length && <details className={styles.panel}><summary>보관한 활동 ({archived.length})</summary><p className={styles.hint}>다시 시작하면 기존 요일과 완료 기록이 이어져요.</p><ul>{archived.map(row => <li key={row.id} className={styles.activity}><span>{row.title}<small>{formatGrowthPreferredDays(row.preferred_days)}</small></span><button disabled={!ready} onClick={() => archive(row)}>복원</button></li>)}</ul></details>}
+    <nav className={styles.actions} aria-label="다른 기록"><Link href="/fitness">운동</Link><Link href="/language">일본어</Link><Link href="/growth/settings">기록 설정</Link></nav>
+  </main>;
 }

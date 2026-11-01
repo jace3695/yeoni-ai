@@ -9,7 +9,7 @@ import {
   type GrammarProgressItem,
 } from "@/data/grammar";
 import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
-import { speakJapaneseWithPreferredTts } from "@/utils/speakJapanese";
+import { useLearningAudio } from "@/components/language/useLearningAudio";
 
 type GrammarFilter = "전체" | GrammarCategory;
 
@@ -19,6 +19,7 @@ function normalizeChoice(choice: string | { text: string; reading?: string; ruby
 }
 
 export default function GrammarPage() {
+  const audio = useLearningAudio();
   const [filter, setFilter] = useState<GrammarFilter>("전체");
   const [levelFilter, setLevelFilter] = useState<GrammarLesson["level"] | "all">("beginner");
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
@@ -106,17 +107,12 @@ export default function GrammarPage() {
     });
   };
 
-  const handleSpeak = (text: string) => {
-    void speakJapaneseWithPreferredTts(text, {
-      rate: 0.9,
-      pitch: 1,
-    }).catch(() => {
-      window.alert("소리를 재생하지 못했어요. 기기의 일본어 음성 설정을 확인해 주세요. 예문을 보며 계속 학습할 수 있어요.");
-    });
-  };
+  const handleSpeak = (text: string) => { void audio.play(text); };
 
   return (
     <section>
+      {audio.playing && <button type="button" className="btn" onClick={audio.stop}>소리 멈추기</button>}
+      {audio.audioError && <p role="status">{audio.audioError}</p>}
       <div
         style={{
           marginBottom: "20px",

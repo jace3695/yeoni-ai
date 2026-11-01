@@ -11,7 +11,7 @@ const owner = randomUUID(), other = randomUUID(), routineId = randomUUID(), othe
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 type Row = Record<string, unknown>;
 const original = { settings: 'keep', 'ai-fitness-record-reset-fitness': 'old-fitness-reset' };
-const routine: GrowthRoutineSnapshot = { id: routineId, title: '정확도 중심 타자 연습', category: 'typing', target_minutes: 10, preferred_days: [1,3,5], target_sessions_per_week: 2, enabled: true, updated_at: '2026-01-01T00:00:00+00:00' };
+const routine: GrowthRoutineSnapshot = { id: routineId, title: '사용자 지정 타자 활동', category: 'typing', target_minutes: 10, preferred_days: [1,3,5], target_sessions_per_week: 2, enabled: true, updated_at: '2026-01-01T00:00:00+00:00' };
 const request = (overrides = {}) => ({ id: randomUUID(), day: today(), expected: routine, minutes: null as number | null, resets: { growth: null, assistant: null }, expires: new Date(Date.now() + 15 * 60_000).toISOString(), ...overrides });
 const apply = async (p: ReturnType<typeof request>) => (await db.query<Row>('select public.apply_assistant_growth_command($1,$2,$3,$4,$5,$6) receipt', [p.id,p.day,p.expected,p.minutes,p.resets,p.expires])).rows[0].receipt as Row;
 const undo = async (id: string) => (await db.query<Row>('select public.undo_assistant_growth_command($1) receipt', [id])).rows[0].receipt as Row;

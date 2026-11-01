@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
 import { WORDS, type WordItem as Word } from "@/data/words";
 import type { RubySegment } from "@/data/words";
-import { speakJapaneseWithPreferredTts } from "@/utils/speakJapanese";
+import { useLearningAudio } from "@/components/language/useLearningAudio";
 import WritingPracticePad from "@/components/WritingPracticePad";
 
 const STORAGE_KEY = "savedWords";
@@ -160,6 +160,7 @@ function getChoices(correct: Word, pool: Word[], quizType: QuizType): string[] {
 }
 
 export default function WordsPage() {
+  const audio = useLearningAudio();
   const router = useRouter();
   const [savedWords, setSavedWords] = useState<Word[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -307,17 +308,7 @@ export default function WordsPage() {
       : currentWord.word
     : "";
 
-  const speakJapaneseText = useCallback(
-    (text: string) => {
-      void speakJapaneseWithPreferredTts(text, {
-        rate: settings.ttsRate,
-        pitch: 1,
-        repeatCount: settings.repeatCount,
-        repeatDelayMs: settings.repeatDelayMs,
-      }).catch(() => window.alert("소리를 재생하지 못했어요. 기기의 일본어 음성 설정을 확인해 주세요. 읽는 법을 보며 계속 학습할 수 있어요."));
-    },
-    [settings.repeatCount, settings.repeatDelayMs, settings.ttsRate]
-  );
+  const speakJapaneseText = (text: string) => { void audio.play(text, settings.ttsRate, settings.repeatCount, settings.repeatDelayMs); };
 
   const handleWritingPracticeToggle = (word: Word) => {
     const targetKey = getWordKey(word);
@@ -358,6 +349,8 @@ export default function WordsPage() {
 
   return (
     <section className="mx-auto w-full max-w-6xl">
+      {audio.playing && <button type="button" className="btn" onClick={audio.stop}>소리 멈추기</button>}
+      {audio.audioError && <p role="status">{audio.audioError}</p>}
       <div className="page-header" style={{ marginBottom: "16px" }}>
         <h1 style={{ color: "#1e3a8a" }}>단어 학습</h1>
         <p className="muted" style={{ margin: 0, color: "#42526b" }}>

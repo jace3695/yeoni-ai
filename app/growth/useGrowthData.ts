@@ -21,6 +21,7 @@ import {
   type GrowthCategoryId,
   type GrowthRoutine,
 } from "../data/growthRoutines";
+import { setChecklistCompletion } from "@/lib/growth-checklist";
 import { getLocalDateKey } from "@/utils/dateKey";
 import { normalizeGrowthPreferredDays, normalizeGrowthWeeklyTarget } from "../data/growthSchedule";
 import { clearGrowthRecordBackup } from "../lib/resetAppRecords";
@@ -201,7 +202,7 @@ export function useGrowthData(historyDays = 90) {
         ? parseGrowthRoutines(pendingImport.raw)
         : scopedRaw !== null
           ? parseGrowthRoutines(scopedRaw)
-          : cloudRoutines.length === 0 ? parseGrowthRoutines(null) : []
+          : []
       : [];
 
     if (needsMigration && localSource.length) {
@@ -472,5 +473,12 @@ export function useGrowthData(historyDays = 90) {
     return result;
   }, [user]);
 
-  return { user, routines, sessions, dataReady, workoutRecords, loading, notice, setNotice, legacyBackupAvailable, importLegacyBackup, refresh: load, addRoutine, updateRoutine, removeRoutine, saveSession, deleteSession };
+  const setCompleted = useCallback(async (routine: GrowthRoutineRow, date: string, completed: boolean) => {
+    if (!supabase || !user || !dataReady) throw new Error("기록을 불러온 뒤 다시 시도해 주세요.");
+    const client = supabase;
+    await withGrowthSyncLock(user.id, () => setChecklistCompletion(client, user.id, routine, date, completed));
+    await load();
+  }, [user, dataReady, load]);
+
+  return { setCompleted, user, routines, sessions, dataReady, workoutRecords, loading, notice, setNotice, legacyBackupAvailable, importLegacyBackup, refresh: load, addRoutine, updateRoutine, removeRoutine, saveSession, deleteSession };
 }
