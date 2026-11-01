@@ -8,8 +8,8 @@ import { GRAMMAR_WRITING_PRACTICE, GRAMMAR_WRITING_ALTERNATES, normalizeGrammarI
 import { CONSOLIDATION_PRACTICES } from '../../data/grammarConsolidation.ts';
 
 test('연결 과정은 기존6 ID를 보강하고 が好き ID만 추가하며 원래 が 자료를 보존한다', () => {
-  assert.equal(GRAMMAR_LESSONS.length, 45);
-  assert.equal(new Set(GRAMMAR_LESSONS.map(item => item.id)).size, 45);
+  assert.equal(GRAMMAR_LESSONS.length, 51);
+  assert.equal(new Set(GRAMMAR_LESSONS.map(item => item.id)).size, 51);
   assert.deepEqual(GRAMMAR_LESSONS.find(item => item.id === 'ga-particle'), EXPANDED_GRAMMAR_LESSONS.find(item => item.id === 'ga-particle'));
   assert.deepEqual(GRAMMAR_BRIDGE.map(item => item.lesson.id), BRIDGE_ORDER);
   for (const { lesson, guide, practice, alternate } of GRAMMAR_BRIDGE) {
@@ -59,4 +59,14 @@ test('한자·가나 허용 형태와 종합 연습의 목적지 대안을 결�
   }
   assert.ok(!CONSOLIDATION_PRACTICES.past.answers.includes('昨日、京都に行きません'));
   assert.ok(!CONSOLIDATION_PRACTICES.plan.answers.includes('今日は会社に行きました'));
+});
+
+test('숫자 입력 표기 정규화는 금액·시각·단위를 바꾸지 않는다', () => {
+  assert.equal(normalizeGrammarInput('　３００円　'), '300円');
+  assert.equal(normalizeGrammarInput('９時'), '9時');
+  assert.notEqual(normalizeGrammarInput('３０００円'), normalizeGrammarInput('３００円'));
+  assert.notEqual(normalizeGrammarInput('３時'), normalizeGrammarInput('９時'));
+  assert.notEqual(normalizeGrammarInput('３００'), normalizeGrammarInput('３００円'));
+  assert.equal(normalizeGrammarInput('３００ 円'), '300 円');
+  assert.equal(normalizeGrammarInput('9時？', true), '9時?');
 });

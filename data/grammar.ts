@@ -203,6 +203,7 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
   ...GRAMMAR_FOUNDATIONS,
   ...EXPANDED_GRAMMAR_LESSONS.map(lesson => BRIDGE_LESSONS.find(bridge => bridge.id === lesson.id) ?? lesson),
   ...BRIDGE_LESSONS.filter(bridge => !EXPANDED_GRAMMAR_LESSONS.some(lesson => lesson.id === bridge.id)),
+  ...TRAVEL_LESSONS,
 ];
 import { EXPANDED_GRAMMAR_LESSONS } from "./grammarExpansion.ts";
 
@@ -210,3 +211,5 @@ import { EXPANDED_GRAMMAR_LESSONS } from "./grammarExpansion.ts";
 import { GRAMMAR_FOUNDATIONS } from "./grammarFoundations.ts";
 
 import { BRIDGE_LESSONS } from "./grammarBridge.ts";
+
+import { TRAVEL_LESSONS } from "./grammarTravel.ts";

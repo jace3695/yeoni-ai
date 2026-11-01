@@ -25,3 +25,6 @@ BEGINNER_GUIDES.desu.steps.push('です·ます는 공손한 끝맺음이에요.
 
 import { BRIDGE_GUIDES } from "./grammarBridge.ts";
 Object.assign(BEGINNER_GUIDES, BRIDGE_GUIDES);
+
+import { TRAVEL_GUIDES } from "./grammarTravel.ts";
+Object.assign(BEGINNER_GUIDES, TRAVEL_GUIDES);

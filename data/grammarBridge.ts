@@ -2,9 +2,9 @@ import type { GrammarLesson } from './grammar';
 import type { GrammarWritingPractice } from './grammarWritingPractice';
 
 type Guide = { goal: string; steps: string[]; worked: string; hint: string };
-type BridgeLesson = { lesson: GrammarLesson; guide: Guide; practice: GrammarWritingPractice; alternate: GrammarWritingPractice };
+export type GrammarGuidedLesson = { lesson: GrammarLesson; guide: Guide; practice: GrammarWritingPractice; alternate: GrammarWritingPractice };
 // Original Korean bridge material; existing subject/new-information ga-particle is untouched.
-export const GRAMMAR_BRIDGE: BridgeLesson[] = [
+export const GRAMMAR_BRIDGE: GrammarGuidedLesson[] = [
   {
     lesson: {
       id: 'no-particle', title: 'の · 누구의 것인지 연결하기', level: 'beginner', category: '조사',

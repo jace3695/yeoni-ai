@@ -59,7 +59,7 @@ try {
     await page.screenshot({path:output+'/'+id+'-mobile.png',fullPage:true});
   }
   assert.equal(await page.getByRole('button',{name:'다음 문법 배우기',exact:true}).count(),0);
-  await page.getByRole('button',{name:'생활·여행 종합 연습하기'}).click();
+  await page.getByRole('button',{name:'다음 걸음 복습하기'}).click();
   assert.equal(await page.getByLabel('최근 틀린 문법만 복습').count(),0);
   const progressBefore=await page.evaluate(()=>localStorage.getItem('grammarProgress'));
   await page.getByRole('textbox').fill('トイレはどこですか？');
