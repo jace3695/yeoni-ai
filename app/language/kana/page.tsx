@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useMemo, useId } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import KanaStrokeAnimation from "@/components/language/KanaStrokeAnimation";
 import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
 import { FREE_MODE } from "@/lib/free-mode";
 import { useLearningAudio } from "@/components/language/useLearningAudio";
@@ -20,97 +21,6 @@ function getStrokeSvgPaths(char: string, tab: "hiragana" | "katakana") {
   });
 }
 
-let strokeSvgBundlePromise: Promise<Record<string, string>> | undefined;
-function loadStrokeSvg(src: string) {
-  strokeSvgBundlePromise ??= fetch("/kana-strokes.json").then((response) => {
-    if (!response.ok) throw new Error("획순 묶음을 불러오지 못했습니다.");
-    return response.json() as Promise<Record<string, string>>;
-  });
-  return strokeSvgBundlePromise.then((bundle) => bundle[src] ?? "");
-}
-
-function StrokeGlyph({ src, label, animated = true }: { src: string; label: string; animated?: boolean }) {
-  const instanceId = useId().replace(/[^a-zA-Z0-9]/g, "");
-  const [failed, setFailed] = useState(false);
-  const svgRef = useRef<SVGSVGElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let replayTimer: ReturnType<typeof setTimeout> | undefined;
-    const animations: Animation[] = [];
-    const loadAndPlay = async () => {
-      const markup = await loadStrokeSvg(src);
-      if (cancelled) return;
-      if (!markup) throw new Error("Missing stroke guide");
-      const documentSvg = new DOMParser().parseFromString(markup, "image/svg+xml").documentElement;
-      const target = svgRef.current;
-      if (!target || cancelled) return;
-      // Each board owns its clip paths; duplicate SVG IDs can resolve to another board.
-      const ids = new Map(Array.from(documentSvg.querySelectorAll('[id]')).map(node => [node.id, `${instanceId}-${node.id}`]));
-      documentSvg.querySelectorAll('*').forEach(node => {
-        for (const attribute of Array.from(node.attributes)) {
-          let value = attribute.value;
-          if (attribute.name === 'id') value = ids.get(value) ?? value;
-          else for (const [oldId, newId] of ids) value = value.replaceAll(`url(#${oldId})`, `url(#${newId})`).replace(new RegExp(`^#${oldId}$`), `#${newId}`);
-          node.setAttribute(attribute.name, value);
-        }
-      });
-      target.replaceChildren(...Array.from(documentSvg.childNodes).map((node) => document.importNode(node, true)));
-      target.setAttribute("viewBox", documentSvg.getAttribute("viewBox") ?? "0 0 1024 1024");
-      if (!animated) {
-        target.querySelector('[data-strokesvg="strokes"]')?.remove();
-        return;
-      }
-      const strokeItems = Array.from(target.querySelectorAll<SVGElement>('g[data-strokesvg="strokes"] > *'));
-      const strokes = strokeItems.map((item) =>
-        item.matches("path, line, polyline, polygon, circle, ellipse, rect")
-          ? [item as SVGGeometryElement]
-          : Array.from(item.querySelectorAll<SVGGeometryElement>("path, line, polyline, polygon, circle, ellipse, rect")),
-      );
-      const play = () => {
-        if (cancelled) return;
-        animations.splice(0).forEach((animation) => animation.cancel());
-        const strokeLengths = strokes.map((parts) => parts.map((part) => Math.max(part.getTotalLength(), 1)));
-
-        // 브라우저가 첫 프레임을 그리기 전에 모든 획을 숨겨, 완성된 글자나 중간 획이 먼저 보이지 않게 한다.
-        strokes.forEach((parts, strokeIndex) => {
-          parts.forEach((part, partIndex) => {
-            const length = strokeLengths[strokeIndex][partIndex];
-            part.style.strokeDasharray = `${length}`;
-            part.style.strokeDashoffset = `${length}`;
-          });
-        });
-
-        strokes.forEach((parts, strokeIndex) => {
-          parts.forEach((part, partIndex) => {
-            const length = strokeLengths[strokeIndex][partIndex];
-            animations.push(part.animate(
-              [{ strokeDashoffset: `${length}` }, { strokeDashoffset: "0" }],
-              { duration: 700, delay: 350 + strokeIndex * 900, fill: "forwards", easing: "ease-out" },
-            ));
-          });
-        });
-        replayTimer = setTimeout(play, Math.max(3600, 1300 + strokes.length * 900));
-      };
-      play();
-    };
-    setFailed(false);
-    void loadAndPlay().catch(() => { if (!cancelled) setFailed(true); });
-    return () => {
-      cancelled = true;
-      if (replayTimer) clearTimeout(replayTimer);
-      animations.forEach((animation) => animation.cancel());
-    };
-  }, [src, animated, instanceId]);
-
-  if (failed) return <span role="status">획순 자료를 불러오지 못했어요. 페이지를 다시 열어 주세요.</span>;
-  return <svg ref={svgRef} role="img" aria-label={`${label} ${animated ? "획순 애니메이션" : "따라쓰기 가이드"}`} style={{ width: "100%", height: "100%", display: "block", margin: "0 auto", "--shadow": "#94a3b8", "--stroke": "#111827" } as React.CSSProperties} />;
-}
-
-function KanaStrokeAnimation({ char, tab, animated = true }: { char: string; tab: "hiragana" | "katakana"; animated?: boolean }) {
-  const paths = getStrokeSvgPaths(char, tab);
-  return <div style={{ width: "100%", height: "100%", display: "grid", gridTemplateColumns: `repeat(${paths.length}, minmax(0, 1fr))`, alignItems: "center", gap: 4 }}>{paths.map((path, index) => <StrokeGlyph key={path} src={path} label={Array.from(char)[index]} animated={animated} />)}</div>;
-}
 
 const hiragana = [
   { char: "あ", roman: "a" }, { char: "い", roman: "i" }, { char: "う", roman: "u" }, { char: "え", roman: "e" }, { char: "お", roman: "o" },

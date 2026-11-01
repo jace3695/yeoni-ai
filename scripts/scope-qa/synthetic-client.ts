@@ -3,8 +3,16 @@ const key = 'scope-qa-synthetic-database';
 const read = () => JSON.parse(localStorage.getItem(key) || '{"growth_routines":[],"growth_sessions":[]}');
 const write = (db: unknown) => localStorage.setItem(key, JSON.stringify(db));
 export const supabase = {
-  storage: { from: () => ({ download: async () => ({ data: null, error: { status: 404, message: 'Synthetic fixture has no private workbook' } }) }) },
-  auth: { getUser: async () => ({ data: { user: { id: 'synthetic-owner' } }, error: null }) },
+  storage: { from: () => ({
+    upload: async () => ({ data: {}, error: null }),
+    download: async (path: string) => {
+      if (!localStorage.getItem('sequence-synthetic-workbook')) return { data: null, error: { status: 404, message: 'Synthetic fixture has no private workbook' } };
+      if (path.endsWith('ready.txt')) return { data: new Blob(['synthetic']), error: null };
+      const canvas=document.createElement('canvas');canvas.width=300;canvas.height=300;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#fff';ctx.fillRect(0,0,300,300);ctx.fillStyle='#aaa';ctx.font='24px sans-serif';ctx.fillText('합성 연습지',40,150);
+      return { data: await new Promise<Blob>(resolve=>canvas.toBlob(blob=>resolve(blob!))), error: null };
+    },
+  }) },
+  auth: { getUser: async () => ({ data: { user: { id: '11111111-1111-4111-8111-111111111111' } }, error: null }) },
   from(table: string) {
     let mode = 'select'; let payload: any; const filters: ((row: any) => boolean)[] = [];
     const execute = () => {

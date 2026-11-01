@@ -200,7 +200,10 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       explanation: "そこ는 청자 가까운 장소를 가리킬 때 써요.",
     },
   },
+  ...GRAMMAR_FOUNDATIONS,
   ...EXPANDED_GRAMMAR_LESSONS,
 ];
 import { EXPANDED_GRAMMAR_LESSONS } from "./grammarExpansion.ts";
 
+
+import { GRAMMAR_FOUNDATIONS } from "./grammarFoundations.ts";

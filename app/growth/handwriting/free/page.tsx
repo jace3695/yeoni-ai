@@ -121,14 +121,14 @@ export default function GrowthHandwritingPage() {
 
   const save = async () => {
     const canvas = canvasRef.current;
-    if (!canvas || !supabase || !growth.user || !handwritingRoutine || saving || saved || restoring || !evidenceRef.current.strokes) return;
+    if (!canvas || !supabase || !growth.user || !growth.dataReady || saving || saved || restoring || !evidenceRef.current.strokes) return;
     setSaving(true);
     setLocked(true);
     try {
       if(!pending.current){
         const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,'image/png',.92));if(!blob)throw Error('image');
         const date=getLocalDateKey(),id=crypto.randomUUID(),resourceId=crypto.randomUUID(),measured=handwritingMetrics(evidenceRef.current);
-        pending.current={owner:growth.user.id,id,resourceId,path:`${growth.user.id}/${date}/handwriting-${resourceId}.png`,uploaded:false,resourceSaved:false,blob,session:{id,routineId:handwritingRoutine.id,sessionDate:date,status:'completed',plannedMinutes:handwritingRoutine.target_minutes,actualMinutes:Math.round(measured.activeSeconds/60),memo:GUIDE_TEXTS[guideIndex],source:'handwriting',metrics:{resourceId,guideText:GUIDE_TEXTS[guideIndex],...measured}}};
+        pending.current={owner:growth.user.id,id,resourceId,path:`${growth.user.id}/${date}/handwriting-${resourceId}.png`,uploaded:false,resourceSaved:false,blob,session:{id,routineId:handwritingRoutine?.id ?? null,sessionDate:date,status:'completed',plannedMinutes:handwritingRoutine?.target_minutes ?? 15,actualMinutes:Math.round(measured.activeSeconds/60),memo:GUIDE_TEXTS[guideIndex],source:'handwriting',metrics:{resourceId,guideText:GUIDE_TEXTS[guideIndex],...measured}}};
       }
       const job=pending.current;if(job.owner!==growth.user.id)throw Error('owner');
       if(!job.uploaded){
@@ -155,8 +155,8 @@ export default function GrowthHandwritingPage() {
         <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold text-amber-600">따라 쓰기</p><h1 className="mt-1 text-2xl font-bold">{GUIDE_TEXTS[guideIndex]}</h1></div><button disabled={locked || restoring} onClick={() => setGuideIndex((value) => (value + 1) % GUIDE_TEXTS.length)} className="min-h-11 rounded-xl bg-amber-50 px-4 text-xs font-bold text-amber-700">다른 문장</button></div>
         <div className="mt-4 flex flex-wrap gap-2"><label className="flex min-h-11 items-center gap-2 rounded-xl bg-gray-100 px-3 text-xs font-bold">펜 색<input type="color" value={inkColor} onChange={(event) => setInkColor(event.target.value)} className="h-7 w-7" /></label><button onClick={() => restore(historyIndexRef.current - 1)} disabled={locked || restoring || historyIndexRef.current <= 0} className="min-h-11 rounded-xl bg-gray-100 px-4 text-xs font-bold disabled:opacity-40">되돌리기</button><button onClick={() => restore(historyIndexRef.current + 1)} disabled={locked || restoring || historyIndexRef.current >= historyRef.current.length - 1} className="min-h-11 rounded-xl bg-gray-100 px-4 text-xs font-bold disabled:opacity-40">다시 실행</button><button disabled={saving || restoring || (locked && !saved)} onClick={clear} className="min-h-11 rounded-xl bg-red-50 px-4 text-xs font-bold text-red-600">모두 지우기</button></div>
         <canvas ref={canvasRef} onPointerDown={startDrawing} onPointerMove={draw} onPointerUp={stopDrawing} onPointerCancel={stopDrawing} className="mt-4 w-full rounded-2xl bg-white shadow-inner ring-1 ring-gray-200" style={{ touchAction: "none", aspectRatio: "1.62 / 1" }} aria-label="손글씨 연습장" />
-        {growth.dataReady && !handwritingRoutine && <p role="status">저장하려면 <Link href="/growth">자기계발 홈에서 손글씨 활동과 요일을 설정</Link>해 주세요. 입력한 연습은 페이지를 나가면 사라질 수 있어요.</p>}
-        <button disabled={saving || saved || restoring || !metrics.strokes || !handwritingRoutine} onClick={() => void save()} className="mt-4 min-h-12 w-full rounded-xl bg-amber-500 text-sm font-bold text-white disabled:bg-gray-300">{saved ? "저장 완료" : saving ? "비공개 저장 중…" : locked ? "같은 기록 다시 확인" : "손글씨와 완료 기록 저장"}</button>
+        {growth.dataReady && !handwritingRoutine && <p>활동 등록 없이 연습 기록을 저장할 수 있어요.</p>}
+        <button disabled={saving || saved || restoring || !metrics.strokes || !growth.dataReady} onClick={() => void save()} className="mt-4 min-h-12 w-full rounded-xl bg-amber-500 text-sm font-bold text-white disabled:bg-gray-300">{saved ? "저장 완료" : saving ? "비공개 저장 중…" : locked ? "같은 기록 다시 확인" : "손글씨와 완료 기록 저장"}</button>
         <section aria-label="손글씨 측정 기록" className="mt-4 rounded-xl bg-amber-50 p-4 text-sm">
           <h2 className="font-bold">직접 측정한 연습 기록</h2><p className="mt-2">획 {metrics.strokes}개 · 그린 시간 {metrics.activeSeconds}초</p>
           <p>사용한 범위: 가로 {metrics.occupiedWidth}% · 세로 {metrics.occupiedHeight}%</p>

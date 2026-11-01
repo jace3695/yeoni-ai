@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import GrammarWritingPractice from "@/components/language/GrammarWritingPractice";
+import { GRAMMAR_WRITING_PRACTICE, GRAMMAR_WRITING_ALTERNATES } from "@/data/grammarWritingPractice";
 import { BEGINNER_ORDER, BEGINNER_GUIDES } from "@/data/grammarBeginnerGuide";
 import {
   GRAMMAR_LESSONS,
@@ -30,7 +32,7 @@ export default function GrammarPage() {
   const [showHint, setShowHint] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [filter, setFilter] = useState<GrammarFilter>("전체");
-  const [levelFilter, setLevelFilter] = useState<GrammarLesson["level"] | "all">("beginner");
+  const [levelFilter, setLevelFilter] = useState<GrammarLesson["level"] | "all" | "foundation">("foundation");
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const [grammarProgress, setGrammarProgress] = useState<GrammarProgressItem[]>([]);
 
@@ -65,7 +67,7 @@ export default function GrammarPage() {
   };
 
   const visibleLessons = useMemo(
-    () => GRAMMAR_LESSONS.filter(lesson => (filter === "전체" || lesson.category === filter) && (levelFilter === "all" || lesson.level === levelFilter) && (!reviewOnly || grammarProgress.some(item => item.lessonId === lesson.id && item.lastResult === 'wrong')))
+    () => GRAMMAR_LESSONS.filter(lesson => (filter === "전체" || lesson.category === filter) && (levelFilter === "all" || (levelFilter === "foundation" ? BEGINNER_ORDER.includes(lesson.id) : lesson.level === levelFilter && (levelFilter !== "beginner" || !BEGINNER_ORDER.includes(lesson.id)))) && (!reviewOnly || grammarProgress.some(item => item.lessonId === lesson.id && item.lastResult === 'wrong')))
       .sort((a, b) => (BEGINNER_ORDER.indexOf(a.id) < 0 ? 100 : BEGINNER_ORDER.indexOf(a.id)) - (BEGINNER_ORDER.indexOf(b.id) < 0 ? 100 : BEGINNER_ORDER.indexOf(b.id))),
     [filter, levelFilter, reviewOnly, grammarProgress],
   );
@@ -145,8 +147,9 @@ export default function GrammarPage() {
         <p className="muted" style={{ margin: 0, fontSize: "15px", lineHeight: 1.6 }}>
           뜻과 만드는 순서를 이해하고, 예문을 읽은 뒤 한 문제씩 풀어요. は·を 같은 조사는 단어 뒤에 붙어 역할을 알려주는 말이에요.
         </p>
-        <label>추천 학습 순서 <select value={levelFilter} onChange={(event) => { setLevelFilter(event.target.value as typeof levelFilter); changeFilter(); }} style={{ minHeight: 44, marginTop: 12 }}><option value="beginner">처음 배우는 표현</option><option value="basic">기본 표현 넓히기</option><option value="practical">응용 표현</option><option value="all">전체 문법</option></select></label>
-        <p className="muted">시험 등급이 아닌 앱 안의 학습 순서예요. 원하는 단계는 언제든 볼 수 있어요.</p>
+        <label>추천 학습 순서 <select value={levelFilter} onChange={(event) => { setLevelFilter(event.target.value as typeof levelFilter); changeFilter(); }} style={{ minHeight: 44, marginTop: 12 }}><option value="foundation">첫걸음 · 순서대로 12수업</option><option value="beginner">기초 보충 자료 · 7항목</option><option value="basic">기본 표현 넓히기</option><option value="practical">응용 표현</option><option value="all">전체 문법</option></select></label>
+        <p className="muted">시험 등급이 아닌 앱 안의 학습 순서예요. 첫걸음은 명사 문장 → 질문·부정 → 지시어 → 형용사 → 동사·조사 순서예요. 12수업 모두 한국어 풀이와 직접 쓰기를 연결해요. 보충 자료는 설명·예문을 찾아보는 용도이며 첫걸음의 직접 쓰기 과정과 구분해요.</p>
+        <details><summary>학습 구성의 참고 자료</summary><p>국제교류기금의 한국어 안내와 한국어 입문 교재의 공개 구성을 비교해, 단어 → 한국어 설명 → 문장 구성 → 적용·복습으로 정리했어요. 예문과 문제는 앱에서 만든 것이며 공식 교재를 옮긴 것이 아니에요.</p><a href="https://www.jpf.or.kr/irodori/sData/pdf/starter/X_howto_kr.pdf" target="_blank" rel="noreferrer">이로도리 한국어 학습 안내</a> · <a href="https://www.darakwon.co.kr/books/detailProduct.asp?p_id=6342&amp;pc_id_2=9&amp;pc_id_3=52" target="_blank" rel="noreferrer">다락원 공개 교재 구성</a></details>
       </div>
 
       <div
@@ -228,6 +231,7 @@ export default function GrammarPage() {
                 <span style={{ border: "1px solid #dbeafe", borderRadius: "999px", padding: "4px 8px", background: "#f8fbff" }}>{recentText}</span>
               </div>
               {stage === 0 && <>
+              {GRAMMAR_WRITING_PRACTICE[lesson.id] && <div style={{padding:12,background:'#f8fafc',borderRadius:10}}><strong>이런 상황에 써요</strong><p>{GRAMMAR_WRITING_PRACTICE[lesson.id].context}</p><p>먼저 익힐 말: {GRAMMAR_WRITING_PRACTICE[lesson.id].words}</p></div>}
               <div style={{ fontSize: "14px", fontWeight: 700, color: "#1e3a8a" }}>핵심 패턴: {lesson.pattern}</div>
               <p className="muted" style={{ margin: 0, fontSize: "14px", lineHeight: 1.5 }}>{lesson.explanation}</p>
 
@@ -342,6 +346,7 @@ export default function GrammarPage() {
                   </div>
                 )}
 
+                {selectedAnswer && GRAMMAR_WRITING_PRACTICE[lesson.id] && <GrammarWritingPractice key={lesson.id} practice={GRAMMAR_WRITING_PRACTICE[lesson.id]} alternate={GRAMMAR_WRITING_ALTERNATES[lesson.id]} onListen={handleSpeak} />}
                 {selectedAnswer && (
                   <button
                     type="button"

@@ -118,10 +118,10 @@ export default function HandwritingCoursePage() {
   }
   const paperMinutes = Number(minutes);
   const practiceReady = mode === 'paper' ? Number.isInteger(paperMinutes) && paperMinutes > 0 && paperMinutes <= 240 : sheetReady && strokes > 0;
-  const canSave = !!imagePath && !materials.importing && progressReady && growth.dataReady && !!routine && checks.every(Boolean) && practiceReady && !saving && !saved;
+  const canSave = !!imagePath && !materials.importing && progressReady && growth.dataReady &&  checks.every(Boolean) && practiceReady && !saving && !saved;
 
   async function save() {
-    if (!canSave || !supabase || !owner || !routine) return;
+    if (!canSave || !supabase || !owner) return;
     setSaving(true); setNotice('');
     try {
       if (!pending.current) {
@@ -129,7 +129,7 @@ export default function HandwritingCoursePage() {
         const blob = mode === 'screen' ? await new Promise<Blob | null>(resolve => canvasRef.current?.toBlob(resolve, 'image/png')) : undefined;
         if (mode === 'screen' && !blob) throw Error('image');
         const activeSeconds = Math.round(evidence.current.activeMs / 1000);
-        pending.current = { owner, id, resourceId, path: resourceId ? `${owner}/${getLocalDateKey()}/handwriting-${resourceId}.png` : undefined, blob: blob ?? undefined, uploaded: false, resourceSaved: false, session: { id, routineId: routine.id, sessionDate: getLocalDateKey(), status: 'completed', plannedMinutes: 15, actualMinutes: mode === 'paper' ? paperMinutes : Math.round(activeSeconds / 60), memo: `${lesson.number}강 ${lesson.title}${reflection.trim() ? ` · ${reflection.trim()}` : ''}`, source: 'handwriting', metrics: { courseId: HANDWRITING_COURSE_ID, lessonId: lesson.id, lessonCompleted: true, pdfPage: lesson.pdfPage, mode, practiceMode: mode === 'screen' ? (trace ? 'trace' : 'copy') : 'paper', selfChecks: checks, ...(resourceId ? { resourceId, strokes: evidence.current.strokes, activeSeconds } : { timeSource: 'self-reported' }) } } };
+        pending.current = { owner, id, resourceId, path: resourceId ? `${owner}/${getLocalDateKey()}/handwriting-${resourceId}.png` : undefined, blob: blob ?? undefined, uploaded: false, resourceSaved: false, session: { id, routineId: routine?.id ?? null, sessionDate: getLocalDateKey(), status: 'completed', plannedMinutes: 15, actualMinutes: mode === 'paper' ? paperMinutes : Math.round(activeSeconds / 60), memo: `${lesson.number}강 ${lesson.title}${reflection.trim() ? ` · ${reflection.trim()}` : ''}`, source: 'handwriting', metrics: { courseId: HANDWRITING_COURSE_ID, lessonId: lesson.id, lessonCompleted: true, pdfPage: lesson.pdfPage, mode, practiceMode: mode === 'screen' ? (trace ? 'trace' : 'copy') : 'paper', selfChecks: checks, ...(resourceId ? { resourceId, strokes: evidence.current.strokes, activeSeconds } : { timeSource: 'self-reported' }) } } };
       }
       const job = pending.current; if (job.owner !== owner) throw Error('owner');
       if (job.blob && job.path && !job.uploaded) {
@@ -138,7 +138,7 @@ export default function HandwritingCoursePage() {
         job.uploaded = true;
       }
       if (job.blob && job.path && !job.resourceSaved) {
-        const result = await supabase.from('growth_resources').insert({ id: job.resourceId, user_id: owner, routine_id: routine.id, title: `필림 손글씨 ${lesson.number}강 ${lesson.title}`, category: 'handwriting', storage_path: job.path, mime_type: 'image/png', size_bytes: job.blob.size, classification: 'direct', notes: job.session.memo });
+        const result = await supabase.from('growth_resources').insert({ id: job.resourceId, user_id: owner, routine_id: job.session.routineId, title: `필림 손글씨 ${lesson.number}강 ${lesson.title}`, category: 'handwriting', storage_path: job.path, mime_type: 'image/png', size_bytes: job.blob.size, classification: 'direct', notes: job.session.memo });
         if (result.error) { const existing = await supabase.from('growth_resources').select('id').eq('id', job.resourceId!).eq('user_id', owner).eq('storage_path', job.path).maybeSingle(); if (existing.error || !existing.data) throw Error('resource'); }
         job.resourceSaved = true;
       }
@@ -185,7 +185,7 @@ export default function HandwritingCoursePage() {
           {mode === 'paper' && <label className="block text-sm">실제로 연습한 시간 (분)<input type="number" inputMode="numeric" min={1} max={240} step={1} value={minutes} onChange={event => setMinutes(event.target.value)} className="mt-2 block min-h-12 w-full rounded-xl border p-3 text-base" /><span className="mt-1 block text-xs text-gray-500">종이·다른 앱 연습 시간은 직접 입력한 값으로 저장해요.</span></label>}
           <label className="block text-sm">다음에 신경 쓸 점 (선택)<textarea value={reflection} maxLength={200} onChange={event => setReflection(event.target.value)} placeholder="예: 글자 사이를 조금 더 띄우기" className="mt-2 block w-full rounded-xl border p-3 text-base" /></label>
         </fieldset>
-        {!routine && growth.dataReady && <p role="alert" className="mt-3 text-sm">손글씨 루틴이 없어요. 자기계발 홈에서 손글씨 루틴을 추가한 뒤 저장해 주세요.</p>}
+        {!routine && growth.dataReady && <p className="mt-3 text-sm">활동을 따로 등록하지 않아도 수업 기록을 저장할 수 있어요.</p>}
         <button disabled={!canSave} onClick={() => void save()} className="mt-5 min-h-12 w-full rounded-xl bg-amber-600 px-4 font-bold text-white disabled:bg-gray-300">{saving ? '수업 저장 중…' : saved ? '수업 저장 완료' : pending.current ? '같은 기록 다시 확인' : '이 수업 완료하고 저장'}</button>
         {(notice || growth.notice) && <p role="status" className="mt-3 rounded-xl bg-amber-50 p-3 text-sm">{notice || growth.notice}</p>}
         {saved && <div className="mt-4 flex flex-wrap gap-2"><button className="min-h-12 rounded-xl bg-amber-100 px-4 font-bold" onClick={() => selectLesson(nextHandwritingLesson(completed))}>{completed.size === 53 ? '처음부터 복습하기' : '다음 미완료 수업'}</button><button className="min-h-12 rounded-xl bg-gray-100 px-4" onClick={resetAttempt}>같은 수업 다시 연습</button></div>}

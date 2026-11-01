@@ -59,10 +59,10 @@ try {
  await page.evaluate(()=>localStorage.setItem('grammarProgress',JSON.stringify([{lessonId:'wa',title:'は 패턴',category:'조사',pattern:'A は B です',correctCount:0,wrongCount:1,lastAnsweredAt:new Date().toISOString(),lastResult:'wrong'}])));
  await page.reload();await page.getByLabel('최근 틀린 문법만 복습').check();await page.getByRole('button',{name:'3. 연습'}).click();await page.getByRole('button',{name:'は',exact:true}).click();await page.getByText('정답이에요!',{exact:true}).waitFor();
  assert.equal(await page.locator('article').count(),1);await page.getByRole('button',{name:'힌트 접기'}).count();
- await page.goto(origin+'/growth');await page.getByRole('button',{name:'손글씨 활동과 요일 설정'}).click();
+ await page.goto(origin+'/growth');await page.getByRole('button',{name:'선택: 손글씨를 내 요일 일정에도 추가'}).click();
  await page.getByRole('button',{name:'활동 추가',exact:true}).click();await page.getByText('활동을 추가했어요.',{exact:true}).waitFor();
  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('scope-qa-synthetic-database')).growth_routines[0].category),'handwriting');
- await page.getByRole('link',{name:'손글씨 수업 열기'}).click();await page.getByText('전체 수업 보기',{exact:true}).click();
+ await page.getByRole('link',{name:'손글씨 수업 · 53개 수업'}).click();await page.getByText('전체 수업 보기',{exact:true}).click();
  assert.equal(await page.locator('button[aria-current="step"]').count(),1);
  await page.screenshot({path:output+'/handwriting-course-mobile.png',fullPage:true});
  await page.goto(origin+'/growth/handwriting/free');await page.locator('canvas').waitFor();
