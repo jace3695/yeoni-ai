@@ -41,8 +41,8 @@ try {
  await page.getByRole('button',{name:'이 수업 완료하고 저장'}).click();await page.getByRole('button',{name:'수업 저장 완료'}).waitFor();
  db=await page.evaluate(()=>JSON.parse(localStorage.getItem('scope-qa-synthetic-database')));assert.equal(db.growth_sessions.length,2);assert.equal(db.growth_sessions[1].routine_id,null);assert.equal(db.growth_routines.length,0);
  await page.goto(origin+'/language/grammar');await page.getByRole('button',{name:'3. 연습'}).click();await page.getByRole('button',{name:/私.*は学生です。/}).click();
- await page.getByLabel('빈칸에 들어갈 일본어').fill('ます');await page.getByRole('button',{name:'쓴 답 확인'}).click();await page.getByText('이번 연습의 예시 답과 비교해 보세요.',{exact:true}).waitFor();
- await page.getByLabel('빈칸에 들어갈 일본어').fill('です');await page.getByRole('button',{name:'쓴 답 확인'}).click();await page.getByText('맞게 썼어요.',{exact:true}).waitFor();await page.getByRole('radio').first().check();await page.getByRole('button',{name:'다른 예문으로 다시 써 보기'}).click();assert.equal(await page.getByLabel('빈칸에 들어갈 일본어').inputValue(),'');await page.getByLabel('빈칸에 들어갈 일본어').fill('です');await page.getByRole('button',{name:'쓴 답 확인'}).click();await page.getByText('私は会社員です。',{exact:true}).waitFor();
+ await page.getByRole('textbox').fill('ます');await page.getByRole('button',{name:'쓴 답 확인'}).click();await page.getByText('이번 연습의 예시 답과 비교해 보세요.',{exact:true}).waitFor();
+ await page.getByRole('textbox').fill('です');await page.getByRole('button',{name:'쓴 답 확인'}).click();await page.getByText('맞게 썼어요.',{exact:true}).waitFor();await page.getByRole('radio').first().check();await page.getByRole('button',{name:'다른 예문으로 다시 써 보기'}).click();assert.equal(await page.getByRole('textbox').inputValue(),'');await page.getByRole('textbox').fill('です');await page.getByRole('button',{name:'쓴 답 확인'}).click();await page.getByText('私は会社員です。',{exact:true}).waitFor();
  await page.setViewportSize({width:390,height:844});await page.getByRole('region',{name:'직접 써 보기'}).screenshot({path:output+'/grammar-written-mobile.png'});
 
  await page.getByLabel('추천 학습 순서').selectOption('foundation');
@@ -51,7 +51,7 @@ try {
  await page.getByLabel('배울 문법').selectOption(id);
  await page.getByRole('button',{name:'3. 연습'}).click();
  await page.locator('button').filter({hasText: id === 'desu-question' ? 'これは本ですか。' : id === 'desu-negative' ? 'ではありません' : id === 'i-adjective' ? 'おいしいパン' : /^な$/}).first().click();
- await page.getByLabel('빈칸에 들어갈 일본어').fill(answer);await page.getByRole('button',{name:'쓴 답 확인'}).click();await page.getByText('맞게 썼어요.',{exact:true}).waitFor();
+ await page.getByRole('textbox').fill(answer);await page.getByRole('button',{name:'쓴 답 확인'}).click();await page.getByText('맞게 썼어요.',{exact:true}).waitFor();
  await page.getByRole('button',{name:'다른 예문으로 다시 써 보기'}).click();
  assert.equal(await page.getByRole('button',{name:'도움말 보기'}).getAttribute('aria-expanded'),'false');
  await page.screenshot({path:output+'/foundation-'+id+'-mobile.png',fullPage:true});
@@ -59,13 +59,13 @@ try {
  await page.getByLabel('배울 문법').selectOption('ni');
  await page.getByRole('button',{name:'3. 연습'}).click();
  await page.getByRole('button',{name:'に',exact:true}).click();
- await page.getByLabel('빈칸에 들어갈 일본어').fill('へ');await page.getByRole('button',{name:'쓴 답 확인'}).click();
+ await page.getByRole('textbox').fill('へ');await page.getByRole('button',{name:'쓴 답 확인'}).click();
  await page.getByText('맞게 썼어요.',{exact:true}).waitFor();await page.getByText('学校へ行きます。',{exact:true}).waitFor();
  await page.getByLabel('배울 문법').selectOption('desu-negative');await page.getByRole('button',{name:'3. 연습'}).click();
- await page.getByLabel('빈칸에 들어갈 일본어').fill('じゃないです');await page.getByRole('button',{name:'쓴 답 확인'}).click();
+ await page.getByRole('textbox').fill('じゃないです');await page.getByRole('button',{name:'쓴 답 확인'}).click();
  await page.getByText('맞게 썼어요.',{exact:true}).waitFor();await page.getByText('これは本じゃないです。',{exact:true}).waitFor();
  await page.screenshot({path:output+'/valid-alternative-mobile.png',fullPage:true});
- await page.getByLabel('추천 학습 순서').selectOption('beginner');
+ await page.getByLabel('추천 학습 순서').selectOption('bridge');
  assert.equal(await page.getByLabel('배울 문법').locator('option').count(),7);
  assert.deepEqual(errors,[]);writeFileSync(output+'/timing-proof.json',JSON.stringify({passed:true,proof,errors,syntheticOnly:true},null,2));
 }catch(error){console.log(await page.locator('body').innerText());throw error;}finally{await browser.close();}

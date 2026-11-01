@@ -4,7 +4,7 @@ import { CURRICULUM } from "../../data/curriculum.ts";
 import { CURRICULUM_PROGRESS_KEY, loadCurriculumProgress, saveCurriculumProgress } from "../../utils/curriculumProgress.ts";
 import { INTEGRATED_LEARNING_SETTINGS_KEY, loadIntegratedLearningSettings } from "../../utils/integratedLearningSettings.ts";
 import { answerSessionQuestion, createLearningSession, normalizeLearningSession, withLearningSessionDraft } from "../../utils/learningSession.ts";
-import { prepareLanguageLocalState } from "./languageCloudSync.ts";
+import { readLanguageState, applyLanguageState, prepareLanguageLocalState } from "./languageCloudSync.ts";
 
 class MemoryStorage {
   values = new Map<string, string>();
@@ -61,3 +61,21 @@ test("계정 준비 시 이전 계정의 새 수업 초안도 함께 격리한�
   assert.equal(loadCurriculumProgress().activeSession, undefined);
   assert.equal(storage.getItem("unrelated-test-key"), "preserve");
 }));
+
+ test("문법 수업 내용 확장 후에도 기존 ID 기록과 계정별 동기화 상태를 보존한다", () => withStorage((storage) => {
+ prepareLanguageLocalState('bridge-account-a');
+ const records = [{lessonId:'desu',correctCount:2,wrongCount:1,lastResult:'correct'}, {lessonId:'masen',correctCount:1,wrongCount:3,lastResult:'wrong'}];
+ const serialized = JSON.stringify(records);
+ storage.setItem('grammarProgress', serialized);
+ const snapshotA = readLanguageState();
+ prepareLanguageLocalState('bridge-account-a');
+ assert.equal(storage.getItem('grammarProgress'),serialized);
+ prepareLanguageLocalState('bridge-account-b');
+ assert.equal(storage.getItem('grammarProgress'),null);
+ storage.setItem('grammarProgress',JSON.stringify([{lessonId:'masen',correctCount:0,wrongCount:1}]));
+ const snapshotB=readLanguageState();
+ prepareLanguageLocalState('bridge-account-a');
+ applyLanguageState(snapshotA);
+ assert.equal(storage.getItem('grammarProgress'),serialized);
+ assert.notEqual(snapshotB.grammarProgress,snapshotA.grammarProgress);
+ }));

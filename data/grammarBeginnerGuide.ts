@@ -22,3 +22,6 @@ Object.assign(BEGINNER_GUIDES, {
 
 BEGINNER_GUIDES.wo.steps.push('한국어의 을/를을 늘 を로 바꾸지는 않아요. 「커피를 좋아해요」는 コーヒーが好きです(こーひーがすきです)예요. 동작의 대상인지, 좋아하는 대상을 설명하는 표현인지 문장 전체를 봐요.');
 BEGINNER_GUIDES.desu.steps.push('です·ます는 공손한 끝맺음이에요. 상대의 행동을 높이는 존경어나 내 행동을 낮추는 겸양어 전체를 배웠다는 뜻은 아니에요.');
+
+import { BRIDGE_GUIDES } from "./grammarBridge.ts";
+Object.assign(BEGINNER_GUIDES, BRIDGE_GUIDES);

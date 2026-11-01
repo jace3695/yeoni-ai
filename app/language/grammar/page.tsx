@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import GrammarConsolidation from "@/components/language/GrammarConsolidation";
 import GrammarWritingPractice from "@/components/language/GrammarWritingPractice";
 import { GRAMMAR_WRITING_PRACTICE, GRAMMAR_WRITING_ALTERNATES } from "@/data/grammarWritingPractice";
+import { BRIDGE_ORDER, GUIDED_GRAMMAR_ORDER } from "@/data/grammarStages";
 import { BEGINNER_ORDER, BEGINNER_GUIDES } from "@/data/grammarBeginnerGuide";
 import {
   GRAMMAR_LESSONS,
@@ -32,7 +34,7 @@ export default function GrammarPage() {
   const [showHint, setShowHint] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [filter, setFilter] = useState<GrammarFilter>("전체");
-  const [levelFilter, setLevelFilter] = useState<GrammarLesson["level"] | "all" | "foundation">("foundation");
+  const [levelFilter, setLevelFilter] = useState<GrammarLesson["level"] | "all" | "foundation" | "bridge" | "consolidation">("foundation");
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const [grammarProgress, setGrammarProgress] = useState<GrammarProgressItem[]>([]);
 
@@ -67,14 +69,19 @@ export default function GrammarPage() {
   };
 
   const visibleLessons = useMemo(
-    () => GRAMMAR_LESSONS.filter(lesson => (filter === "전체" || lesson.category === filter) && (levelFilter === "all" || (levelFilter === "foundation" ? BEGINNER_ORDER.includes(lesson.id) : lesson.level === levelFilter && (levelFilter !== "beginner" || !BEGINNER_ORDER.includes(lesson.id)))) && (!reviewOnly || grammarProgress.some(item => item.lessonId === lesson.id && item.lastResult === 'wrong')))
-      .sort((a, b) => (BEGINNER_ORDER.indexOf(a.id) < 0 ? 100 : BEGINNER_ORDER.indexOf(a.id)) - (BEGINNER_ORDER.indexOf(b.id) < 0 ? 100 : BEGINNER_ORDER.indexOf(b.id))),
+    () => GRAMMAR_LESSONS.filter(lesson => (filter === "전체" || lesson.category === filter) && (levelFilter === "all" || (levelFilter === "foundation" ? BEGINNER_ORDER.includes(lesson.id) : levelFilter === "bridge" ? BRIDGE_ORDER.includes(lesson.id) : lesson.level === levelFilter && !GUIDED_GRAMMAR_ORDER.includes(lesson.id))) && (!reviewOnly || grammarProgress.some(item => item.lessonId === lesson.id && item.lastResult === 'wrong')))
+      .sort((a, b) => (GUIDED_GRAMMAR_ORDER.indexOf(a.id) < 0 ? 100 : GUIDED_GRAMMAR_ORDER.indexOf(a.id)) - (GUIDED_GRAMMAR_ORDER.indexOf(b.id) < 0 ? 100 : GUIDED_GRAMMAR_ORDER.indexOf(b.id))),
     [filter, levelFilter, reviewOnly, grammarProgress],
   );
   // Keep the answered lesson visible long enough to read feedback in review mode.
   const activeLesson = visibleLessons.find(lesson => lesson.id === lessonId) ?? (pinnedLessonId ? GRAMMAR_LESSONS.find(lesson => lesson.id === pinnedLessonId) : undefined) ?? visibleLessons[0];
   const openLesson = (id: string) => { setLessonId(id); setPinnedLessonId(null); setStage(0); setShowHint(false); audio.stop(); };
-  const changeFilter = () => { setPinnedLessonId(null); setSelectedAnswers({}); setStage(0); setShowHint(false); };
+  const changeFilter = () => { audio.stop(); setPinnedLessonId(null); setSelectedAnswers({}); setStage(0); setShowHint(false); };
+
+  const openStage = (next: "foundation" | "bridge") => {
+    setLevelFilter(next); setFilter("전체"); setReviewOnly(false); setSelectedAnswers({});
+    openLesson(next === "foundation" ? BEGINNER_ORDER[0] : BRIDGE_ORDER[0]);
+  };
 
   const handleSelectAnswer = (lesson: GrammarLesson, choice: string) => {
     if (selectedAnswers[lesson.id]) {
@@ -147,11 +154,12 @@ export default function GrammarPage() {
         <p className="muted" style={{ margin: 0, fontSize: "15px", lineHeight: 1.6 }}>
           뜻과 만드는 순서를 이해하고, 예문을 읽은 뒤 한 문제씩 풀어요. は·を 같은 조사는 단어 뒤에 붙어 역할을 알려주는 말이에요.
         </p>
-        <label>추천 학습 순서 <select value={levelFilter} onChange={(event) => { setLevelFilter(event.target.value as typeof levelFilter); changeFilter(); }} style={{ minHeight: 44, marginTop: 12 }}><option value="foundation">첫걸음 · 순서대로 12수업</option><option value="beginner">기초 보충 자료 · 7항목</option><option value="basic">기본 표현 넓히기</option><option value="practical">응용 표현</option><option value="all">전체 문법</option></select></label>
-        <p className="muted">시험 등급이 아닌 앱 안의 학습 순서예요. 첫걸음은 명사 문장 → 질문·부정 → 지시어 → 형용사 → 동사·조사 순서예요. 12수업 모두 한국어 풀이와 직접 쓰기를 연결해요. 보충 자료는 설명·예문을 찾아보는 용도이며 첫걸음의 직접 쓰기 과정과 구분해요.</p>
+        <label>추천 학습 순서 <select value={levelFilter} onChange={(event) => { setLevelFilter(event.target.value as typeof levelFilter); setFilter("전체"); setReviewOnly(false); changeFilter(); }} style={{ minHeight: 44, marginTop: 12 }}><option value="foundation">첫걸음 · 순서대로 12수업</option><option value="bridge">다음 걸음 · 생활 문장 7수업</option><option value="consolidation">생활·여행 종합 연습 · 2개</option><option value="beginner">기초 참고 자료</option><option value="basic">기본 표현 넓히기</option><option value="practical">응용 표현</option><option value="all">전체 문법</option></select></label>
+        <p className="muted">시험 등급이 아닌 앱 안의 학습 순서예요. 첫걸음은 명사 문장 → 질문·부정 → 지시어 → 형용사 → 동사·조사 순서예요. 12수업 모두 한국어 풀이와 직접 쓰기를 연결해요. 다음 걸음은 물건 설명·질문·동작 변화·좋아하는 대상을 연결해요. 참고 자료는 안내형 수업과 구분해 찾아볼 수 있어요.</p>
         <details><summary>학습 구성의 참고 자료</summary><p>국제교류기금의 한국어 안내와 한국어 입문 교재의 공개 구성을 비교해, 단어 → 한국어 설명 → 문장 구성 → 적용·복습으로 정리했어요. 예문과 문제는 앱에서 만든 것이며 공식 교재를 옮긴 것이 아니에요.</p><a href="https://www.jpf.or.kr/irodori/sData/pdf/starter/X_howto_kr.pdf" target="_blank" rel="noreferrer">이로도리 한국어 학습 안내</a> · <a href="https://www.darakwon.co.kr/books/detailProduct.asp?p_id=6342&amp;pc_id_2=9&amp;pc_id_3=52" target="_blank" rel="noreferrer">다락원 공개 교재 구성</a></details>
       </div>
 
+      {levelFilter === 'consolidation' ? <GrammarConsolidation onListen={handleSpeak} onStop={audio.stop} /> : <>
       <div
         style={{
           display: "flex",
@@ -200,8 +208,8 @@ export default function GrammarPage() {
           const isCorrect = selectedAnswer === lesson.quiz.answer;
           const progressItem = grammarProgress.find((item) => item.lessonId === lesson.id);
           const progressText = progressItem
-            ? `진도: 정답 ${progressItem.correctCount}회 · 오답 ${progressItem.wrongCount}회`
-            : "진도: 아직 풀지 않음";
+            ? `선택 문제: 정답 ${progressItem.correctCount}회 · 오답 ${progressItem.wrongCount}회`
+            : "선택 문제: 아직 풀지 않음";
           const recentText = progressItem
             ? `최근: ${progressItem.lastResult === "correct" ? "정답" : "오답"}`
             : "최근: -";
@@ -367,11 +375,16 @@ export default function GrammarPage() {
                   </button>
                 )}
               </div>}
-              {selectedAnswer && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}><button type="button" className="btn" style={actionStyle} onClick={() => setStage(0)}>설명 다시 보기</button>{visibleLessons.some(item => item.id !== lesson.id) && <button type="button" className="btn" style={actionStyle} onClick={() => { const index = visibleLessons.findIndex(item => item.id === lesson.id); openLesson(visibleLessons[(index + 1) % visibleLessons.length].id); }}>다음 문법 배우기</button>}</div>}
+              {selectedAnswer && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}><button type="button" className="btn" style={actionStyle} onClick={() => setStage(0)}>설명 다시 보기</button>{visibleLessons.findIndex(item => item.id === lesson.id) >= 0 && visibleLessons.findIndex(item => item.id === lesson.id) < visibleLessons.length - 1 && <button type="button" className="btn" style={actionStyle} onClick={() => openLesson(visibleLessons[visibleLessons.findIndex(item => item.id === lesson.id) + 1].id)}>다음 문법 배우기</button>}
+              {reviewOnly && !visibleLessons.some(item => item.id === lesson.id) && visibleLessons.length > 0 && <button type="button" className="btn" style={actionStyle} onClick={() => openLesson(visibleLessons[0].id)}>다음 복습 문제</button>}
+              {levelFilter === 'foundation' && lesson.id === BEGINNER_ORDER.at(-1) && <button type="button" className="btn" style={actionStyle} onClick={() => openStage('bridge')}>다음 걸음 시작하기</button>}
+              {levelFilter === 'bridge' && lesson.id === BRIDGE_ORDER.at(-1) && <button type="button" className="btn" style={actionStyle} onClick={() => { changeFilter(); setLevelFilter('consolidation'); }}>생활·여행 종합 연습하기</button>}
+              {levelFilter === 'bridge' && lesson.id === BRIDGE_ORDER.at(-1) && <button type="button" className="btn" style={actionStyle} onClick={() => openStage('bridge')}>다음 걸음 처음부터 복습</button>}</div>}
             </article>
           );
         })}
       </div>
+      </>}
     </section>
   );
 }

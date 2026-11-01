@@ -1,6 +1,6 @@
 // Original, bounded text exercises. The sequence is informed by Irodori's public
 // learning guide; this is not copied course content or a proficiency assessment.
-export type GrammarWritingPractice = { context: string; words: string; prompt: string; before: string; after: string; answers: string[]; result: string; reason: string };
+export type GrammarWritingPractice = { context: string; words: string; prompt: string; before: string; after: string; answers: string[]; result: string; reason: string; reading?: string; answerReadings?: Record<string, string>; sentenceInput?: boolean; questionInput?: boolean };
 export const GRAMMAR_WRITING_PRACTICE: Record<string, GrammarWritingPractice> = {
  desu: {context:'내 물건에 설명표를 붙여요.',words:'これ = 이것 · 本(ほん) = 책 · です = 입니다',prompt:'「이것은 책입니다」의 끝맺음을 써 보세요.',before:'これは本',after:'。',answers:['です'],result:'これは本です。',reason:'本은 사물 이름인 명사예요. 명사를 설명하는 공손한 문장은 です로 마쳐요.'},
  wa: {context:'가방 속 물건이 무엇인지 설명해요.',words:'これ = 이것 · かばん = 가방 · は = 은/는(조사일 때 와)',prompt:'「이것은 가방입니다」에서 무엇에 대해 설명하는지 표시해요.',before:'これ',after:'かばんです。',answers:['は'],result:'これはかばんです。',reason:'설명할 대상인 これ 뒤에 は를 붙여요. 동작의 대상을 나타내는 を와 달라요.'},
@@ -11,7 +11,10 @@ export const GRAMMAR_WRITING_PRACTICE: Record<string, GrammarWritingPractice> = 
  ni: {context:'내 이동 계획을 메모해요.',words:'学校(がっこう) = 학교 · 行きます(いきます) = 갑니다',prompt:'「학교에 갑니다」의 목적지를 표시해요.',before:'学校',after:'行きます。',answers:['に','へ'],result:'学校に行きます。',reason:'이번 수업은 목적지를 나타내는 に를 연습해요. 방향을 나타내는 へ(에로 읽음)도 이 문장에 맞아요. 학교에서 공부하는 행동의 장소에는 で를 써요.'},
  de: {context:'어디에서 공부할지 계획해요.',words:'学校(がっこう) = 학교 · 勉強します(べんきょうします) = 공부합니다',prompt:'「학교에서 공부합니다」의 행동 장소를 표시해요.',before:'学校',after:'勉強します。',answers:['で'],result:'学校で勉強します。',reason:'공부하는 행동이 벌어지는 장소에는 で를 써요. 그 장소로 가는 목적지 に와 구분해요.'},
 };
-export const normalizeGrammarInput = (value: string) => value.normalize('NFKC').trim();
+export const normalizeGrammarInput = (value: string, sentenceInput = false, questionInput = false) => {
+ const normalized = value.normalize('NFKC').trim();
+ return sentenceInput ? normalized.replace(questionInput ? /[。?]$/ : /。$/, '').trim() : normalized;
+};
 export const GRAMMAR_WRITING_ALTERNATES: Record<string, GrammarWritingPractice> = {
  desu: {context:'내 직업을 소개하는 짧은 글을 써요.',words:'私(わたし) = 저 · 会社員(かいしゃいん) = 회사원',prompt:'「저는 회사원입니다」의 끝맺음을 써요.',before:'私は会社員',after:'。',answers:['です'],result:'私は会社員です。',reason:'회사원은 명사이므로 です로 끝내요.'},
  wa: {context:'학교 사진에 설명을 붙여요.',words:'ここ = 여기 · 学校(がっこう) = 학교',prompt:'「여기는 학교입니다」의 화제를 표시해요.',before:'ここ',after:'学校です。',answers:['は'],result:'ここは学校です。',reason:'여기에 대해 설명하므로 ここ 뒤에 は를 써요.'},
@@ -34,3 +37,7 @@ Object.assign(GRAMMAR_WRITING_ALTERNATES, {
  'i-adjective': {context:'이동할 목적지를 간단히 묘사해요.',words:'大きい(おおきい) = 크다 · 駅(えき) = 역',prompt:'배운 い형용사로 「큰 역입니다」의 큰을 써요.',before:'',after:'駅です。',answers:['大きい','おおきい'],result:'大きい駅です。',reason:'大きい도 い형용사예요. 명사 앞에서 い를 유지해요.'},
  'na-adjective': {context:'회사 위치를 설명하는 짧은 메모를 써요.',words:'静か(しずか) = 조용함 · 場所(ばしょ) = 장소',prompt:'「조용한 장소입니다」를 완성해요.',before:'静か',after:'場所です。',answers:['な'],result:'静かな場所です。',reason:'場所라는 명사를 꾸미므로 静かな로 써요.'},
 } satisfies Record<string, GrammarWritingPractice>);
+
+import { BRIDGE_WRITING, BRIDGE_ALTERNATES } from "./grammarBridge.ts";
+Object.assign(GRAMMAR_WRITING_PRACTICE, BRIDGE_WRITING);
+Object.assign(GRAMMAR_WRITING_ALTERNATES, BRIDGE_ALTERNATES);
