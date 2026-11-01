@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { mergeBodyFields } from '../app/lib/bodyImport.ts';
+import { bodyForm, bodyImportOwner, validMeasurementDate, mergeBodyFields } from '../app/lib/bodyImport.ts';
+import { bodyManualBaseline, mergeBodyManualEdit, readBodyManualStore } from '../app/lib/bodyManualEdit.ts';
 import { recoverStorageTransaction, writeStorageBatch } from '../app/data/storageTransaction.ts';
 
 function fixture() {
-  const weights = { today: { weight: 80, recordedAt: 'old' }, other: { weight: 79, recordedAt: 'keep' } };
-  const inbody = { today: { bmi: 24, memo: 'old', futureMetric: 7 }, other: { memo: 'keep' } };
+  const weights = { '2026-11-01': { weight: 80, recordedAt: 'old' }, other: { weight: 79, recordedAt: 'keep' } };
+  const inbody = { '2026-11-01': { bmi: 24, memo: 'old', futureMetric: 7 }, other: { memo: 'keep' } };
   const initial = { weights: JSON.stringify(weights), inbody: JSON.stringify(inbody) };
   const data = new Map(Object.entries(initial));
   const state = { failSecond: false, failRollback: false, published: 0, notified: 0, dirty: true, message: '', cleared: false };
@@ -23,13 +24,13 @@ function fixture() {
   };
   const form = { weight: '78.2', bmi: '23', memo: 'edited' };
   const context = {
-    window: { localStorage: storage, confirm: () => true }, form, weights, inbody, dateKey: 'today',
-    currentWeight: weights.today, currentInbody: inbody.today, hasRecord: true,
-    inbodyFields: [{ key: 'bmi', label: 'BMI' }], mergeBodyFields, writeStorageBatch,
+    window: { localStorage: storage, confirm: () => true }, form, weights, inbody, dateKey: '2026-11-01',
+    currentWeight: weights['2026-11-01'], currentInbody: inbody['2026-11-01'], hasRecord: true,
+    getLocalDateKey: () => '2026-11-01', bodyForm, bodyImportOwner, validMeasurementDate, bodyManualBaseline, mergeBodyManualEdit, readBodyManualStore, recoverStorageTransaction, inbodyFields: [{ key: 'bmi', label: 'BMI' }], mergeBodyFields, writeStorageBatch,
     WEIGHT_RECORDS_KEY: 'weights', INBODY_RECORDS_KEY: 'inbody',
     writeJson: (key: string, value: unknown) => storage.setItem(key, JSON.stringify(value)),
     notifyRecordsChanged: () => { state.notified++; },
-    manualEdit: { current: { dirty: true } }, setManualDirty: (value: boolean) => { state.dirty = value; },
+    manualEdit: { current: { date: '2026-11-01', dirty: true, owner: bodyImportOwner(storage), baseline: bodyManualBaseline(weights['2026-11-01'], inbody['2026-11-01']), dirtyFields: ['weight', 'bmi', 'memo'] } }, setManualDirty: (value: boolean) => { state.dirty = value; },
     onChange: () => { state.published++; }, setRecordMessage: (value: string) => { state.message = value; },
     setForm: () => { state.cleared = true; },
   };
@@ -65,8 +66,8 @@ for (const action of ['save', 'remove'] as const) {
     const weights = JSON.parse(f.data.get('weights')!); const inbody = JSON.parse(f.data.get('inbody')!);
     assert.equal(weights.other.weight, 79); assert.equal(inbody.other.memo, 'keep');
     if (action === 'save') {
-      assert.equal(weights.today.weight, 78.2); assert.equal(inbody.today.memo, 'edited'); assert.equal(inbody.today.futureMetric, 7);
-    } else { assert.equal(weights.today, undefined); assert.equal(inbody.today, undefined); }
+      assert.equal(weights['2026-11-01'].weight, 78.2); assert.equal(inbody['2026-11-01'].memo, 'edited'); assert.equal(inbody['2026-11-01'].futureMetric, 7);
+    } else { assert.equal(weights['2026-11-01'], undefined); assert.equal(inbody['2026-11-01'], undefined); }
   });
   test(`${action}: handler retry alone recovers an interrupted rollback before writing`, () => {
     const f = fixture(); f.state.failSecond = true; f.state.failRollback = true;

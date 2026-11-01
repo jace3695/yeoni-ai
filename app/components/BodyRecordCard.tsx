@@ -14,9 +14,10 @@ import {
 } from "../data/recordStorage";
 import { parseOaReport, type OaDraftMeasurement } from "../lib/oaReportParser";
 import { INBODY_270S_INVENTORY, parseInbody270sReport, type InbodyOcrAssets } from "../lib/inbodyReportParser";
-import { bodyForm, bodyImportOwner, mergeBodyFields, mergeBodyImport, validMeasurementDate } from "../lib/bodyImport";
+import { bodyForm, bodyImportOwner, mergeBodyImport, validMeasurementDate } from "../lib/bodyImport";
+import { bodyManualBaseline, mergeBodyManualEdit, readBodyManualStore, type BodyManualDraft } from "../lib/bodyManualEdit";
 import { getLocalDateKey } from "../data/dietPlans";
-import { notifyRecordsChanged, writeStorageBatch } from "../data/storageTransaction";
+import { notifyRecordsChanged, recoverStorageTransaction, writeStorageBatch } from "../data/storageTransaction";
 import { useUnsavedChanges } from "../../components/useUnsavedChanges";
 import { OA_REPORT_INVENTORY } from '../lib/oaReportInventory';
 import { oaSourceMeasurements, setOaProMapping, OA_TRUNK_ROWS } from '../lib/oaDraftMapping';
@@ -129,7 +130,7 @@ export default function BodyRecordCard({
   const currentWeight = weights[dateKey];
   const currentInbody = inbody[dateKey];
   const [form, setForm] = useState<Record<string, string>>({});
-  const manualEdit = useRef({ date: dateKey, dirty: false });
+  const manualEdit = useRef<BodyManualDraft>({ date: dateKey, dirty: false, owner: null, baseline: {}, dirtyFields: [] });
   const [manualDirty, setManualDirty] = useState(false);
   useEffect(() => { onManualDraftChange?.(manualDirty); }, [manualDirty, onManualDraftChange]);
   const [confirmedPro, setConfirmedPro] = useState(false);
@@ -155,7 +156,7 @@ export default function BodyRecordCard({
       importVersion.current += 1;
       setDraft(null);
       setConfirmedPro(false);
-      manualEdit.current.dirty = false;
+      manualEdit.current = { date: activeDate.current, dirty: false, owner: null, baseline: {}, dirtyFields: [] };
       setManualDirty(false);
       setForm({});
       setImporting(false);
@@ -186,7 +187,7 @@ export default function BodyRecordCard({
   useEffect(() => {
     // A save in another panel refreshes store objects; keep this date's unsaved input.
     if (manualEdit.current.date === dateKey && manualEdit.current.dirty) return;
-    manualEdit.current = { date: dateKey, dirty: false };
+    manualEdit.current = { date: dateKey, dirty: false, owner: bodyImportOwner(window.localStorage), baseline: bodyManualBaseline(currentWeight, currentInbody), dirtyFields: [] };
     setManualDirty(false);
     const next: Record<string, string> = {
       weight:
@@ -224,7 +225,7 @@ export default function BodyRecordCard({
       setDraft({ ...draft, sourceReviewed: false, metricSources, autoMappedKeys: draft.autoMappedKeys.filter(item => item !== key), patch: { ...draft.patch, [key]: value } });
     }
     else {
-      manualEdit.current = { date: dateKey, dirty: true };
+      manualEdit.current = { ...manualEdit.current, dirty: true, dirtyFields: [...new Set([...manualEdit.current.dirtyFields, key])] };
       setManualDirty(true);
       setForm({ ...form, [key]: value });
     }
@@ -262,13 +263,14 @@ export default function BodyRecordCard({
     const weightInput = (form.weight ?? "").trim();
     const parsedWeight = Math.round(Number(weightInput) * 10) / 10;
     if (
-      weightInput !== "" &&
+      manualEdit.current.dirtyFields.includes("weight") && weightInput !== "" &&
       (!Number.isFinite(parsedWeight) || parsedWeight <= 0)
     ) {
       setRecordMessage("체중은 0보다 큰 숫자로 입력해주세요.");
       return;
     }
     const invalidField = inbodyFields.find(({ key, text }) => {
+      if (!manualEdit.current.dirtyFields.includes(key)) return false;
       const input = (form[key] ?? "").trim();
       if (!input) return false;
       if (text) return input.length > 80 || (key === 'measurementTime' && !/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(input));
@@ -290,36 +292,31 @@ export default function BodyRecordCard({
       );
       return;
     }
-    const nextWeights = { ...weights };
-    if (Number.isFinite(parsedWeight) && parsedWeight > 0)
-      nextWeights[dateKey] = {
-        weight: parsedWeight,
-        recordedAt: new Date().toISOString(),
-      };
-    else delete nextWeights[dateKey];
-
-    const record = mergeBodyFields(currentInbody, { ...Object.fromEntries(inbodyFields.map(({key}) => [key, form[key] || ''])), memo: form.memo || '' });
-    if (record.metricSources?.weight && parsedWeight !== currentWeight?.weight) {
-      if (!weightInput) delete record.metricSources.weight;
-      else record.metricSources.weight = { ...record.metricSources.weight, method: 'ocr-edited' };
-    }
-    const nextInbody = { ...inbody };
-    if (Object.keys(record).length) nextInbody[dateKey] = record;
-    else delete nextInbody[dateKey];
-
     try {
-      writeStorageBatch(window.localStorage, {
-        [WEIGHT_RECORDS_KEY]: JSON.stringify(nextWeights),
-        [INBODY_RECORDS_KEY]: JSON.stringify(nextInbody),
+      const storage = window.localStorage;
+      const draft = manualEdit.current;
+      if (draft.date !== dateKey || draft.owner === null || bodyImportOwner(storage) !== draft.owner) throw new Error("계정 또는 날짜가 변경되었습니다. 날짜를 다시 열어 기록을 확인해 주세요.");
+      if (!validMeasurementDate(dateKey, getLocalDateKey())) throw new Error("실제 측정 날짜를 확인해 주세요. 미래 날짜는 저장할 수 없습니다.");
+      recoverStorageTransaction(storage);
+      const weightSnapshot = storage.getItem(WEIGHT_RECORDS_KEY);
+      const bodySnapshot = storage.getItem(INBODY_RECORDS_KEY);
+      const latestWeights = readBodyManualStore<WeightRecordStore>(weightSnapshot);
+      const latestInbody = readBodyManualStore<InbodyRecordStore>(bodySnapshot);
+      const next = mergeBodyManualEdit(latestWeights, latestInbody, dateKey, draft.baseline, form, draft.dirtyFields, getLocalDateKey());
+      if (bodyImportOwner(storage) !== draft.owner || storage.getItem(WEIGHT_RECORDS_KEY) !== weightSnapshot || storage.getItem(INBODY_RECORDS_KEY) !== bodySnapshot) throw new Error("기록이 변경되었습니다. 입력 내용은 유지합니다. 다시 저장해 주세요.");
+      writeStorageBatch(storage, {
+        [WEIGHT_RECORDS_KEY]: JSON.stringify(next.weights),
+        [INBODY_RECORDS_KEY]: JSON.stringify(next.inbody),
       });
-    } catch {
-      setRecordMessage("저장하지 못했습니다. 입력 내용은 유지합니다. 기기 저장 공간을 확인한 뒤 다시 시도해 주세요. 이전 기록 복구가 필요한 경우 다음 저장 전에 복구를 다시 시도합니다.");
+      manualEdit.current = { ...draft, dirty: false, dirtyFields: [], baseline: bodyManualBaseline(next.weights[dateKey], next.inbody[dateKey]) };
+      setForm(bodyForm(next.weights, next.inbody, dateKey));
+      setManualDirty(false);
+      notifyRecordsChanged();
+      onChange(next);
+    } catch (error) {
+      setRecordMessage(error instanceof Error ? `${error.message} 저장하지 못했습니다. 입력 내용은 유지합니다.` : "저장하지 못했습니다. 입력 내용은 유지합니다. 기기 저장 공간을 확인한 뒤 다시 시도해 주세요.");
       return;
     }
-    notifyRecordsChanged();
-    manualEdit.current.dirty = false;
-    setManualDirty(false);
-    onChange({ weights: nextWeights, inbody: nextInbody });
     setRecordMessage(`${dateKey} 체중·인바디 기록을 저장했습니다.`);
   };
 
