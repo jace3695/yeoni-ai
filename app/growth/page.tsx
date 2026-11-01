@@ -17,6 +17,7 @@ export default function GrowthPage() {
   const [today, setToday] = useState(getLocalDateKey);
   const [date, setDate] = useState(getLocalDateKey);
   const [editing, setEditing] = useState<string | null>(null);
+  const [category, setCategory] = useState<"custom" | "handwriting">("custom");
   const [title, setTitle] = useState("");
   const [days, setDays] = useState<number[]>([...ALL_GROWTH_WEEKDAYS]);
   const [busy, setBusy] = useState(false);
@@ -51,7 +52,7 @@ export default function GrowthPage() {
     catch { setMessage("저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요."); }
     finally { inFlight.current = false; setBusy(false); }
   };
-  const resetEditor = () => { setEditing(null); setTitle(""); setDays([...ALL_GROWTH_WEEKDAYS]); };
+  const resetEditor = () => { setEditing(null); setCategory("custom"); setTitle(""); setDays([...ALL_GROWTH_WEEKDAYS]); };
   const save = (event: FormEvent) => {
     event.preventDefault();
     if (!title.trim() || !days.length || (!editing && routines.length >= GROWTH_ROUTINE_LIMIT)) return;
@@ -59,7 +60,7 @@ export default function GrowthPage() {
     void run(async () => {
       const result = editing
         ? await growth.updateRoutine(editing, { title: title.trim(), preferred_days: [...days].sort((a,b) => a-b), target_sessions_per_week: days.length })
-        : await growth.addRoutine({ title, category: "custom", targetMinutes: 5, preferredDays: days, targetSessionsPerWeek: days.length });
+        : await growth.addRoutine({ title, category, targetMinutes: 5, preferredDays: days, targetSessionsPerWeek: days.length });
       if (result.error) throw result.error;
       resetEditor();
     }, editing ? "활동을 수정했어요. 이전 완료 기록은 그대로예요." : "활동을 추가했어요.");
@@ -88,12 +89,15 @@ export default function GrowthPage() {
   return <main className={styles.page}>
     <header className={styles.header}><AppIdentity kind="growth" title="자기계발" subtitle="내가 정하는 작은 실천" /><Link href="/">홈</Link></header>
     <section className={styles.hero}><h1>내가 하고 싶은 일, 하나씩</h1><p>활동과 요일을 정하고, 마친 날에 체크해요.</p></section>
+    <section className={styles.panel}><h2>손글씨 연습</h2><p>한글 손글씨 수업과 자유 연습을 이어갈 수 있어요. 기존 자료와 연습 기록은 유지됩니다.</p><div className={styles.actions}><Link href="/growth/handwriting">손글씨 수업 열기</Link><Link href="/growth/handwriting/free">자유롭게 따라 쓰기</Link></div>
+      {growth.dataReady && !routines.some(row => row.category === 'handwriting') && <button disabled={!ready} onClick={() => { resetEditor(); setCategory('handwriting'); setTitle('손글씨 연습'); editor.current?.focus(); }}>손글씨 활동과 요일 설정</button>}
+    </section>
     <form className={styles.panel} onSubmit={save}>
-      <h2>{editing ? "활동 수정" : "새 활동"}</h2>
+      <h2>{editing ? "활동 수정" : category === "handwriting" ? "손글씨 활동 등록" : "새 활동"}</h2>
       <fieldset disabled={!ready}><label className={styles.name}>활동 이름<input ref={editor} value={title} maxLength={60} required placeholder="예: 책 10쪽 읽기" onChange={event => setTitle(event.target.value)} /></label>
       <fieldset className={styles.days}><legend>진행할 요일 · 하나 이상 선택</legend>{GROWTH_WEEKDAYS.map(day => <label key={day.id}><input type="checkbox" checked={days.includes(day.id)} onChange={event => setDays(previous => event.target.checked ? [...new Set([...previous, day.id])] : previous.filter(value => value !== day.id))} /><span>{day.label}</span></label>)}</fieldset>
       {!days.length && <p role="status">진행할 요일을 하나 이상 선택해 주세요.</p>}
-      <div className={styles.actions}><button className={styles.primary} disabled={!title.trim() || !days.length || (!editing && routines.length >= GROWTH_ROUTINE_LIMIT)}>{editing ? "수정 저장" : "활동 추가"}</button>{editing && <button type="button" onClick={resetEditor}>취소</button>}</div>
+      <div className={styles.actions}><button className={styles.primary} disabled={!title.trim() || !days.length || (!editing && routines.length >= GROWTH_ROUTINE_LIMIT)}>{editing ? "수정 저장" : "활동 추가"}</button>{(editing || category === "handwriting") && <button type="button" onClick={resetEditor}>취소</button>}</div>
       {!editing && routines.length >= GROWTH_ROUTINE_LIMIT && <p>활동은 보관한 항목을 포함해 {GROWTH_ROUTINE_LIMIT}개까지 등록할 수 있어요. 기존 활동을 수정해 주세요.</p>}</fieldset>
     </form>
     {(message || growth.notice) && <p role="status" className={styles.notice}>{growth.notice || message}</p>}

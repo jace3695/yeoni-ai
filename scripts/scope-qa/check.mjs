@@ -77,6 +77,7 @@ try {
    await page.getByRole('button',{name:'ア 발음 듣기',exact:true}).press('Enter');
    await page.waitForFunction(()=>window.__spoken.length===2);
   } else {
+   if(route.endsWith('/grammar')) await page.getByRole('button',{name:'예문으로 확인하기'}).click();
    await page.getByRole('button',{name:route.endsWith('/words')?'🔊 단어 듣기':'예문 듣기',exact:true}).first().click();
    await page.waitForFunction(()=>window.__spoken.length===1);
   }

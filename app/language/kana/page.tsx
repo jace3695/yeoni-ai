@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import Image from "next/image";
+import { useState, useCallback, useRef, useEffect, useMemo, useId } from "react";
 import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
 import { FREE_MODE } from "@/lib/free-mode";
 import { useLearningAudio } from "@/components/language/useLearningAudio";
 import { authenticatedJsonHeaders } from "@/app/lib/authenticatedHeaders";
+
+const kanaBoardStyle: React.CSSProperties = {
+  width: "100%", maxWidth: 340, aspectRatio: "1", margin: "0 auto", position: "relative",
+  border: "1px solid #cbd5e1", borderRadius: 10, overflow: "hidden", backgroundColor: "#fff",
+  backgroundImage: "linear-gradient(to right, transparent calc(50% - .5px), #cbd5e1 calc(50% - .5px), #cbd5e1 calc(50% + .5px), transparent calc(50% + .5px)), linear-gradient(to bottom, transparent calc(50% - .5px), #cbd5e1 calc(50% - .5px), #cbd5e1 calc(50% + .5px), transparent calc(50% + .5px))",
+};
 
 function getStrokeSvgPaths(char: string, tab: "hiragana" | "katakana") {
   return Array.from(char).map((part) => {
@@ -24,7 +29,9 @@ function loadStrokeSvg(src: string) {
   return strokeSvgBundlePromise.then((bundle) => bundle[src] ?? "");
 }
 
-function StrokeGlyph({ src, label }: { src: string; label: string }) {
+function StrokeGlyph({ src, label, animated = true }: { src: string; label: string; animated?: boolean }) {
+  const instanceId = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const [failed, setFailed] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -33,12 +40,27 @@ function StrokeGlyph({ src, label }: { src: string; label: string }) {
     const animations: Animation[] = [];
     const loadAndPlay = async () => {
       const markup = await loadStrokeSvg(src);
-      if (!markup || cancelled) return;
+      if (cancelled) return;
+      if (!markup) throw new Error("Missing stroke guide");
       const documentSvg = new DOMParser().parseFromString(markup, "image/svg+xml").documentElement;
       const target = svgRef.current;
       if (!target || cancelled) return;
+      // Each board owns its clip paths; duplicate SVG IDs can resolve to another board.
+      const ids = new Map(Array.from(documentSvg.querySelectorAll('[id]')).map(node => [node.id, `${instanceId}-${node.id}`]));
+      documentSvg.querySelectorAll('*').forEach(node => {
+        for (const attribute of Array.from(node.attributes)) {
+          let value = attribute.value;
+          if (attribute.name === 'id') value = ids.get(value) ?? value;
+          else for (const [oldId, newId] of ids) value = value.replaceAll(`url(#${oldId})`, `url(#${newId})`).replace(new RegExp(`^#${oldId}$`), `#${newId}`);
+          node.setAttribute(attribute.name, value);
+        }
+      });
       target.replaceChildren(...Array.from(documentSvg.childNodes).map((node) => document.importNode(node, true)));
       target.setAttribute("viewBox", documentSvg.getAttribute("viewBox") ?? "0 0 1024 1024");
+      if (!animated) {
+        target.querySelector('[data-strokesvg="strokes"]')?.remove();
+        return;
+      }
       const strokeItems = Array.from(target.querySelectorAll<SVGElement>('g[data-strokesvg="strokes"] > *'));
       const strokes = strokeItems.map((item) =>
         item.matches("path, line, polyline, polygon, circle, ellipse, rect")
@@ -72,20 +94,22 @@ function StrokeGlyph({ src, label }: { src: string; label: string }) {
       };
       play();
     };
-    void loadAndPlay();
+    setFailed(false);
+    void loadAndPlay().catch(() => { if (!cancelled) setFailed(true); });
     return () => {
       cancelled = true;
       if (replayTimer) clearTimeout(replayTimer);
       animations.forEach((animation) => animation.cancel());
     };
-  }, [src]);
+  }, [src, animated, instanceId]);
 
-  return <svg ref={svgRef} role="img" aria-label={`${label} 획순 애니메이션`} style={{ width: "100%", height: "100%", maxHeight: 300, display: "block", margin: "0 auto", "--shadow": "#d1d5db", "--stroke": "#111827" } as React.CSSProperties} />;
+  if (failed) return <span role="status">획순 자료를 불러오지 못했어요. 페이지를 다시 열어 주세요.</span>;
+  return <svg ref={svgRef} role="img" aria-label={`${label} ${animated ? "획순 애니메이션" : "따라쓰기 가이드"}`} style={{ width: "100%", height: "100%", display: "block", margin: "0 auto", "--shadow": "#94a3b8", "--stroke": "#111827" } as React.CSSProperties} />;
 }
 
-function KanaStrokeAnimation({ char, tab }: { char: string; tab: "hiragana" | "katakana" }) {
+function KanaStrokeAnimation({ char, tab, animated = true }: { char: string; tab: "hiragana" | "katakana"; animated?: boolean }) {
   const paths = getStrokeSvgPaths(char, tab);
-  return <div style={{ width: "100%", height: "100%", display: "grid", gridTemplateColumns: `repeat(${paths.length}, minmax(0, 1fr))`, alignItems: "center", gap: 4 }}>{paths.map((path, index) => <StrokeGlyph key={path} src={path} label={Array.from(char)[index]} />)}</div>;
+  return <div style={{ width: "100%", height: "100%", display: "grid", gridTemplateColumns: `repeat(${paths.length}, minmax(0, 1fr))`, alignItems: "center", gap: 4 }}>{paths.map((path, index) => <StrokeGlyph key={path} src={path} label={Array.from(char)[index]} animated={animated} />)}</div>;
 }
 
 const hiragana = [
@@ -1662,8 +1686,6 @@ export default function KanaPage() {
   const currentWritingTip = currentStrokeOrderInfo?.tip?.trim() || "글자 모양을 보고 천천히 따라 써 보세요.";
   const currentChar = currentWritingItem?.char ?? "";
   const currentGuideMap = tab === "hiragana" ? hiraganaGuideMap : katakanaGuideMap;
-  const currentGuideSrc = currentGuideMap[currentChar] ?? "";
-  const hasPngGuide = Boolean(currentGuideSrc);
   const currentGifMap = tab === "hiragana" ? hiraganaGifMap : katakanaGifMap;
   const hasWritingAnimation = (item: KanaItem) => Boolean(currentGifMap[item.char]) || getStrokeSvgPaths(item.char, tab).length > 0;
   const baseGifCount = baseKanaItems.filter(hasWritingAnimation).length;
@@ -1673,22 +1695,10 @@ export default function KanaPage() {
   const auditGifCount = auditItems.filter(hasWritingAnimation).length;
   const auditPngCount = auditItems.filter((item) => Boolean(currentGuideMap[item.char])).length;
   const canDrawOnCanvas = writingSubMode === "quiz" || writingGuideMode === "faint" || writingGuideMode === "blank" || writingGuideMode === "view";
-  const kanaGuideTextStyle = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "13rem",
-    fontWeight: 700,
-    fontFamily: "inherit",
-    lineHeight: 1,
-    userSelect: "none" as const,
-    WebkitUserSelect: "none" as const,
-    pointerEvents: "none" as const,
-  };
   const writingGuideMessage = writingGuideMode === "view"
     ? "글자가 써지는 모습을 보고, 옆 칸에 따라 써보세요."
     : writingGuideMode === "faint"
-      ? "GIF 기준 글자 모양을 떠올리며 흐린 가이드 위에 써보세요."
+      ? "같은 획순 자료의 글자 모양을 보며 흐린 가이드 위에 써보세요."
       : "이제 기억해서 빈칸에 다시 써보세요.";
 
 
@@ -2422,78 +2432,30 @@ export default function KanaPage() {
           {writingSubMode === "trace" && writingGuideMode === "view" ? (
             <div className="kana-writing-grid" style={{ marginBottom: "0.95rem", width: "100%" }}>
               <section style={{ borderRadius: "12px", border: "1px solid #d1d5db", background: "#fff", padding: "0.75rem" }}>
-                <h3 style={{ marginBottom: "0.5rem", fontSize: "0.9rem", color: "#374151", fontWeight: 700 }}>쓰기 순서 보기</h3>
-                <div style={{ height: "340px", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "10px", background: "#f8fafc", padding: "0.5rem" }}>
+                <h3 style={{ marginBottom: "0.35rem", fontSize: "0.9rem", color: "#374151", fontWeight: 700 }}>쓰기 순서 보기</h3>
+                <div style={{ marginBottom: "0.5rem", fontSize: "0.82rem", color: "#4b5563" }}>검은 획이 움직이는 순서와 방향을 살펴보세요.</div>
+                <div style={kanaBoardStyle}>
                   <KanaStrokeAnimation key={`${tab}-${currentChar}`} char={currentChar} tab={tab} />
                 </div>
               </section>
               <section style={{ borderRadius: "12px", border: "1px solid #d1d5db", background: "#fff", padding: "0.75rem" }}>
                 <h3 style={{ marginBottom: "0.35rem", fontSize: "0.9rem", color: "#374151", fontWeight: 700 }}>따라 써보기</h3>
                 <div style={{ marginBottom: "0.5rem", fontSize: "0.82rem", color: "#4b5563" }}>획순 애니메이션의 글자 모양을 보며 직접 써보세요.</div>
-                <div ref={writingAreaRef} style={{ width: "100%", height: "340px", borderRadius: "10px", border: "1px solid #e5e7eb", background: "#fff", position: "relative", overflow: "hidden" }}>
-                  {hasPngGuide ? (
-                    <Image fill unoptimized sizes="(max-width: 768px) 100vw, 50vw" src={currentGuideSrc} alt={`${currentChar} 따라쓰기 PNG 가이드`} style={{ objectFit: "contain", opacity: 0.2, pointerEvents: "none", zIndex: 1 }} />
-                  ) : (
-                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 1 }}>
-                      <span style={{ fontSize: "140px", fontWeight: 700, color: "#d1d5db", opacity: 0.28, lineHeight: 1 }}>{currentChar}</span>
-                    </div>
-                  )}
-                  <canvas ref={writingCanvasRef} onPointerDown={startDrawing} onPointerMove={drawMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={endDrawing} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", zIndex: 4, cursor: "crosshair" }} />
+                <div ref={writingAreaRef} style={kanaBoardStyle}>
+                  <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}><KanaStrokeAnimation char={currentChar} tab={tab} animated={false} /></div>
+                  <canvas aria-label="가나 쓰기 연습장" ref={writingCanvasRef} onPointerDown={startDrawing} onPointerMove={drawMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={endDrawing} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", zIndex: 4, cursor: "crosshair" }} />
                 </div>
               </section>
             </div>
           ) : (
           <div
             ref={writingAreaRef}
-            style={{
-              width: "100%",
-              height: "420px",
-              borderRadius: "12px",
-              border: "1px solid #d1d5db",
-              background: "#fff",
-              position: "relative",
-              overflow: "hidden",
-              marginBottom: "0.95rem",
-            }}
+            style={{ ...kanaBoardStyle, marginBottom: "0.95rem" }}
           >
-            <div
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                top: "50%",
-                borderTop: "2px solid #eef1f5",
-                transform: "translateY(-1px)",
-                pointerEvents: "none",
-              }}
-            />
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                bottom: 0,
-                left: "50%",
-                borderLeft: "2px solid #eef1f5",
-                transform: "translateX(-1px)",
-                pointerEvents: "none",
-              }}
-            />
-            {writingSubMode === "trace" && writingGuideMode === "faint" && (
-              (hasPngGuide ? <Image fill unoptimized sizes="100vw" src={currentGuideSrc} alt={`${currentChar} 흐린 PNG 가이드`} style={{ objectFit: "contain", opacity: 0.2, pointerEvents: "none", zIndex: 1 }} /> : <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  zIndex: 1,
-                  color: "rgba(107, 114, 128, 0.22)",
-                  ...kanaGuideTextStyle,
-                }}
-              >
-                {currentWritingItem.char}
-              </div>)
-            )}
-            
+            {writingSubMode === "trace" && writingGuideMode === "faint" && <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}><KanaStrokeAnimation char={currentChar} tab={tab} animated={false} /></div>}
             {canDrawOnCanvas && (
             <canvas
+              aria-label="가나 쓰기 연습장"
               ref={writingCanvasRef}
               onPointerDown={(e) => {
                 e.preventDefault();

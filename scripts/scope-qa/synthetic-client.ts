@@ -3,6 +3,7 @@ const key = 'scope-qa-synthetic-database';
 const read = () => JSON.parse(localStorage.getItem(key) || '{"growth_routines":[],"growth_sessions":[]}');
 const write = (db: unknown) => localStorage.setItem(key, JSON.stringify(db));
 export const supabase = {
+  storage: { from: () => ({ download: async () => ({ data: null, error: { status: 404, message: 'Synthetic fixture has no private workbook' } }) }) },
   auth: { getUser: async () => ({ data: { user: { id: 'synthetic-owner' } }, error: null }) },
   from(table: string) {
     let mode = 'select'; let payload: any; const filters: ((row: any) => boolean)[] = [];
@@ -26,7 +27,7 @@ export const supabase = {
       }
       return { data: selected, error: null };
     };
-    const query: any = { select: () => query, order: () => query, abortSignal: () => query,
+    const query: any = { range: () => query, contains: (key: string, values: Record<string, unknown>) => { filters.push(row => Object.entries(values).every(([k, v]) => row[key]?.[k] === v)); return query; }, select: () => query, order: () => query, abortSignal: () => query,
       eq: (key: string, value: unknown) => { filters.push(row => row[key] === value); return query; },
       gte: (key: string, value: string) => { filters.push(row => row[key] >= value); return query; },
       in: (key: string, values: unknown[]) => { filters.push(row => values.includes(row[key])); return query; },

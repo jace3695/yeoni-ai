@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { BEGINNER_ORDER, BEGINNER_GUIDES } from "@/data/grammarBeginnerGuide";
 import {
   GRAMMAR_LESSONS,
   GRAMMAR_PROGRESS_KEY,
@@ -11,6 +12,8 @@ import {
 import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
 import { useLearningAudio } from "@/components/language/useLearningAudio";
 
+const actionStyle = { minHeight: 44, padding: "10px 16px", border: "1px solid #93c5fd", borderRadius: 10, background: "#eff6ff", color: "#1e3a8a", cursor: "pointer", fontWeight: 700 } as const;
+
 type GrammarFilter = "전체" | GrammarCategory;
 
 function normalizeChoice(choice: string | { text: string; reading?: string; rubySegments?: { text: string; reading?: string }[] }) {
@@ -20,6 +23,12 @@ function normalizeChoice(choice: string | { text: string; reading?: string; ruby
 
 export default function GrammarPage() {
   const audio = useLearningAudio();
+  const [pinnedLessonId, setPinnedLessonId] = useState<string | null>(null);
+  const [lessonId, setLessonId] = useState("desu");
+  const [stage, setStage] = useState<0 | 1 | 2>(0);
+  const [reviewOnly, setReviewOnly] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [filter, setFilter] = useState<GrammarFilter>("전체");
   const [levelFilter, setLevelFilter] = useState<GrammarLesson["level"] | "all">("beginner");
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
@@ -48,22 +57,30 @@ export default function GrammarPage() {
   const saveGrammarProgress = (next: GrammarProgressItem[]) => {
     setGrammarProgress(next);
     try {
+      setSaveError("");
       localStorage.setItem(GRAMMAR_PROGRESS_KEY, JSON.stringify(next));
     } catch {
-      // ignore
+      setSaveError("학습 기록을 이 기기에 저장하지 못했어요. 저장 공간과 브라우저 설정을 확인해 주세요.");
     }
   };
 
   const visibleLessons = useMemo(
-    () => GRAMMAR_LESSONS.filter((lesson) => (filter === "전체" || lesson.category === filter) && (levelFilter === "all" || lesson.level === levelFilter)),
-    [filter, levelFilter],
+    () => GRAMMAR_LESSONS.filter(lesson => (filter === "전체" || lesson.category === filter) && (levelFilter === "all" || lesson.level === levelFilter) && (!reviewOnly || grammarProgress.some(item => item.lessonId === lesson.id && item.lastResult === 'wrong')))
+      .sort((a, b) => (BEGINNER_ORDER.indexOf(a.id) < 0 ? 100 : BEGINNER_ORDER.indexOf(a.id)) - (BEGINNER_ORDER.indexOf(b.id) < 0 ? 100 : BEGINNER_ORDER.indexOf(b.id))),
+    [filter, levelFilter, reviewOnly, grammarProgress],
   );
+  // Keep the answered lesson visible long enough to read feedback in review mode.
+  const activeLesson = visibleLessons.find(lesson => lesson.id === lessonId) ?? (pinnedLessonId ? GRAMMAR_LESSONS.find(lesson => lesson.id === pinnedLessonId) : undefined) ?? visibleLessons[0];
+  const openLesson = (id: string) => { setLessonId(id); setPinnedLessonId(null); setStage(0); setShowHint(false); audio.stop(); };
+  const changeFilter = () => { setPinnedLessonId(null); setSelectedAnswers({}); setStage(0); setShowHint(false); };
 
   const handleSelectAnswer = (lesson: GrammarLesson, choice: string) => {
     if (selectedAnswers[lesson.id]) {
       return;
     }
 
+    setLessonId(lesson.id);
+    setPinnedLessonId(lesson.id);
     setSelectedAnswers((prev) => ({ ...prev, [lesson.id]: choice }));
 
     const isCorrect = choice === lesson.quiz.answer;
@@ -100,6 +117,7 @@ export default function GrammarPage() {
   };
 
   const resetLessonQuiz = (lessonId: string) => {
+    setShowHint(false);
     setSelectedAnswers((prev) => {
       const next = { ...prev };
       delete next[lessonId];
@@ -110,8 +128,8 @@ export default function GrammarPage() {
   const handleSpeak = (text: string) => { void audio.play(text); };
 
   return (
-    <section>
-      {audio.playing && <button type="button" className="btn" onClick={audio.stop}>소리 멈추기</button>}
+    <section style={{ maxWidth: 900, margin: "0 auto", padding: "16px 12px" }}>
+      {audio.playing && <button type="button" className="btn" style={actionStyle} onClick={audio.stop}>소리 멈추기</button>}
       {audio.audioError && <p role="status">{audio.audioError}</p>}
       <div
         style={{
@@ -125,9 +143,9 @@ export default function GrammarPage() {
       >
         <h1 style={{ fontSize: "28px", margin: "0 0 8px", color: "#1e3a8a" }}>문장 만드는 법</h1>
         <p className="muted" style={{ margin: 0, fontSize: "15px", lineHeight: 1.6 }}>
-          처음에는 쉬운 표현부터 보여줘요. 한 번에 하나씩 배우고 싶다면 ‘배우기’의 안내 수업을 이용해 주세요.
+          뜻과 만드는 순서를 이해하고, 예문을 읽은 뒤 한 문제씩 풀어요. は·を 같은 조사는 단어 뒤에 붙어 역할을 알려주는 말이에요.
         </p>
-        <label>추천 학습 순서 <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value as typeof levelFilter)} style={{ minHeight: 44, marginTop: 12 }}><option value="beginner">처음 배우는 표현</option><option value="basic">기본 표현 넓히기</option><option value="practical">응용 표현</option><option value="all">전체 문법</option></select></label>
+        <label>추천 학습 순서 <select value={levelFilter} onChange={(event) => { setLevelFilter(event.target.value as typeof levelFilter); changeFilter(); }} style={{ minHeight: 44, marginTop: 12 }}><option value="beginner">처음 배우는 표현</option><option value="basic">기본 표현 넓히기</option><option value="practical">응용 표현</option><option value="all">전체 문법</option></select></label>
         <p className="muted">시험 등급이 아닌 앱 안의 학습 순서예요. 원하는 단계는 언제든 볼 수 있어요.</p>
       </div>
 
@@ -149,7 +167,7 @@ export default function GrammarPage() {
             <button
               key={item}
               type="button"
-              onClick={() => setFilter(item)}
+              onClick={() => { setFilter(item); changeFilter(); }}
               style={{
                 border: isActive ? "1px solid #2563eb" : "1px solid #cbd5e1",
                 borderRadius: "999px",
@@ -168,9 +186,13 @@ export default function GrammarPage() {
         })}
       </div>
 
-      {visibleLessons.length === 0 && <p role="status">이 분류에는 해당 단계의 문법이 없어요. 분류나 학습 단계를 바꿔보세요.</p>}
+      {saveError && <p role="alert">{saveError}</p>}
+      <label style={{ display: 'block', marginBottom: 16 }}><input type="checkbox" checked={reviewOnly} onChange={event => { setReviewOnly(event.target.checked); changeFilter(); }} /> 최근 틀린 문법만 복습</label>
+      {!!visibleLessons.length && <label style={{ display: 'block', marginBottom: 16 }}>배울 문법 <select style={{ maxWidth: '100%', minHeight: 44 }} value={activeLesson?.id ?? ''} onChange={event => openLesson(event.target.value)}>{activeLesson && !visibleLessons.some(item => item.id === activeLesson.id) && <option value={activeLesson.id}>{activeLesson.title} · 방금 복습함</option>}{visibleLessons.map((lesson, index) => <option key={lesson.id} value={lesson.id}>{index + 1}. {lesson.title}</option>)}</select></label>}
+      {visibleLessons.length === 0 && !activeLesson && <p role="status">이 조건에 맞는 문법이 없어요. 복습 선택을 끄거나 분류·단계를 바꿔보세요.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: "12px" }}>
-        {visibleLessons.map((lesson) => {
+        {(activeLesson ? [activeLesson] : []).map((lesson) => {
+          const guide = BEGINNER_GUIDES[lesson.id];
           const selectedAnswer = selectedAnswers[lesson.id];
           const isCorrect = selectedAnswer === lesson.quiz.answer;
           const progressItem = grammarProgress.find((item) => item.lessonId === lesson.id);
@@ -199,14 +221,20 @@ export default function GrammarPage() {
                 <h2 style={{ fontSize: "18px", margin: 0 }}>{lesson.title}</h2>
                 <span style={{ fontSize: "12px", fontWeight: 700, borderRadius: "999px", border: "1px solid #bfdbfe", padding: "4px 10px", color: "#1d4ed8", background: "#eff6ff" }}>{lesson.category}</span>
               </div>
-              <p className="muted" style={{ margin: 0 }}>{lesson.summary}</p>
+              <p className="muted" style={{ margin: 0 }}>{guide?.goal ?? lesson.summary}</p>
+              <nav aria-label="문법 학습 단계" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{(['1. 설명', '2. 예문', '3. 연습'] as const).map((label, index) => <button type="button" className="btn" aria-current={stage === index ? 'step' : undefined} style={{ ...actionStyle, background: stage === index ? '#dbeafe' : '#fff' }} key={label} onClick={() => setStage(index as 0 | 1 | 2)}>{label}</button>)}</nav>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", fontSize: "12px" }}>
                 <span style={{ border: "1px solid #dbeafe", borderRadius: "999px", padding: "4px 8px", background: "#f8fbff" }}>{progressText}</span>
                 <span style={{ border: "1px solid #dbeafe", borderRadius: "999px", padding: "4px 8px", background: "#f8fbff" }}>{recentText}</span>
               </div>
+              {stage === 0 && <>
               <div style={{ fontSize: "14px", fontWeight: 700, color: "#1e3a8a" }}>핵심 패턴: {lesson.pattern}</div>
               <p className="muted" style={{ margin: 0, fontSize: "14px", lineHeight: 1.5 }}>{lesson.explanation}</p>
 
+              {guide && <ol style={{ paddingLeft: 24, lineHeight: 1.9 }}>{guide.steps.map(step => <li key={step}>{step}</li>)}</ol>}
+              <button type="button" className="btn" style={actionStyle} onClick={() => setStage(1)}>예문으로 확인하기</button></>}
+              {stage === 1 && <>
+              {guide && <div style={{ padding: 16, background: '#eff6ff', borderRadius: 12, lineHeight: 1.9 }}><strong>함께 문장 만들기</strong><p>{guide.worked}</p><p>단어 → 조사 → 끝맺음 순서로 뜻을 연결해 보세요.</p></div>}
               <div style={{ display: "grid", gap: "8px", borderRadius: "14px", border: "1px solid #e2e8f0", background: "#fcfdff", padding: "10px" }}>
                 {lesson.examples.map((e) => (
                   <div key={`${lesson.id}-${e.japanese}`} style={{ fontSize: "14px" }}>
@@ -241,9 +269,11 @@ export default function GrammarPage() {
                 </div>
               )}
 
-              <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "12px", display: "grid", gap: "10px" }}>
+              <button type="button" className="btn" style={actionStyle} onClick={() => setStage(2)}>이제 직접 풀기</button></>}
+              {stage === 2 && <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "12px", display: "grid", gap: "10px" }}>
                 <div style={{ fontSize: "14px", fontWeight: 700, color: "#1e3a8a" }}>연습 문제</div>
                 <p style={{ margin: 0, fontSize: "14px", lineHeight: 1.55 }}>{lesson.quiz.question}</p>
+                {guide && <><button type="button" className="btn" style={actionStyle} onClick={() => setShowHint(value => !value)} aria-expanded={showHint}>힌트 {showHint ? '접기' : '보기'}</button>{showHint && <p>{guide.hint}</p>}</>}
                 <div style={{ display: "grid", gap: "8px" }}>
                   {lesson.quiz.choices.map((rawChoice) => {
                     const choice = normalizeChoice(rawChoice);
@@ -287,7 +317,8 @@ export default function GrammarPage() {
                           fontWeight: 600,
                         }}
                       >
-                        {choice.text}
+                        {choice.rubySegments ? choice.rubySegments.map((segment, index) => segment.reading ? <ruby key={index}>{segment.text}<rt>{segment.reading}</rt></ruby> : <span key={index}>{segment.text}</span>) : choice.text}
+                        {choice.reading && <small style={{ display: 'block' }}>{choice.reading}</small>}
                       </button>
                     );
                   })}
@@ -306,7 +337,7 @@ export default function GrammarPage() {
                       color: isCorrect ? "#166534" : "#9a3412",
                     }}
                   >
-                    <div>{isCorrect ? "정답이에요!" : `아쉬워요. 정답은 ${lesson.quiz.answer} 입니다.`}</div>
+                    <div role="status">{isCorrect ? "정답이에요!" : `아쉬워요. 정답은 ${lesson.quiz.answer} 입니다.`}</div>
                     {lesson.quiz.explanation && <div style={{ marginTop: "4px" }}>{lesson.quiz.explanation}</div>}
                   </div>
                 )}
@@ -330,7 +361,8 @@ export default function GrammarPage() {
                     다시 풀기
                   </button>
                 )}
-              </div>
+              </div>}
+              {selectedAnswer && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}><button type="button" className="btn" style={actionStyle} onClick={() => setStage(0)}>설명 다시 보기</button>{visibleLessons.some(item => item.id !== lesson.id) && <button type="button" className="btn" style={actionStyle} onClick={() => { const index = visibleLessons.findIndex(item => item.id === lesson.id); openLesson(visibleLessons[(index + 1) % visibleLessons.length].id); }}>다음 문법 배우기</button>}</div>}
             </article>
           );
         })}
