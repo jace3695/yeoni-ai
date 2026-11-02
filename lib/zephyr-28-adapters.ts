@@ -1,4 +1,5 @@
 /** Server adapter factories only. No route registration, environment reads at import, or startup calls. */
+import {isZephyrSupabaseOrigin,hasZephyrIssuer} from './zephyr-28-host.ts';
 import process from 'node:process';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ZEPHYR_ONCE, type OnceDependencies, type OnceGrant, type OncePermit } from './zephyr-28-once.ts';
@@ -28,12 +29,31 @@ export async function readOnceJson(body: ReadableStream<Uint8Array> | null, limi
   } finally { signal.removeEventListener('abort', abort); reader.releaseLock(); }
 }
 
+/** Next may represent an empty POST as a non-null stream. Accept zero bytes only. */
+export async function hasEmptyTrialBody(request: Request): Promise<boolean> {
+  const signal=AbortSignal.any([request.signal,AbortSignal.timeout(8_000)]);
+  if(signal.aborted) return false;
+  if(!request.body) return true;
+  const reader=request.body.getReader();
+  const cancel=()=>{void reader.cancel().catch(()=>undefined);};
+  signal.addEventListener('abort',cancel,{once:true});
+  try {
+    for(;;){
+      const next=await reader.read();
+      if(signal.aborted) return false;
+      if(next.done) return true;
+      if(next.value.byteLength>0){await reader.cancel();return false;}
+    }
+  } catch {return false;}
+  finally{signal.removeEventListener('abort',cancel);reader.releaseLock();}
+}
+
 /** Future Next route supplies its existing server Supabase client. Bearer token is revalidated, never trusted from claims. */
 export function createZephyrServerDependencies(request: Request, client: SupabaseClient, config: {
   trustedOrigin: string; supabaseUrl: string;
 }, transport: Transport = fetch, readExistingGoogleKey = () => process.env.GOOGLE_TTS_API_KEY?.trim()): OnceDependencies {
   const origin = new URL(config.trustedOrigin), base = new URL(config.supabaseUrl);
-  if (origin.protocol !== 'https:' || origin.origin !== config.trustedOrigin || base.protocol !== 'https:'
+  if (!isZephyrSupabaseOrigin(config.supabaseUrl) || !hasZephyrIssuer(request.headers.get('authorization')) || origin.protocol !== 'https:' || origin.origin !== config.trustedOrigin || base.protocol !== 'https:'
     || base.username || base.password || base.search || base.hash || (base.pathname !== '/' && base.pathname !== '')
     || request.headers.get('origin') !== config.trustedOrigin || new URL(request.url).origin !== config.trustedOrigin) throw Error('UNAVAILABLE');
   const authorization = request.headers.get('authorization') ?? '';
@@ -91,7 +111,7 @@ export function createZephyrReservationBridge(clients: {
     try {
       if (request.method !== 'POST' || request.headers.get('content-type')?.split(';')[0] !== 'application/json') return json({code:'BLOCKED'},400);
       const authorization = request.headers.get('authorization') ?? '';
-      if (!authorization.startsWith('Bearer ') || request.signal.aborted) return json({code:'BLOCKED'},401);
+      if (!hasZephyrIssuer(authorization) || request.signal.aborted) return json({code:'BLOCKED'},401);
       const {data,error} = await clients.caller(authorization).auth.getUser(authorization.slice(7));
       if (error || !data.user || request.signal.aborted) return json({code:'BLOCKED'},401);
       const body = await readOnceJson(request.body,256,AbortSignal.any([request.signal,AbortSignal.timeout(8_000)]));

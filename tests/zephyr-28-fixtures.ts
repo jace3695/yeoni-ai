@@ -8,3 +8,5 @@ export function syntheticRequestCost(now=Date.now()): RequestCostEvidence {
  taxUpperMicrousd:84,taxBasisRef:'SYNTHETIC-TAX-NOT-REAL',taxCheckedAt:now,feeUpperMicrousd:0,feeBasisRef:'SYNTHETIC-FEE-NOT-REAL',feeCheckedAt:now,
  additionalPaidCalls:0,maximumMicrousd:10000,reviewedAt:now,expiresAt:now+600_000};
 }
+
+export const syntheticTrialJwt = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url')+'.'+Buffer.from(JSON.stringify({iss:'https://piqqukiiacncfbztktga.supabase.co/auth/v1'})).toString('base64url')+'.SYNTHETIC_SIGNATURE';

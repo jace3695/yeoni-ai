@@ -1,12 +1,12 @@
 import {createZephyrNextWrapper,createZephyrEdgeWrapper,ZEPHYR_PREVIEW_ORIGIN,ZEPHYR_PREVIEW_BRANCH} from '../lib/zephyr-28-wrappers.ts';
-import {syntheticRequestCost} from './zephyr-28-fixtures.ts';
+import {syntheticRequestCost,syntheticTrialJwt} from './zephyr-28-fixtures.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createClient} from '@supabase/supabase-js';
 import {createZephyrOnceRunner,createZephyrOnceHttpHandler,ZEPHYR_ONCE,type OnceDependencies} from '../lib/zephyr-28-once.ts';
 import {createZephyrServerDependencies,createZephyrReservationBridge,readOnceJson} from '../lib/zephyr-28-adapters.ts';
 const owner='00000000-0000-4000-8000-000000000001';
-const origin=ZEPHYR_PREVIEW_ORIGIN, backend='https://synthetic.supabase.co';
+const origin=ZEPHYR_PREVIEW_ORIGIN, backend='https://piqqukiiacncfbztktga.supabase.co';
 const input={requestId:ZEPHYR_ONCE.requestId};
 const ok=(v:unknown)=>Response.json(v);
 function fixture(wrappers=false){
@@ -34,7 +34,7 @@ function fixture(wrappers=false){
  const wrapped=createZephyrNextWrapper(()=>({VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:ZEPHYR_PREVIEW_BRANCH,YEONI_ZEPHYR_28_ONCE_ENABLED:'1',YEONI_ZEPHYR_28_TRUSTED_ORIGIN:origin,NEXT_PUBLIC_SUPABASE_URL:backend,GOOGLE_TTS_API_KEY:'SYNTHETIC-NOT-A-KEY'}),async()=>client(),fetcher);
  return{handler:wrappers?wrapped:handler,fetcher,client,bridge,get google(){return google},get rpc(){return rpc},get auth(){return auth},get keyReads(){return keyReads},requests,fail(){providerFailure=true}};
 }
-const request=(signal?:AbortSignal)=>new Request(origin+'/api/tts/once-28',{method:'POST',headers:{origin,authorization:'Bearer SYNTHETIC-TOKEN','content-type':'application/json'},body:JSON.stringify(input),signal});
+const request=(signal?:AbortSignal)=>new Request(origin+'/api/tts/once-28',{method:'POST',headers:{origin,authorization:'Bearer '+syntheticTrialJwt,'content-type':'application/json'},body:JSON.stringify(input),signal});
 test('actual SDK auth/REST adapters and HTTP factory use fixed bridge/provider; fresh requests never retry provider',async()=>{
  const f=fixture();const responses=await Promise.all([f.handler(request()),f.handler(request())]);
  assert.equal(responses.filter(r=>r.status===200).length,1);assert.equal(f.google,1);assert.equal(f.keyReads,1);assert.ok(f.auth>=4);
@@ -45,7 +45,7 @@ test('actual transport adapter rejected provider consumes synthetic durable stat
  await f.handler(request());assert.equal(f.google,1);
 });
 test('origin and bearer restrictions fail before server key read or any outgoing mock request',async()=>{
- for(const headers of [{origin:'https://other.invalid',authorization:'Bearer SYNTHETIC-TOKEN'}, {origin,authorization:''}]){
+ for(const headers of [{origin:'https://other.invalid',authorization:'Bearer '+syntheticTrialJwt}, {origin,authorization:''}]){
   const f=fixture();const req=new Request(origin+'/api/tts/once-28',{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify(input)});
   assert.equal((await f.handler(req)).status,403);assert.equal(f.requests.length,0);assert.equal(f.keyReads,0);
  }
@@ -70,7 +70,7 @@ test('reservation bridge default off and invalid identity/action cannot touch se
  let admin=0;const f=fixture();const clients={caller:()=>f.client(),admin:()=>{admin++;return f.client()}};
  assert.equal((await createZephyrReservationBridge(clients)(request())).status,404);
  const bridge=createZephyrReservationBridge(clients,true);
- const bad=new Request(backend+'/functions/v1/zephyr-28-once',{method:'POST',headers:{authorization:'Bearer SYNTHETIC','content-type':'application/json'},body:JSON.stringify({...input,action:'reserve',ownerId:'forged'})});
+ const bad=new Request(backend+'/functions/v1/zephyr-28-once',{method:'POST',headers:{authorization:'Bearer '+syntheticTrialJwt,'content-type':'application/json'},body:JSON.stringify({...input,action:'reserve',ownerId:'forged'})});
  assert.equal((await bridge(bad)).status,400);assert.equal(admin,0);
 });
 
