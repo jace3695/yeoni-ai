@@ -27,6 +27,7 @@ export default function CategoryEditor({ userId, records, currency, onChanged }:
   const [loaded, setLoaded] = useState(false);
   const [changeDetails, setChangeDetails] = useState<Record<string, { transaction_id: string; before_category: string | null; before_value: string | number | null }[]>>({});
   const loadGeneration = useRef(0);
+  const operationGeneration = useRef(0);
   useUnsavedChanges(Boolean(selected.length || pending || busy));
 
   const load = useCallback(async () => {
@@ -51,26 +52,31 @@ export default function CategoryEditor({ userId, records, currency, onChanged }:
   }, [client, userId]);
   useEffect(() => {
     void load().catch(reason => setError(reason instanceof Error ? reason.message : '분류 이력 조회에 실패했어요.'));
-    return () => { loadGeneration.current += 1; };
+    return () => { loadGeneration.current += 1; operationGeneration.current += 1; };
   }, [load]);
 
-  const perform = async (operation: () => Promise<string>) => {
+  const perform = async (operation: (isCurrent: () => boolean) => Promise<string>) => {
     if (busyRef.current) return;
+    const generation = operationGeneration.current;
+    const isCurrent = () => generation === operationGeneration.current;
     busyRef.current = true; setBusy(true); setLoaded(false); setError(''); setMessage('');
     try {
       const { data, error: authError } = await client.auth.getUser();
+      if (!isCurrent()) return;
       if (authError || data.user?.id !== userId) throw new Error('로그인 계정이 바뀌었어요. 다시 로그인해 주세요.');
-      const result = await operation();
+      const result = await operation(isCurrent);
+      if (!isCurrent()) return;
       setSelected([]); setConfirmation(false); setUndoId(null); setForgetRule(null);
       await onChanged();
-      if (await load()) setMessage(result);
-    } catch (reason) { setConfirmation(false); setUndoId(null); setForgetRule(null); setError(reason instanceof Error ? reason.message : '처리 결과를 확인하지 못했어요. 같은 요청으로 다시 확인해 주세요.'); }
-    finally { busyRef.current = false; setBusy(false); }
+      if (!isCurrent()) return;
+      if (await load() && isCurrent()) setMessage(result);
+    } catch (reason) { if (!isCurrent()) return; setConfirmation(false); setUndoId(null); setForgetRule(null); setError(reason instanceof Error ? reason.message : '처리 결과를 확인하지 못했어요. 같은 요청으로 다시 확인해 주세요.'); }
+    finally { if (isCurrent()) { busyRef.current = false; setBusy(false); } }
   };
   const parsed = field === 'category' ? { value: category, error: '' } : parseExpenseField(field, fieldInput);
   const fieldLabel = EDIT_FIELDS[field];
   const changeLabel = (change: CategoryChange) => change.field_name ? EDIT_FIELDS[change.field_name] : change.category || '분류';
-  const save = () => perform(async () => {
+  const save = () => perform(async isCurrent => {
     if (!pending && (parsed.error || !selected.length)) throw new Error(parsed.error || '수정할 내역을 선택해 주세요.');
     const request: EditRequest = pending || {
       p_request_id: crypto.randomUUID(), p_rows: selected.map(record => ({ id: record.id, expected: record })),
@@ -79,6 +85,9 @@ export default function CategoryEditor({ userId, records, currency, onChanged }:
     window.localStorage.setItem(pendingCategoryKey(userId), JSON.stringify(request));
     setPending(request);
     const { data, error: rpcError } = await client.rpc('p_field' in request ? 'change_budget_expense_fields' : 'change_budget_categories', request);
+    // A dispatched request may have committed. Retain its journal for the next
+    // mounted editor to reconcile; never silently retry or clear a late result.
+    if (!isCurrent()) return '';
     if (rpcError) {
       if (rpcError.code === 'P0001' || /^(22|23)/.test(rpcError.code || '') || rpcError.code === 'PGRST202') {
         window.localStorage.removeItem(pendingCategoryKey(userId)); setPending(null); setConfirmation(false); setSelected([]);
@@ -103,7 +112,9 @@ export default function CategoryEditor({ userId, records, currency, onChanged }:
     return '분류 기억을 지웠어요. 저장된 지출 분류는 유지됩니다.';
   });
   const showDetails = async (id: string) => {
+    const generation = operationGeneration.current;
     const { data, error: detailsError } = await client.from('budget_category_change_items').select('transaction_id,before_category,before_value').eq('user_id', userId).eq('change_id', id).order('transaction_id').limit(100);
+    if (generation !== operationGeneration.current) return;
     if (detailsError) { setError('변경 전 분류를 읽지 못했어요. 다시 확인해 주세요.'); return; }
     setChangeDetails(current => ({ ...current, [id]: data || [] }));
   };
