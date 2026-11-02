@@ -213,7 +213,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
       localBodySessionInvalid.current = true;
       chatEpoch.current += 1;
       chatSendId.current += 1;
-      setLocalBodyCandidate(null); setChatMessages([WELCOME_MESSAGE]); setChatInput(''); setActiveAdvice(null);
+      setLocalBodyCandidate(null); setChatMessages([WELCOME_MESSAGE]); setChatInput(''); setActiveAdvice(null); setAdviceBusy(false);
       clearCharacter(); chatLock.current = false; setChatSending(false); setChatHistoryLoading(false);
     };
     const storage = (event: StorageEvent) => {
@@ -222,7 +222,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
     };
     chatEpoch.current += 1;
     chatSendId.current += 1;
-    setLocalBodyCandidate(null); setChatMessages([WELCOME_MESSAGE]); setChatInput(''); setActiveAdvice(null);
+    setLocalBodyCandidate(null); setChatMessages([WELCOME_MESSAGE]); setChatInput(''); setActiveAdvice(null); setAdviceBusy(false);
     clearCharacter(); chatLock.current = false; setChatSending(false);
     if (pending.ownerId) {
       chatDraftLease.current = openAssistantChatInputDraft(pending.ownerId);
