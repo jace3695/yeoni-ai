@@ -1,4 +1,6 @@
-# Fixed 28-character trial — local, unregistered installation candidate
+# Fixed 28-character trial — local installation candidate
+
+Local registration follow-up: `app/api/tts/once-28/route.ts` now copies the reviewed Next entrypoint and remains default-off. It has not been pushed or deployed. Effective inspection-app/Supabase project matching is pending because the configured public URL is stored read-protected and the local proxy rejected the inspection-site GET. The `install/` files remain reviewable drafts; Edge is still unregistered. Earlier unregistered-entry descriptions below refer to those draft files. No remote installation or approval row has been created.
 
 Exact text: **안녕하세요. 연이예요. 오늘도 차근차근 함께할게요.**
 Google `ko-KR-Chirp3-HD-Zephyr`, MP3, exactly one request/28 Unicode characters including spaces/punctuation.
