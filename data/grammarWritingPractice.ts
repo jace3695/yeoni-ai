@@ -1,6 +1,6 @@
 // Original, bounded text exercises. The sequence is informed by Irodori's public
 // learning guide; this is not copied course content or a proficiency assessment.
-export type GrammarWritingPractice = { context: string; words: string; prompt: string; before: string; after: string; answers: string[]; result: string; reason: string; reading?: string; answerReadings?: Record<string, string>; sentenceInput?: boolean; questionInput?: boolean };
+export type GrammarWritingPractice = { context: string; words: string; prompt: string; before: string; after: string; answers: string[]; result: string; reason: string; reading?: string; answerReadings?: Record<string, string>; sentenceInput?: boolean; questionInput?: boolean; fragmentInput?: boolean };
 export const GRAMMAR_WRITING_PRACTICE: Record<string, GrammarWritingPractice> = {
  desu: {context:'내 물건에 설명표를 붙여요.',words:'これ = 이것 · 本(ほん) = 책 · です = 입니다',prompt:'「이것은 책입니다」의 끝맺음을 써 보세요.',before:'これは本',after:'。',answers:['です'],result:'これは本です。',reason:'本은 사물 이름인 명사예요. 명사를 설명하는 공손한 문장은 です로 마쳐요.'},
  wa: {context:'가방 속 물건이 무엇인지 설명해요.',words:'これ = 이것 · かばん = 가방 · は = 은/는(조사일 때 와)',prompt:'「이것은 가방입니다」에서 무엇에 대해 설명하는지 표시해요.',before:'これ',after:'かばんです。',answers:['は'],result:'これはかばんです。',reason:'설명할 대상인 これ 뒤에 は를 붙여요. 동작의 대상을 나타내는 を와 달라요.'},
