@@ -86,8 +86,18 @@ try{
   await page.evaluate(()=>window.qa.listeners.forEach(fn=>fn('SIGNED_IN',{user:{id:'synthetic-B'}})));
   await expect(page.locator('[data-reply-text]')).toHaveCount(0);await expect(page.locator('[data-reply-status]')).toHaveAttribute('data-reply-status','idle');
   await expect(host.getByRole('img',{name:'인간형 연이',exact:true})).toBeVisible();passed.push('account boundary clears private reply and retains only device appearance');
+  await page.getByRole('button',{name:'같은 응답 ID 다시 전달',exact:true}).click();
+  await expect(page.locator('[data-reply-text]')).toHaveCount(0);
+  await expect(page.locator('[data-reply-status]')).toHaveAttribute('data-reply-status','idle');
+  passed.push('account reset keeps replayed dismissed response ID hidden');
   await page.getByRole('button',{name:'합성 응답',exact:true}).click();await expect(page.locator('[data-reply-text]')).toHaveCount(1);
+  await expect(page.locator('[data-reply-text]')).toContainText('합성 응답');
+  passed.push('new response ID displays even with identical reply text after account reset');
   await page.evaluate(()=>{window.qa.navigate('/budget');});await expect(page.locator('[data-reply-text]')).toHaveCount(0);passed.push('navigation resets stale reply state');
+  await page.getByRole('button',{name:'같은 응답 ID 다시 전달',exact:true}).click();await expect(page.locator('[data-reply-text]')).toHaveCount(0);
+  await expect(page.locator('[data-reply-status]')).toHaveAttribute('data-reply-status','idle');
+  await page.getByRole('button',{name:'합성 응답',exact:true}).click();await expect(page.locator('[data-reply-text]')).toHaveCount(1);
+  passed.push('route reset rejects same ID replay and accepts new ID with identical text');
   await page.evaluate(()=>window.qa.navigate('/'));await page.getByRole('heading').click();
   await page.emulateMedia({reducedMotion:'reduce'});await expect(host.locator('canvas')).toHaveAttribute('data-running','false');passed.push('reduced motion stops loop');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
