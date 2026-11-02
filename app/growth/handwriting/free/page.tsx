@@ -2,7 +2,7 @@
 
 import AppCompanion from "@/components/AppCompanion";
 import Link from "next/link";
-import { PointerEvent, useEffect, useRef, useState } from "react";
+import { PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import AppIdentity from "@/app/components/AppIdentity";
 import { supabase } from "@/app/lib/supabase";
 import { getLocalDateKey } from "@/utils/dateKey";
@@ -29,12 +29,13 @@ export default function GrowthHandwritingPage() {
   const [saved, setSaved] = useState(false);
   const [locked, setLocked] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const lifetime = useRef({ active: false, epoch: 0, owner: null as string | null, saving: false, restoring: false });
   const pending = useRef<{owner:string;id:string;resourceId:string;path:string;uploaded:boolean;resourceSaved:boolean;blob:Blob;session:Parameters<typeof growth.saveSession>[0]} | null>(null);
   const handwritingRoutine = growth.routines.find((routine) => routine.category === "handwriting") ?? null;
   const metrics = handwritingMetrics(evidenceRef.current);
   useUnsavedChanges(metrics.strokes > 0 && !saved);
 
-  const snapshot = () => {
+  const snapshot = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const next = historyRef.current.slice(0, historyIndexRef.current + 1);
@@ -42,16 +43,16 @@ export default function GrowthHandwritingPage() {
     historyRef.current = next.slice(-20);
     historyIndexRef.current = historyRef.current.length - 1;
     setHistoryVersion((value) => value + 1);
-  };
+  }, []);
 
-  const fillWhite = () => {
+  const fillWhite = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const context = canvas.getContext("2d");
     if (!context) return;
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
-  };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,7 +62,41 @@ export default function GrowthHandwritingPage() {
     canvas.height = Math.round(width * 0.62);
     fillWhite();
     snapshot();
-  }, []);
+  }, [fillWhite, snapshot]);
+
+  const resetForOwner = useCallback(() => {
+    const scope = lifetime.current;
+    scope.epoch += 1; scope.saving = false; scope.restoring = false;
+    pending.current = null; drawingRef.current = false;
+    strokeStartRef.current = null; strokeMovedRef.current = false;
+    evidenceRef.current = emptyHandwritingEvidence();
+    historyRef.current = []; historyIndexRef.current = -1;
+    setSaving(false); setSaved(false); setLocked(false); setRestoring(false);
+    setGuideIndex(0); setInkColor("#242231");
+    fillWhite(); snapshot();
+  }, [fillWhite, snapshot]);
+
+  useEffect(() => {
+    const scope = lifetime.current;
+    scope.active = true;
+    const subscription = supabase?.auth.onAuthStateChange((_event, session) => {
+      const owner = session?.user.id ?? null;
+      if (scope.owner === owner) return;
+      scope.owner = owner;
+      resetForOwner();
+    });
+    return () => {
+      scope.active = false; scope.epoch += 1;
+      subscription?.data.subscription.unsubscribe();
+    };
+  }, [resetForOwner]);
+
+  useEffect(() => {
+    const owner = growth.user?.id ?? null;
+    if (lifetime.current.owner === owner) return;
+    lifetime.current.owner = owner;
+    resetForOwner();
+  }, [growth.user?.id, resetForOwner]);
 
   const point = (event: PointerEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget;
@@ -70,7 +105,7 @@ export default function GrowthHandwritingPage() {
   };
 
   const startDrawing = (event: PointerEvent<HTMLCanvasElement>) => {
-    if (locked || restoring || drawingRef.current) return;
+    if (!growth.dataReady || lifetime.current.saving || lifetime.current.restoring || locked || restoring || drawingRef.current) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     drawingRef.current = true;
     lastPointRef.current = point(event);
@@ -78,7 +113,7 @@ export default function GrowthHandwritingPage() {
   };
 
   const draw = (event: PointerEvent<HTMLCanvasElement>) => {
-    if (!drawingRef.current) return;
+    if (!drawingRef.current || lifetime.current.saving || lifetime.current.restoring) return;
     const context = event.currentTarget.getContext("2d");
     if (!context) return;
     const next = point(event);
@@ -99,7 +134,7 @@ export default function GrowthHandwritingPage() {
   };
 
   const stopDrawing = () => {
-    if (!drawingRef.current) return;
+    if (!drawingRef.current || lifetime.current.saving || lifetime.current.restoring) return;
     drawingRef.current = false;
     if (!strokeMovedRef.current) return;
     evidenceRef.current={...evidenceRef.current,strokes:evidenceRef.current.strokes+1,activeMs:evidenceRef.current.activeMs+Math.max(0,performance.now()-(strokeStartRef.current??performance.now()))};
@@ -109,11 +144,14 @@ export default function GrowthHandwritingPage() {
   const restore = (index: number) => {
     const canvas = canvasRef.current;
     const source = historyRef.current[index];
-    if (!canvas || !source || locked || restoring) return;
+    if (!canvas || !source || lifetime.current.saving || lifetime.current.restoring || locked || restoring) return;
+    const epoch = lifetime.current.epoch;
+    const isCurrent = () => lifetime.current.active && lifetime.current.epoch === epoch;
+    lifetime.current.restoring = true;
     setRestoring(true);
     const image = new Image();
-    image.onload = () => { const context = canvas.getContext("2d"); context?.clearRect(0, 0, canvas.width, canvas.height); context?.drawImage(image, 0, 0); evidenceRef.current={...source.evidence}; historyIndexRef.current=index; setRestoring(false);setHistoryVersion(value=>value+1); };
-    image.onerror=()=>{setRestoring(false);growth.setNotice('연습장을 복원하지 못했어요. 다시 시도해 주세요.');};
+    image.onload = () => { if (!isCurrent()) return; lifetime.current.restoring = false; const context = canvas.getContext("2d"); context?.clearRect(0, 0, canvas.width, canvas.height); context?.drawImage(image, 0, 0); evidenceRef.current={...source.evidence}; historyIndexRef.current=index; setRestoring(false);setHistoryVersion(value=>value+1); };
+    image.onerror=()=>{if (!isCurrent()) return; lifetime.current.restoring = false;setRestoring(false);growth.setNotice('연습장을 복원하지 못했어요. 다시 시도해 주세요.');};
     image.src = source.image;
   };
 
@@ -121,30 +159,37 @@ export default function GrowthHandwritingPage() {
 
   const save = async () => {
     const canvas = canvasRef.current;
-    if (!canvas || !supabase || !growth.user || !growth.dataReady || saving || saved || restoring || !evidenceRef.current.strokes) return;
+    if (!canvas || !supabase || !growth.user || !growth.dataReady || lifetime.current.saving || lifetime.current.restoring || saving || saved || restoring || !evidenceRef.current.strokes) return;
+    const scope = lifetime.current;
+    const epoch = scope.epoch;
+    const owner = growth.user.id;
+    const isCurrent = () => scope.active && scope.epoch === epoch && scope.owner === owner;
+    if (!isCurrent()) return;
+    const check = () => { if (!isCurrent()) throw Error('stale-handwriting-operation'); };
+    scope.saving = true;
     setSaving(true);
     setLocked(true);
     try {
       if(!pending.current){
-        const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,'image/png',.92));if(!blob)throw Error('image');
+        const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,'image/png',.92));check();if(!blob)throw Error('image');
         const date=getLocalDateKey(),id=crypto.randomUUID(),resourceId=crypto.randomUUID(),measured=handwritingMetrics(evidenceRef.current);
         pending.current={owner:growth.user.id,id,resourceId,path:`${growth.user.id}/${date}/handwriting-${resourceId}.png`,uploaded:false,resourceSaved:false,blob,session:{id,routineId:handwritingRoutine?.id ?? null,sessionDate:date,status:'completed',plannedMinutes:handwritingRoutine?.target_minutes ?? 15,actualMinutes:Math.round(measured.activeSeconds/60),memo:GUIDE_TEXTS[guideIndex],source:'handwriting',metrics:{resourceId,guideText:GUIDE_TEXTS[guideIndex],...measured}}};
       }
       const job=pending.current;if(job.owner!==growth.user.id)throw Error('owner');
       if(!job.uploaded){
-        const upload=await supabase.storage.from('growth-resources').upload(job.path,job.blob,{contentType:'image/png',upsert:false});
-        if(upload.error){const existing=await supabase.storage.from('growth-resources').download(job.path);if(existing.error||existing.data.size!==job.blob.size)throw Error('upload');}
+        const upload=await supabase.storage.from('growth-resources').upload(job.path,job.blob,{contentType:'image/png',upsert:false});check();
+        if(upload.error){const existing=await supabase.storage.from('growth-resources').download(job.path);check();if(existing.error||existing.data.size!==job.blob.size)throw Error('upload');}
         job.uploaded=true;
       }
       if(!job.resourceSaved){
-        const resource=await supabase.from('growth_resources').insert({id:job.resourceId,user_id:job.owner,routine_id:job.session.routineId,title:`손글씨 연습 ${job.session.sessionDate}`,category:'handwriting',storage_path:job.path,mime_type:'image/png',size_bytes:job.blob.size,classification:'direct',notes:job.session.memo});
-        if(resource.error){const existing=await supabase.from('growth_resources').select('id').eq('id',job.resourceId).eq('user_id',job.owner).eq('storage_path',job.path).maybeSingle();if(existing.error||!existing.data)throw Error('resource');}
+        const resource=await supabase.from('growth_resources').insert({id:job.resourceId,user_id:job.owner,routine_id:job.session.routineId,title:`손글씨 연습 ${job.session.sessionDate}`,category:'handwriting',storage_path:job.path,mime_type:'image/png',size_bytes:job.blob.size,classification:'direct',notes:job.session.memo});check();
+        if(resource.error){const existing=await supabase.from('growth_resources').select('id').eq('id',job.resourceId).eq('user_id',job.owner).eq('storage_path',job.path).maybeSingle();check();if(existing.error||!existing.data)throw Error('resource');}
         job.resourceSaved=true;
       }
-      const session=await growth.saveSession(job.session);if(session.error)throw Error('session');
+      const session=await growth.saveSession(job.session);check();if(session.error)throw Error('session');
       setSaved(true);growth.setNotice('손글씨 이미지와 실제 측정 기록을 비공개로 저장했어요.');
-    }catch{growth.setNotice('저장 결과를 확인하지 못했어요. 같은 기록 다시 확인으로 이미지·실행 기록을 재확인해 주세요.');}
-    finally{setSaving(false);}
+    }catch{if (isCurrent()) growth.setNotice('저장 결과를 확인하지 못했어요. 같은 기록 다시 확인으로 이미지·실행 기록을 재확인해 주세요.');}
+    finally{if (isCurrent()) { scope.saving = false; setSaving(false); }}
   };
 
   return <main className="min-h-dvh bg-yeoni-bg pb-10 text-[#242231]">
