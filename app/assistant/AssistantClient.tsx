@@ -235,6 +235,9 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
     window.addEventListener('yeoni-cloud-session-changed', invalidate);
     window.addEventListener('storage', storage);
     return () => {
+      // Revoke pending chat/advice work before this owner view leaves.
+      chatEpoch.current += 1;
+      chatSendId.current += 1;
       chatDraftLease.current = null;
       authSubscription?.data.subscription.unsubscribe();
       entryLock.current = null;
