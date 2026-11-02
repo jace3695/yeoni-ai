@@ -49,38 +49,48 @@ export default function LanguageCloudSync({ children }: { children?: ReactNode }
       prepareLanguageLocalState(userId);
       observedLocal = stableState(readLanguageState());
 
-      const getRemote = async (): Promise<RemoteRow | null> => {
+      const isOwner = () => {
+        try { return window.localStorage.getItem("language-cloud-sync-user") === userId; }
+        catch { return false; }
+      };
+      const getRemote = async (check: () => void): Promise<RemoteRow | null> => {
+        check();
         const { data, error } = await authClient.from("language_user_state")
           .select("state, updated_at").eq("user_id", userId).maybeSingle();
+        check();
         if (error) throw error;
         return data as RemoteRow | null;
       };
 
-      const verifyRemote = async (expected: Record<string, unknown>) => {
-        const confirmed = await getRemote();
+      const verifyRemote = async (expected: Record<string, unknown>, check: () => void) => {
+        const confirmed = await getRemote(check);
         if (!confirmed || stableState(confirmed.state) !== stableState(expected)) {
           throw new Error("저장 후 서버 학습 기록이 달라졌습니다. 기기 기록은 보존했으니 다시 시도해 주세요.");
         }
       };
 
-      const insertRemote = async (state: Record<string, unknown>) => {
+      const insertRemote = async (state: Record<string, unknown>, check: () => void) => {
+        check();
         const { error } = await authClient.from("language_user_state").insert({
           user_id: userId,
           state,
           updated_at: new Date().toISOString(),
         });
+        check();
         if (error) throw error;
-        await verifyRemote(state);
+        await verifyRemote(state, check);
       };
 
-      const updateRemote = async (state: Record<string, unknown>, expectedUpdatedAt: string) => {
+      const updateRemote = async (state: Record<string, unknown>, expectedUpdatedAt: string, check: () => void) => {
+        check();
         const { data, error } = await authClient.from("language_user_state")
           .update({ state, updated_at: new Date().toISOString() })
           .eq("user_id", userId).eq("updated_at", expectedUpdatedAt)
           .select("updated_at").maybeSingle();
+        check();
         if (error) throw error;
         if (!data) return false;
-        await verifyRemote(state);
+        await verifyRemote(state, check);
         return true;
       };
 
@@ -94,13 +104,14 @@ export default function LanguageCloudSync({ children }: { children?: ReactNode }
       const sync = async (initial = false) => {
         if (syncing || !active || isRecordResetRunning()) return;
         const version = resetVersion;
-        const cancelled = () => !active || version !== resetVersion || isRecordResetRunning();
+        const cancelled = () => !active || !isOwner() || version !== resetVersion || isRecordResetRunning();
+        const check = () => { if (cancelled()) throw new Error("학습 기록 요청이 종료됐어요."); };
         syncing = true;
         setStatus("syncing");
         setMessage("");
         try {
           let local = readLanguageState();
-          let remoteRow = await getRemote();
+          let remoteRow = await getRemote(check);
           if (cancelled()) return;
           local = readLanguageState();
           let remote = remoteRow?.state ?? {};
@@ -108,7 +119,7 @@ export default function LanguageCloudSync({ children }: { children?: ReactNode }
           const remoteHash = stableState(remote);
 
           if (!remoteRow) {
-            await insertRemote(local);
+            await insertRemote(local, check);
             if (cancelled()) return;
             lastSnapshot = localHash;
             saveLanguageSyncBase(userId, local);
@@ -117,10 +128,10 @@ export default function LanguageCloudSync({ children }: { children?: ReactNode }
             let merged = base ? mergeCloudStateFromBase(base, remote, local) : mergeCloudState(remote, local);
             let saved = stableState(merged) === remoteHash;
             for (let attempt = 0; attempt < 4 && !saved; attempt += 1) {
-              saved = await updateRemote(merged, remoteRow.updated_at);
+              saved = await updateRemote(merged, remoteRow.updated_at, check);
               if (cancelled()) return;
               if (!saved) {
-                remoteRow = await getRemote();
+                remoteRow = await getRemote(check);
                 if (!remoteRow) break;
                 remote = remoteRow.state;
                 merged = mergeCloudStateFromBase(base ?? {}, remote, local);
@@ -141,10 +152,10 @@ export default function LanguageCloudSync({ children }: { children?: ReactNode }
               let merged = mergeCloudStateFromBase(base, remote, local);
               let saved = false;
               for (let attempt = 0; attempt < 4 && !saved; attempt += 1) {
-                saved = await updateRemote(merged, remoteRow.updated_at);
+                saved = await updateRemote(merged, remoteRow.updated_at, check);
                 if (cancelled()) return;
                 if (!saved) {
-                  remoteRow = await getRemote();
+                  remoteRow = await getRemote(check);
                   if (!remoteRow) break;
                   merged = mergeCloudStateFromBase(base, remoteRow.state, local);
                 }
@@ -156,7 +167,7 @@ export default function LanguageCloudSync({ children }: { children?: ReactNode }
               saveLanguageSyncBase(userId, merged);
               if (local.languageRecordResetV1 !== merged.languageRecordResetV1) requestSafeReload();
             } else if (localChanged) {
-              const saved = await updateRemote(local, remoteRow.updated_at);
+              const saved = await updateRemote(local, remoteRow.updated_at, check);
               if (!saved) throw new Error("다른 기기의 학습 기록이 변경됐습니다. 다시 동기화해 주세요.");
               if (cancelled()) return;
               lastSnapshot = localHash;
@@ -187,7 +198,7 @@ export default function LanguageCloudSync({ children }: { children?: ReactNode }
       };
 
       await sync(true);
-      if (!active) return;
+      if (!active || !isOwner()) return;
       setInitialized(true);
       syncVisibleChanges = () => {
         if (document.visibilityState === "visible") void sync();
