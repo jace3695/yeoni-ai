@@ -5,5 +5,5 @@
 .portrait canvas{max-height:150px;width:auto;max-width:100%;margin:auto}
 .portrait [aria-busy]{width:100%;height:150px;aspect-ratio:auto;margin:4px auto}
 .host[data-quiet=true] .portrait canvas{max-height:64px}
-.host[data-quiet=true] .portrait [aria-busy]{height:64px}
+/* Keep the stage footprint stable while focus pauses/shrinks the character. */
 @media(max-width:480px){.host{padding:6px 8px}.portrait canvas{max-height:100px}.portrait [aria-busy]{height:100px}}

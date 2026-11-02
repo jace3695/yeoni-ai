@@ -20,6 +20,7 @@ function App() {
       <h1>{path}</h1>
       <AppCompanion quiet={quiet}>기존 안내문을 그대로 보존합니다.</AppCompanion>
       <label>합성 입력<input aria-label="합성 입력" /></label>
+      <label><input type="checkbox" aria-label="합성 선택" /> 합성 선택</label>
       <button onClick={() => { const reply = '안녕하세요. 합성 응답입니다.'; setIncoming({ value: { reply, performance: buildReplyPlan(reply, 'synthetic') } }); }}>합성 응답</button>
       <button onClick={() => { const reply = REPLY_SAMPLES.ko.spokenText; setIncoming({ value: { reply, performance: buildReplyPlan(reply, 'saved') } }); }}>기존 저장 음성 표본</button>
       <button onClick={() => claimSpeechFocus('synthetic-other')}>다른 음성 포커스</button>

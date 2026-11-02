@@ -37,6 +37,22 @@ try{
   await expect(page.locator('canvas')).toHaveCount(1);
   await expect(page.getByText('기존 안내문을 그대로 보존합니다.')).toBeVisible();
   assert.equal(await page.locator('[data-yeoni-action]').count(),0);passed.push('single renderer in StrictMode; legacy guidance preserved');
+  for (const viewport of [{width:375,height:812},{width:768,height:1024}]) {
+    await page.setViewportSize(viewport);
+    const choice = page.getByLabel('합성 선택', {exact:true});
+    const beforeFocus = await choice.boundingBox();
+    await choice.focus();
+    await expect(host).toHaveAttribute('data-quiet','true');
+    const afterFocus = await choice.boundingBox();
+    assert.ok(Math.abs(beforeFocus.y - afterFocus.y) < 1, 'input focus must not move its click target');
+    await choice.blur();
+    await expect(host).toHaveAttribute('data-quiet','false');
+    await choice.check(); await expect(choice).toBeChecked();
+    await choice.uncheck(); await expect(choice).not.toBeChecked();
+  }
+  await page.getByRole('heading').click();
+  await page.setViewportSize({width:390,height:844});
+  passed.push('375px/768px focus keeps target position and first checkbox click works');
   await host.getByRole('button',{name:'인간형',exact:true}).click();
   await expect(host.getByRole('img',{name:'인간형 연이',exact:true})).toBeVisible();
   for(const path of ['/fitness','/diet','/language','/budget','/assistant','/growth/drawing','/']){
