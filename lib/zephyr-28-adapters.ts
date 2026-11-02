@@ -1,4 +1,5 @@
 /** Server adapter factories only. No route registration, environment reads at import, or startup calls. */
+import process from 'node:process';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ZEPHYR_ONCE, type OnceDependencies, type OnceGrant, type OncePermit } from './zephyr-28-once.ts';
 
@@ -101,11 +102,11 @@ export function createZephyrReservationBridge(clients: {
       if (request.signal.aborted) return json({code:'BLOCKED'},409);
       if (body.action === 'status') {
         const {data:row,error:readError} = await admin.from('zephyr_28_once')
-          .select('owner_id,approval_id,request_id,expires_at,execution_approved,all_in_cap_verified,cost_evidence_id,reserved_at')
+          .select('owner_id,approval_id,request_id,expires_at,execution_approved,cost_evidence,reserved_at')
           .eq('owner_id',data.user.id).eq('approval_id',ZEPHYR_ONCE.approvalId).eq('request_id',ZEPHYR_ONCE.requestId).maybeSingle();
         if (readError || !row || row.reserved_at !== null || request.signal.aborted) return json(null,403);
         return json({ownerId:row.owner_id,approvalId:row.approval_id,requestId:row.request_id,expiresAt:Date.parse(row.expires_at),
-          executionApproved:row.execution_approved,allInCapVerified:row.all_in_cap_verified,costEvidenceId:row.cost_evidence_id});
+          executionApproved:row.execution_approved,costEvidence:row.cost_evidence});
       }
       // Do not cancel or retry a write with an uncertain commit. Its immutable row is authoritative.
       const {data:grant,error:reserveError} = await admin.rpc('reserve_zephyr_28_once', {

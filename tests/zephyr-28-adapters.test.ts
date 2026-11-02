@@ -1,20 +1,22 @@
+import {createZephyrNextWrapper,createZephyrEdgeWrapper,ZEPHYR_PREVIEW_ORIGIN,ZEPHYR_PREVIEW_BRANCH} from '../lib/zephyr-28-wrappers.ts';
+import {syntheticRequestCost} from './zephyr-28-fixtures.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createClient} from '@supabase/supabase-js';
 import {createZephyrOnceRunner,createZephyrOnceHttpHandler,ZEPHYR_ONCE,type OnceDependencies} from '../lib/zephyr-28-once.ts';
 import {createZephyrServerDependencies,createZephyrReservationBridge,readOnceJson} from '../lib/zephyr-28-adapters.ts';
 const owner='00000000-0000-4000-8000-000000000001';
-const origin='https://synthetic.invalid', backend='https://synthetic.supabase.co';
+const origin=ZEPHYR_PREVIEW_ORIGIN, backend='https://synthetic.supabase.co';
 const input={requestId:ZEPHYR_ONCE.requestId};
 const ok=(v:unknown)=>Response.json(v);
-function fixture(){
+function fixture(wrappers=false){
  let consumed=false,google=0,rpc=0,auth=0,keyReads=0;const requests:string[]=[];
  let providerFailure=false;
  const fetcher:typeof fetch=async(url,init)=>{
   const address=String(url);requests.push(address);
   const headers=new Headers(init?.headers);
   if(address.startsWith(backend+'/auth/v1/user')){auth++;return ok({id:owner,aud:'authenticated',role:'authenticated',email:'synthetic@example.invalid'})}
-  if(address.includes('/rest/v1/zephyr_28_once'))return ok([{owner_id:owner,approval_id:ZEPHYR_ONCE.approvalId,request_id:ZEPHYR_ONCE.requestId,expires_at:new Date(Date.now()+60_000).toISOString(),execution_approved:true,all_in_cap_verified:true,cost_evidence_id:'SYNTHETIC ONLY',reserved_at:consumed?'synthetic-consumed':null}]);
+  if(address.includes('/rest/v1/zephyr_28_once'))return ok([{owner_id:owner,approval_id:ZEPHYR_ONCE.approvalId,request_id:ZEPHYR_ONCE.requestId,expires_at:new Date(Date.now()+60_000).toISOString(),execution_approved:true,cost_evidence:syntheticRequestCost(),reserved_at:consumed?'synthetic-consumed':null}]);
   if(address.includes('/rest/v1/rpc/reserve_zephyr_28_once')){
    rpc++;assert.deepEqual(JSON.parse(String(init?.body)),{p_owner:owner,p_approval:ZEPHYR_ONCE.approvalId,p_request:ZEPHYR_ONCE.requestId});
    if(consumed)return ok({allowed:false});consumed=true;const now=Date.now();return ok({allowed:true,ownerId:owner,approvalId:ZEPHYR_ONCE.approvalId,requestId:ZEPHYR_ONCE.requestId,characters:28,reservedAt:now,sendBefore:now+10_000});
@@ -27,9 +29,10 @@ function fixture(){
   throw Error('Unexpected outbound request');
  };
  const client=(authorization?:string)=>createClient(backend,'SYNTHETIC-NOT-A-KEY',{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:fetcher,headers:authorization?{Authorization:authorization}:{}}});
- const bridge=createZephyrReservationBridge({caller:authorization=>client(authorization),admin:()=>client()},true);
+ const bridge=wrappers?createZephyrEdgeWrapper(()=>({YEONI_ZEPHYR_28_EDGE_ENABLED:'1',SUPABASE_URL:backend,SUPABASE_ANON_KEY:'SYNTHETIC-NOT-A-KEY',SUPABASE_SERVICE_ROLE_KEY:'SYNTHETIC-NOT-A-KEY'}),fetcher):createZephyrReservationBridge({caller:authorization=>client(authorization),admin:()=>client()},true);
  const handler=createZephyrOnceHttpHandler({installed:true,environment:'preview',branch:'agent/fitness-record-priority',dependenciesFor:request=>createZephyrServerDependencies(request,client(),{trustedOrigin:origin,supabaseUrl:backend},fetcher,()=>{keyReads++;return 'SYNTHETIC-NOT-A-KEY'})});
- return{handler,fetcher,client,bridge,get google(){return google},get rpc(){return rpc},get auth(){return auth},get keyReads(){return keyReads},requests,fail(){providerFailure=true}};
+ const wrapped=createZephyrNextWrapper(()=>({VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:ZEPHYR_PREVIEW_BRANCH,YEONI_ZEPHYR_28_ONCE_ENABLED:'1',YEONI_ZEPHYR_28_TRUSTED_ORIGIN:origin,NEXT_PUBLIC_SUPABASE_URL:backend,GOOGLE_TTS_API_KEY:'SYNTHETIC-NOT-A-KEY'}),async()=>client(),fetcher);
+ return{handler:wrappers?wrapped:handler,fetcher,client,bridge,get google(){return google},get rpc(){return rpc},get auth(){return auth},get keyReads(){return keyReads},requests,fail(){providerFailure=true}};
 }
 const request=(signal?:AbortSignal)=>new Request(origin+'/api/tts/once-28',{method:'POST',headers:{origin,authorization:'Bearer SYNTHETIC-TOKEN','content-type':'application/json'},body:JSON.stringify(input),signal});
 test('actual SDK auth/REST adapters and HTTP factory use fixed bridge/provider; fresh requests never retry provider',async()=>{
@@ -50,7 +53,7 @@ test('origin and bearer restrictions fail before server key read or any outgoing
 test('cancellation before auth, after auth, pre-reserve, post-reserve and during send fails closed',async()=>{
  for(const stage of ['before','auth','preflight','reserve','dispatch']){
   const controller=new AbortController();let reserved=0,sent=0;
-  const permit={ownerId:owner,approvalId:ZEPHYR_ONCE.approvalId,requestId:ZEPHYR_ONCE.requestId,expiresAt:Date.now()+60_000,executionApproved:true,allInCapVerified:true,costEvidenceId:'SYNTHETIC ONLY'};
+  const permit={ownerId:owner,approvalId:ZEPHYR_ONCE.approvalId,requestId:ZEPHYR_ONCE.requestId,expiresAt:Date.now()+60_000,executionApproved:true,costEvidence:syntheticRequestCost()};
   const deps:OnceDependencies={authenticate:async()=>{if(stage==='auth')controller.abort();return owner},preflight:async()=>{if(stage==='preflight')controller.abort();return permit},reserve:async()=>{reserved++;if(stage==='reserve')controller.abort();const now=Date.now();return{allowed:true,...permit,characters:28,reservedAt:now,sendBefore:now+10_000}},dispatch:async fixed=>{sent++;controller.abort();assert.equal(fixed.signal.aborted,true);return new Promise(()=>{})},now:Date.now};
   if(stage==='before')controller.abort();const run=createZephyrOnceRunner(deps);
   assert.equal((await run(input,controller.signal)).code,['reserve','dispatch'].includes(stage)?'CONSUMED_OR_UNKNOWN':'BLOCKED');
@@ -69,4 +72,19 @@ test('reservation bridge default off and invalid identity/action cannot touch se
  const bridge=createZephyrReservationBridge(clients,true);
  const bad=new Request(backend+'/functions/v1/zephyr-28-once',{method:'POST',headers:{authorization:'Bearer SYNTHETIC','content-type':'application/json'},body:JSON.stringify({...input,action:'reserve',ownerId:'forged'})});
  assert.equal((await bridge(bad)).status,400);assert.equal(admin,0);
+});
+
+test('final unregistered Next and Edge wrappers execute SDK mock auth/reservation/provider once',async()=>{
+ const f=fixture(true);const responses=await Promise.all([f.handler(request()),f.handler(request())]);
+ assert.equal(responses.filter(r=>r.status===200).length,1);assert.equal(f.google,1);
+ await f.handler(request());assert.equal(f.google,1);
+});
+test('wrapper environment cannot be enabled by request input and rejects mismatched trusted origin/branch',async()=>{
+ let clients=0;const f=fixture();
+ const good={VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:ZEPHYR_PREVIEW_BRANCH,YEONI_ZEPHYR_28_ONCE_ENABLED:'1',YEONI_ZEPHYR_28_TRUSTED_ORIGIN:origin};
+ for(const patch of [{VERCEL_ENV:'production'},{VERCEL_GIT_COMMIT_REF:'main'},{YEONI_ZEPHYR_28_ONCE_ENABLED:'0'},{YEONI_ZEPHYR_28_TRUSTED_ORIGIN:'https://other.invalid'}]){
+ const handler=createZephyrNextWrapper(()=>({...good,...patch}),async()=>{clients++;return f.client()},f.fetcher);
+ assert.equal((await handler(request())).status,404);
+ }assert.equal(clients,0);assert.equal(f.requests.length,0);
+ assert.equal((await createZephyrEdgeWrapper(()=>({}),f.fetcher)(request())).status,404);
 });
