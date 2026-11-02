@@ -23,6 +23,7 @@ export default function GrowthPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const inFlight = useRef(false);
+  const viewEpoch = useRef(0);
   const editor = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -38,31 +39,39 @@ export default function GrowthPage() {
     return () => { clearInterval(timer); window.removeEventListener('focus', refreshDate); };
   }, []);
 
+  useEffect(() => {
+    viewEpoch.current += 1;
+    inFlight.current = false;
+    setBusy(false); setMessage(""); setEditing(null); setCategory("custom"); setTitle(""); setDays([...ALL_GROWTH_WEEKDAYS]);
+    return () => { viewEpoch.current += 1; };
+  }, [growth.user?.id]);
+
   const routines = growth.routines.filter(row => !isRetiredGrowthRoutine(row));
   const active = routines.filter(row => row.enabled);
   const archived = routines.filter(row => !row.enabled);
   const scheduled = active.filter(row => isGrowthRoutineScheduled(row, date));
   const other = active.filter(row => !isGrowthRoutineScheduled(row, date));
   const ready = growth.dataReady && !growth.loading && !busy;
-  const run = async (action: () => Promise<void>, success: string) => {
+  const run = async (action: (isCurrent: () => boolean) => Promise<void>, success: string) => {
     if (inFlight.current || !growth.dataReady) return;
+    const epoch = viewEpoch.current;
     inFlight.current = true;
     setBusy(true); setMessage(""); growth.setNotice("");
-    try { await action(); setMessage(success); }
-    catch { setMessage("저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요."); }
-    finally { inFlight.current = false; setBusy(false); }
+    try { await action(() => epoch === viewEpoch.current); if (epoch === viewEpoch.current) setMessage(success); }
+    catch { if (epoch === viewEpoch.current) setMessage("저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요."); }
+    finally { if (epoch === viewEpoch.current) { inFlight.current = false; setBusy(false); } }
   };
   const resetEditor = () => { setEditing(null); setCategory("custom"); setTitle(""); setDays([...ALL_GROWTH_WEEKDAYS]); };
   const save = (event: FormEvent) => {
     event.preventDefault();
     if (!title.trim() || !days.length || (!editing && routines.length >= GROWTH_ROUTINE_LIMIT)) return;
     if (isRetiredGrowthRoutine({ title })) { setMessage("종료된 기본 과정 이름이에요. 다른 활동 이름을 입력해 주세요."); return; }
-    void run(async () => {
+    void run(async (isCurrent) => {
       const result = editing
         ? await growth.updateRoutine(editing, { title: title.trim(), preferred_days: [...days].sort((a,b) => a-b), target_sessions_per_week: days.length })
         : await growth.addRoutine({ title, category, targetMinutes: 5, preferredDays: days, targetSessionsPerWeek: days.length });
       if (result.error) throw result.error;
-      resetEditor();
+      if (isCurrent()) resetEditor();
     }, editing ? "활동을 수정했어요. 이전 완료 기록은 그대로예요." : "활동을 추가했어요.");
   };
   const edit = (routine: GrowthRoutineRow) => {
@@ -70,10 +79,10 @@ export default function GrowthPage() {
     editor.current?.focus();
     editor.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
-  const archive = (routine: GrowthRoutineRow) => void run(async () => {
+  const archive = (routine: GrowthRoutineRow) => void run(async (isCurrent) => {
     const result = await growth.updateRoutine(routine.id, { enabled: !routine.enabled });
     if (result.error) throw result.error;
-    if (editing === routine.id) resetEditor();
+    if (isCurrent() && editing === routine.id) resetEditor();
   }, routine.enabled ? "보관했어요. 완료 기록과 요일은 유지됩니다." : "활동을 복원했어요.");
   const renderActivity = (routine: GrowthRoutineRow) => {
     const checked = checklistCompleted(growth.sessions, routine.id, date);

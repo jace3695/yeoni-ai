@@ -76,3 +76,21 @@ test('uncheck then recheck restores all original timed completions and their met
   assert.equal(f.rows.length,2);
   assert.deepEqual(f.rows.map(({updated_at: _updated,...rest})=>rest),original);
 });
+
+test('scope invalidation during auth prevents checklist queries and writes', async () => {
+  const f=fixture(); let release!: () => void; let current=true; let queries=0;
+  f.client.auth.getUser=(() => new Promise(resolve=>{release=()=>resolve({data:{user:{id:owner,app_metadata:{},user_metadata:{},aud:'authenticated',created_at:'2026-11-01T00:00:00Z'}},error:null});})) as typeof f.client.auth.getUser;
+  const original=f.client.from.bind(f.client); f.client.from=((...args: Parameters<typeof f.client.from>)=>{queries++;return original(...args);}) as typeof f.client.from;
+  const pending=setChecklistCompletion(f.client,owner,routine,'2026-11-01',true,()=>{if(!current)throw Error('stale scope');});
+  current=false;release();await assert.rejects(pending,/stale scope/);assert.equal(queries,0);assert.equal(f.rows.length,0);
+});
+test('scope invalidation after a dispatched change stops subsequent timed-row changes', async () => {
+  const f=fixture();f.rows.push(...['one','two'].map(id=>({id,user_id:owner,routine_id:routine.id,session_date:'2026-11-01',status:'completed',metrics:{}})));
+  await assert.rejects(setChecklistCompletion(f.client,owner,routine,'2026-11-01',false,()=>{if(f.rows.some(r=>r.status==='stopped'))throw Error('stale scope');}),/stale scope/);
+  assert.equal(f.rows[0].status,'stopped');assert.equal(f.rows[1].status,'completed');
+});
+test('scope invalidation after a failed insert suppresses recovery query', async () => {
+  let current=true;let reads=0;
+  const client={auth:{getUser:async()=>({data:{user:{id:owner}},error:null})},from:()=>{let insert=false;const q={select:()=>q,eq:()=>q,insert:()=>{insert=true;return q;},then:(resolve:(x:unknown)=>unknown)=>{if(insert){current=false;return Promise.resolve({error:Error('lost response')}).then(resolve);}reads++;return Promise.resolve({data:[],error:null}).then(resolve);}};return q;}} as unknown as SupabaseClient;
+  await assert.rejects(setChecklistCompletion(client,owner,routine,'2026-11-01',true,()=>{if(!current)throw Error('stale scope');}),/stale scope/);assert.equal(reads,1);
+});
