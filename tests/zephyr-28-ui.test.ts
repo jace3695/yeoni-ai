@@ -23,10 +23,20 @@ test('connection page refuses production, missing gates, wrong branch/origin bef
  assert.ok(render(enabled));
  for(const env of [{}, {...enabled,VERCEL_ENV:'production'},{...enabled,VERCEL_GIT_COMMIT_REF:'main'},{...enabled,YEONI_ZEPHYR_28_ONCE_ENABLED:'0'},{...enabled,YEONI_ZEPHYR_28_TRUSTED_ORIGIN:'https://other.invalid'}])assert.throws(()=>render(env),/404/);
 });
-test('connection page uses existing auth gate and client has only authentication preflight endpoint',()=>{
+test('connection parent uses existing auth gate and its own fetch is authentication preflight only',()=>{
  assert.match(page,/<AuthGate><ConnectionCheck/);
  const client=readFileSync('app/tts-connection-check/ConnectionCheck.tsx','utf8');
  assert.deepEqual([...client.matchAll(/fetch\('([^']+)'/g)].map(m=>m[1]),['/api/tts/once-28/preflight']);
  assert.doesNotMatch(client,/console\.|localStorage|sessionStorage|\.rpc\(|\.from\(/);
  assert.match(client,/redirect: 'error'/);
+});
+
+test('one-off child sends only fixed request ID and never exposes a generic provider request',()=>{
+ const source=readFileSync('app/tts-connection-check/OnceAudio.tsx','utf8');
+ assert.deepEqual([...source.matchAll(/fetch\('([^']+)'/g)].map(m=>m[1]),['/api/tts/once-28']);
+ assert.match(source,/body: JSON.stringify\(\{ requestId: ZEPHYR_ONCE.requestId \}\)/);
+ assert.ok(source.indexOf("sessionStorage.setItem(attemptKey, '1')")<source.indexOf("fetch('/api/tts/once-28'"));
+ assert.doesNotMatch(source,/console\.|localStorage|\.rpc\(|supabase[^;]*\.from\(/);
+ assert.match(source,/URL.revokeObjectURL/);
+ assert.match(source,/download="yeoni-zephyr-28.mp3"/);
 });
