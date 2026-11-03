@@ -13,3 +13,16 @@
 .host[data-quiet=true] .portrait canvas{max-height:64px}
 /* Stable stage footprint while focus pauses/shrinks the character. */
 @media(max-width:480px){.host{padding:6px 8px}}
+
+/* Reply-side portrait: page retains the reply and its existing live region. */
+.host[data-beside-reply=true]{margin:0;padding:4px;width:100%;border:0;border-radius:12px}
+.host[data-beside-reply=true] .portrait{margin:0;max-width:none}
+.host[data-beside-reply=true] .portrait>div{display:block}
+.host[data-beside-reply=true] .portrait [aria-busy]{width:100%;height:144px;margin:0}
+.host[data-beside-reply=true] .portrait canvas{max-height:144px}
+.host[data-beside-reply=true][data-quiet=true] .portrait canvas{max-height:144px}
+.host[data-beside-reply=true] .portrait [aria-label="연이 외형 선택"]{flex-direction:column}
+.host[data-beside-reply=true] .controls{flex-direction:column;gap:4px}
+.host[data-beside-reply=true] .controls button{width:100%;padding:4px;font-size:12px;overflow-wrap:anywhere}
+.settings summary{min-height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+@media(min-width:640px){.host[data-beside-reply=true] .portrait [aria-busy]{height:192px}.host[data-beside-reply=true] .portrait canvas,.host[data-beside-reply=true][data-quiet=true] .portrait canvas{max-height:192px}}

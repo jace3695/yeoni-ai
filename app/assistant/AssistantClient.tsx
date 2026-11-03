@@ -501,7 +501,14 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
   }, [load]);
   useEffect(() => {
     const box = chatBoxRef.current;
-    if (box) box.scrollTop = box.scrollHeight;
+    if (!box) return;
+    const messages = box.querySelectorAll<HTMLElement>('[data-chat-message]');
+    const latest = messages[messages.length - 1];
+    // Start a new answer at its beginning, not at the controls after a long reply.
+    if (!chatSending && latest?.dataset.chatRole === 'assistant') {
+      const padding = Number.parseFloat(getComputedStyle(box).paddingTop) || 0;
+      box.scrollTop = Math.max(0, box.scrollTop + latest.getBoundingClientRect().top - box.getBoundingClientRect().top - padding);
+    } else box.scrollTop = box.scrollHeight;
   }, [chatHistoryLoading, chatMessages, chatSending]);
 
   const entryTransport: ManualEntryTransport = {
@@ -701,14 +708,10 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
           <label htmlFor="assistant-chat-input" className="sr-only">연이에게 하고 싶은 말</label><input id="assistant-chat-input" aria-describedby="assistant-start-help" value={chatInput} disabled={chatHistoryLoading || adviceBusy} onChange={(event) => setChatInput(event.target.value, true)} maxLength={500} placeholder="예: 오늘 운동 계획 알려줘" className="min-w-0 flex-1 rounded-2xl border-0 bg-yeoni-bg px-4 py-3 text-base outline-none ring-1 ring-gray-100 focus:ring-[#7F77DD] disabled:opacity-50" />
           <button disabled={chatSending || adviceBusy || chatHistoryLoading || !chatInput.trim()} className="rounded-2xl bg-[#5146A6] px-5 py-3 text-sm font-bold text-white disabled:bg-gray-300">보내기</button>
         </form>
-        <CommonCharacterSlot />
-        <AssistantPromptExamples disabled={chatSending || adviceBusy || chatHistoryLoading} hasDraft={!!chatInput.trim()} onSelect={(sample) => { setChatInput(sample, true); document.getElementById('assistant-chat-input')?.focus(); }} />
-        <div className="mt-3">{characterAudio ? <AssistantCharacter key={pending.ownerId ?? 'signed-out'} audio={characterAudio}
-          incoming={characterReply?.ownerId === pending.ownerId ? characterReply : null} busy={chatSending || adviceBusy} />
-          : <AppCompanion compact embedded quiet={chatSending}>오늘은 무엇을 도와드릴까요?</AppCompanion>}</div>
-        <div ref={chatBoxRef} aria-live="polite" className="mt-4 max-h-56 space-y-3 sm:max-h-80 overflow-y-auto rounded-2xl bg-[#F7F6FF] p-3 sm:p-4">
+        <CommonCharacterSlot>
+        <div ref={chatBoxRef} aria-live="polite" role="region" aria-label="연이와 대화 내역" tabIndex={0} className="mt-0 max-h-56 space-y-3 sm:max-h-80 overflow-y-auto rounded-2xl bg-[#F7F6FF] p-3 sm:p-4">
           {chatHistoryLoading && <p className="text-xs font-semibold text-[#766DB8]">지난 대화를 불러오고 있어요…</p>}
-          {chatMessages.filter(chat => !chat.ownerId || chat.ownerId === pending.ownerId).map((chat) => <div key={chat.id} className={`flex ${chat.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${chat.role === "user" ? "bg-[#5146A6] text-white" : "bg-white text-gray-700 shadow-sm"}`}>{chat.historyOnly && <p className="text-xs font-bold">이전 대화 · 읽기 전용 (재전송·음성 제외)</p>}{chat.localOnly && <p className="text-xs font-bold">이 화면에서만 보는 로컬 대화</p>}<p className="whitespace-pre-wrap break-words">{chat.text}</p>{chat.action && <Link href={chat.action.href} onClick={(event) => {
+          {chatMessages.filter(chat => !chat.ownerId || chat.ownerId === pending.ownerId).map((chat) => <div key={chat.id} data-chat-message data-chat-role={chat.role} className={`flex ${chat.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${chat.role === "user" ? "bg-[#5146A6] text-white" : "bg-white text-gray-700 shadow-sm"}`}>{chat.historyOnly && <p className="text-xs font-bold">이전 대화 · 읽기 전용 (재전송·음성 제외)</p>}{chat.localOnly && <p className="text-xs font-bold">이 화면에서만 보는 로컬 대화</p>}<p className="whitespace-pre-wrap break-words">{chat.text}</p>{chat.action && <Link href={chat.action.href} onClick={(event) => {
                 if (!chat.action?.href.startsWith('/assistant?advice=')) return;
                 const scope = new URLSearchParams(chat.action.href.split('?')[1].split('#')[0]).get('advice');
                 if (isFreeAdviceScope(scope)) {
@@ -720,6 +723,11 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
           {pending.drafts.map(draft => <AssistantCommandReview key={`${pending.ownerId}:${draft.proposal.requestId}`} proposal={draft.proposal} ownerId={pending.ownerId ?? undefined} initiallyAttempted={draft.attempted} onAttempt={(signal) => pending.markAttempted(draft.proposal.requestId, signal)} onSettled={(signal) => pending.remove(draft.proposal.requestId, signal)} onChanged={load} />)}
           {chatSending && <p className="text-xs font-semibold text-[#766DB8]">답변을 준비하고 있어요…</p>}
         </div>
+        </CommonCharacterSlot>
+        <AssistantPromptExamples disabled={chatSending || adviceBusy || chatHistoryLoading} hasDraft={!!chatInput.trim()} onSelect={(sample) => { setChatInput(sample, true); document.getElementById('assistant-chat-input')?.focus(); }} />
+        <div className="mt-3">{characterAudio ? <AssistantCharacter key={pending.ownerId ?? 'signed-out'} audio={characterAudio}
+          incoming={characterReply?.ownerId === pending.ownerId ? characterReply : null} busy={chatSending || adviceBusy} />
+          : <AppCompanion compact embedded quiet={chatSending}>오늘은 무엇을 도와드릴까요?</AppCompanion>}</div>
         <p className="mt-2 text-xs text-gray-600">인바디·체성분·BMI 질문은 브라우저 안에서 답하며 일반 서버 대화 이력이나 음성 읽기에 포함하지 않습니다. 아래 별도 동의 보관을 선택할 때만 확인한 질문·답변을 계정에 보냅니다.</p>
         {localBodyActive && <div className="mt-2 text-xs">
           <p>체성분 로컬 대화 중입니다. 모호한 후속 질문은 보내지 않습니다. 정해진 일반 조회 명령은 기존 경로를 사용합니다.</p>

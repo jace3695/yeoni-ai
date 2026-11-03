@@ -17,7 +17,8 @@ const emptySpeech = () => ({ manifest: null, playback: EMPTY_PLAYBACK });
 export default function CommonCharacterHost({ children, path, boundary = 0 }: {
   children: ReactNode; path: string; boundary?: number;
 }) {
-  const [placement, setPlacement] = useState<HTMLDivElement | null>(null);
+  const [placement, setPlacement] = useState<{ node: HTMLDivElement | null; besideReply: boolean }>({ node: null, besideReply: false });
+  const registerPlacement = useCallback((node: HTMLDivElement | null, besideReply = false) => { setPlacement({ node, besideReply: Boolean(node && besideReply) }); }, []);
   const preferences = useYeoniPreferences();
   const [editing, setEditing] = useState(false);
   const quietRequests = useRef(new Set<symbol>());
@@ -55,8 +56,7 @@ export default function CommonCharacterHost({ children, path, boundary = 0 }: {
     };
   }, []);
   const quiet = editing || quietCount > 0 || isQuietCharacterRoute(path);
-  const portrait = <aside className={styles.host} data-yeoni-common-host data-quiet={quiet} aria-label="공통 연이">
-      <div className={styles.controls}>
+  const settings = <div className={styles.controls}>
         <strong>연이</strong>
         <button type="button" onClick={() => {
           stopAllSpeech();
@@ -65,15 +65,18 @@ export default function CommonCharacterHost({ children, path, boundary = 0 }: {
         <button type="button" onClick={() => {
           try { updateYeoniPreferences({ motion: preferences.motion === 'home' ? 'off' : 'home' }); } catch { /* Memory fallback. */ }
         }}>{preferences.motion === 'home' ? '움직임 끄기' : '움직임 켜기'}</button>
-      </div>
+      </div>;
+  const portrait = <aside className={styles.host} data-beside-reply={placement.besideReply} data-yeoni-common-host data-quiet={quiet} aria-label="공통 연이">
+      {!placement.besideReply && settings}
       {preferences.visible && <div className={styles.portrait}>
-        <SwitchableCharacterStage key={scope} speech={speech} emotion={controls.emotion} gesture={controls.gesture} quiet={quiet} />
+        <SwitchableCharacterStage key={scope} speech={speech} emotion={controls.emotion} gesture={controls.gesture} quiet={quiet} compactOptions={placement.besideReply} />
       </div>}
+      {placement.besideReply && <details className={styles.settings}><summary>연이 설정</summary>{settings}</details>}
     </aside>;
   return <CommonCharacterContext.Provider value={channel}>
-    <CommonCharacterPlacementContext.Provider value={setPlacement}>
+    <CommonCharacterPlacementContext.Provider value={registerPlacement}>
       {children}
-      {placement ? createPortal(portrait, placement) : portrait}
+      {placement.node ? createPortal(portrait, placement.node) : portrait}
     </CommonCharacterPlacementContext.Provider>
   </CommonCharacterContext.Provider>;
 }

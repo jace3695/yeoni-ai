@@ -1,0 +1,8 @@
+.layout{--portrait-width:112px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;margin-top:12px}
+.layout>[data-yeoni-common-slot]{flex:0 0 var(--portrait-width);min-width:0}
+/* Text-relative basis wraps the reply below the portrait at large text sizes. */
+.reply{flex:1 1 9em;min-width:0;overflow-wrap:anywhere}
+.reply p{overflow-wrap:anywhere}
+.layout[data-character-visible=false]>[data-yeoni-common-slot],.layout[data-character-visible=false]>.reply{flex-basis:100%}
+@media(min-width:640px){.layout{--portrait-width:160px;gap:16px}}
+@media(max-width:360px){.layout{--portrait-width:96px;gap:8px}}
