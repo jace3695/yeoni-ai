@@ -35,14 +35,15 @@ export default function PaymentPlans({ userId, records, month, budget, ready, cu
   const money = (value: number) => new Intl.NumberFormat('ko-KR', { style: 'currency', currency: ['KRW', 'USD', 'JPY'].includes(currency) ? currency : 'KRW', maximumFractionDigits: 0 }).format(value);
 
   const load = useCallback(async () => {
+    if (!mounted.current) return null;
     const token = ++generation.current;
     setLoaded(false);
     const result = await client.from('budget_payment_plans').select('*', { count: 'exact' }).eq('user_id', userId).order('id').limit(100);
+    if (token !== generation.current || !mounted.current) return null;
     if (result.error || result.count === null || result.count !== result.data?.length || new Set(result.data.map(row => row.id)).size !== result.count) throw new Error('결제 예정일 설정을 모두 불러오지 못했어요. 다시 불러와 주세요.');
     const raw = window.localStorage.getItem(pendingPaymentPlanKey(userId));
     const saved = raw ? JSON.parse(raw) as PaymentPlanRequest : null;
     if (saved && (saved.p_owner !== userId || !saved.p_id || !saved.p_request_id || !('p_value' in saved) || !('p_expected' in saved) || saved.p_expected && saved.p_expected.user_id !== userId)) throw new Error('저장 결과 확인 중인 설정을 읽지 못했어요.');
-    if (token !== generation.current || !mounted.current) return null;
     setPlans(result.data as PaymentPlan[]); setPending(saved); setLoaded(true);
     return result.data as PaymentPlan[];
   }, [client, userId]);
