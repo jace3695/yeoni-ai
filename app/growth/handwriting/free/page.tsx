@@ -1,5 +1,6 @@
 "use client";
 
+import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import AppCompanion from "@/components/AppCompanion";
 import Link from "next/link";
 import { PointerEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -194,6 +195,7 @@ export default function GrowthHandwritingPage() {
 
   return <main className="min-h-dvh bg-yeoni-bg pb-10 text-[#242231]">
     <header className="app-module-header"><div className="app-module-header-inner"><AppIdentity kind="growth" title="손글씨 연습" subtitle="iPad와 Apple Pencil로 간단하게" /><Link href="/growth/handwriting" className="rounded-xl bg-gray-100 px-3 py-2 text-xs font-bold text-gray-600">단계별 수업</Link></div></header>
+      <CommonCharacterSlot />
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-9">
       <AppCompanion compact quiet>한 글자씩 천천히 써봐요. 끝나면 오늘의 손글씨를 남겨 주세요.</AppCompanion>
       <section className="rounded-[30px] bg-white p-4 shadow-sm sm:p-6">

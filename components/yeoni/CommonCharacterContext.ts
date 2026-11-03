@@ -5,3 +5,6 @@ export const CHARACTER_RESET_EVENT = 'yeoni-character-reset';
 export type CharacterChannel = { publish(controls: CharacterControlProps): () => void; requestQuiet(): () => void };
 export const CommonCharacterContext = createContext<CharacterChannel | null>(null);
 export const useCommonCharacterHost = () => useContext(CommonCharacterContext);
+
+/** Explicit document-flow destination owned by the current page layout. */
+export const CommonCharacterPlacementContext = createContext<((node: HTMLDivElement | null) => void) | null>(null);

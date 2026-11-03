@@ -1,5 +1,6 @@
 "use client";
 
+import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
@@ -190,6 +191,7 @@ export default function HandwritingCoursePage() {
 
   return <main className="min-h-dvh bg-yeoni-bg pb-12 text-[#242231]">
     <header className="app-module-header"><div className="app-module-header-inner"><AppIdentity kind="growth" title="손글씨 연습" subtitle="필림 자료로 한 수업씩" /><Link href="/growth" className="rounded-xl bg-gray-100 px-3 py-3 text-xs font-bold">자기계발 홈</Link></div></header>
+      <CommonCharacterSlot />
     <div className="mx-auto max-w-4xl space-y-5 px-4 py-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm" aria-label="손글씨 학습 진도">
         <h1 className="text-2xl font-bold">천천히 익히는 내 손글씨</h1><p className="mt-2 text-sm leading-6 text-gray-600">12단계 · 53개 수업. 하루 10~15분을 목표로 한 수업씩 해봐요. 어려운 수업은 반복하고, 익숙한 수업은 직접 골라도 괜찮아요.</p>

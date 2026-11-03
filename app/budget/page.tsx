@@ -1,4 +1,5 @@
 'use client'
+import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import ManualEntry from './components/manual-entry'
 import { useManualBudgetDraft } from './lib/use-manual-draft'
 import { validBudgetDate } from './lib/manual-entry'
@@ -3245,6 +3246,7 @@ return (
           }} />
         </div>
       </header>
+      {tab !== 'home' && <CommonCharacterSlot />}
 
 
       <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete?.kind === 'all' ? '가계부 기록 전체 삭제' : '선택한 기록 삭제'} description={pendingDelete?.kind === 'all' ? '전체 기간의 지출·수입·저축 기록을 삭제합니다. 예산·설정과 다른 앱 기록은 유지됩니다. 삭제한 기록은 되돌릴 수 없어요.' : '선택한 기록만 삭제합니다. 삭제 직후에는 이 화면의 “삭제 되돌리기”로 원래 기록을 복원할 수 있어요.'} busy={Boolean(processingRecordKey) || resetLoading} onCancel={() => setPendingDelete(null)} onConfirm={() => {
@@ -3284,6 +3286,7 @@ return (
               <button className="home-logout" onClick={handleLogout}>로그아웃</button>
             </div>
           </header>
+          <CommonCharacterSlot />
 
           {user?.id && <PaymentPlans key={`home-plans:${user.id}`} userId={user.id} records={transactions} month={selectedMonth} budget={monthlyBudget} ready={recordsReady && !budgetLoading} currency={currency} compact onManage={() => { setTab('analysis'); setAnalysisView('stats'); }} onRefreshRecords={fetchTransactions} />}
           <section className="home-ai-card home-ai-card-primary">

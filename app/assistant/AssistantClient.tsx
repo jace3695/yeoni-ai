@@ -1,5 +1,6 @@
 "use client";
 
+import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import { useUnsavedChanges } from "@/components/useUnsavedChanges";
 import { clearAssistantChatInputDraft, openAssistantChatInputDraft, updateAssistantChatInputDraft, type AssistantChatDraftLease } from '@/lib/assistant-chat-input-draft';
 import BodyAnalysisHistory from '@/app/components/BodyAnalysisHistory';
@@ -689,6 +690,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
         </div>
       </div>
     </header>
+      <CommonCharacterSlot />
 
     <div className="yeoni-page-content">
       <HomeOverview action={nextAction} loading={loading} failures={loadFailures} lastLoadedAt={lastLoadedAt} onRetry={() => void load()} />

@@ -1,5 +1,6 @@
 "use client";
 
+import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import { RECORDS_CHANGED_EVENT } from "../data/storageTransaction";
 import AppCompanion from "@/components/AppCompanion";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -723,6 +724,7 @@ function FitnessApp() {
           <AppModuleNav items={PRIMARY_NAV.map((item) => ({ ...item, icon: item.emoji }))} activeId={activePrimaryNav} ariaLabel="운동 주요 메뉴" onSelect={(id) => handlePrimaryNavigation(id as (typeof PRIMARY_NAV)[number]["id"])} />
         </div>
       </header>
+      <CommonCharacterSlot />
 
       {/* ── Main Content ── */}
       <main className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">

@@ -1,3 +1,4 @@
+import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import type { Metadata } from "next";
 import AuthGate from "../components/AuthGate";
 import TopNav from "@/components/TopNav";
@@ -16,6 +17,7 @@ export default function LanguageLayout({ children }: Readonly<{ children: React.
     <DiagnosticIsolation diagnostic={children}><AuthGate>
       <div className="language-app-shell">
         <header className="app-module-header"><div className="app-module-header-inner"><AppIdentity kind="language" title="일본어 학습" subtitle="매일 이어가는 언어 훈련" /><TopNav /></div></header>
+      <CommonCharacterSlot />
         <LanguageCloudSync><main className="app-main">{children}</main></LanguageCloudSync>
       </div>
     </AuthGate></DiagnosticIsolation>

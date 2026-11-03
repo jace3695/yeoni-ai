@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { EMPTY_PLAYBACK } from '@/lib/yeoni/character-controller';
 import { isQuietCharacterRoute } from '@/lib/yeoni/common-host-policy';
 import { stopAllSpeech } from '@/lib/yeoni/speech-focus';
@@ -8,7 +9,7 @@ import { updateYeoniPreferences, useYeoniPreferences } from '../useYeoniPreferen
 import SwitchableCharacterStage from './SwitchableCharacterStage';
 import type { CharacterControlProps } from './useCharacterStage';
 import styles from './common-character-host.module.css';
-import { CHARACTER_RESET_EVENT, CommonCharacterContext, type CharacterChannel } from './CommonCharacterContext';
+import { CHARACTER_RESET_EVENT, CommonCharacterContext, CommonCharacterPlacementContext, type CharacterChannel } from './CommonCharacterContext';
 const emptySpeech = () => ({ manifest: null, playback: EMPTY_PLAYBACK });
 
 /** One renderer per app shell. Only ephemeral control inputs enter this channel;
@@ -16,6 +17,7 @@ const emptySpeech = () => ({ manifest: null, playback: EMPTY_PLAYBACK });
 export default function CommonCharacterHost({ children, path, boundary = 0 }: {
   children: ReactNode; path: string; boundary?: number;
 }) {
+  const [placement, setPlacement] = useState<HTMLDivElement | null>(null);
   const preferences = useYeoniPreferences();
   const [editing, setEditing] = useState(false);
   const quietRequests = useRef(new Set<symbol>());
@@ -53,8 +55,7 @@ export default function CommonCharacterHost({ children, path, boundary = 0 }: {
     };
   }, []);
   const quiet = editing || quietCount > 0 || isQuietCharacterRoute(path);
-  return <CommonCharacterContext.Provider value={channel}>
-    <aside className={styles.host} data-yeoni-common-host data-quiet={quiet} aria-label="공통 연이">
+  const portrait = <aside className={styles.host} data-yeoni-common-host data-quiet={quiet} aria-label="공통 연이">
       <div className={styles.controls}>
         <strong>연이</strong>
         <button type="button" onClick={() => {
@@ -68,7 +69,11 @@ export default function CommonCharacterHost({ children, path, boundary = 0 }: {
       {preferences.visible && <div className={styles.portrait}>
         <SwitchableCharacterStage key={scope} speech={speech} emotion={controls.emotion} gesture={controls.gesture} quiet={quiet} />
       </div>}
-    </aside>
-    {children}
+    </aside>;
+  return <CommonCharacterContext.Provider value={channel}>
+    <CommonCharacterPlacementContext.Provider value={setPlacement}>
+      {children}
+      {placement ? createPortal(portrait, placement) : portrait}
+    </CommonCharacterPlacementContext.Provider>
   </CommonCharacterContext.Provider>;
 }
