@@ -14,15 +14,15 @@
 /* Stable stage footprint while focus pauses/shrinks the character. */
 @media(max-width:480px){.host{padding:6px 8px}}
 
-/* Reply-side portrait: page retains the reply and its existing live region. */
-.host[data-beside-reply=true]{margin:0;padding:4px;width:100%;border:0;border-radius:12px}
+/* Reply-side stage and actual canvas share the reply's measured square footprint.
+   Human art retains its 2:3 ratio; no stretched pixels or focus-time shrink. */
+.host[data-beside-reply=true]{margin:0;padding:0;width:100%;border:0;border-radius:12px}
 .host[data-beside-reply=true] .portrait{margin:0;max-width:none}
 .host[data-beside-reply=true] .portrait>div{display:block}
-.host[data-beside-reply=true] .portrait [aria-busy]{width:100%;height:144px;margin:0}
-.host[data-beside-reply=true] .portrait canvas{max-height:144px}
-.host[data-beside-reply=true][data-quiet=true] .portrait canvas{max-height:144px}
-.host[data-beside-reply=true] .portrait [aria-label="연이 외형 선택"]{flex-direction:column}
-.host[data-beside-reply=true] .controls{flex-direction:column;gap:4px}
-.host[data-beside-reply=true] .controls button{width:100%;padding:4px;font-size:12px;overflow-wrap:anywhere}
-.settings summary{min-height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer}
-@media(min-width:640px){.host[data-beside-reply=true] .portrait [aria-busy]{height:192px}.host[data-beside-reply=true] .portrait canvas,.host[data-beside-reply=true][data-quiet=true] .portrait canvas{max-height:192px}}
+.host[data-beside-reply=true] .portrait [aria-busy]{width:100%;height:var(--paired-height);aspect-ratio:auto;margin:0}
+.host[data-beside-reply=true] .portrait canvas,.host[data-beside-reply=true][data-quiet=true] .portrait canvas{width:auto;height:var(--paired-height);max-height:var(--paired-height);max-width:100%;object-fit:contain;margin:auto}
+
+/* Cat source has a broad white margin. Enlarge the existing artwork, clipping
+   that margin inside the same stage; human portrait keeps its native framing. */
+.host[data-beside-reply=true] .portrait [aria-busy]{overflow:hidden}
+.host[data-beside-reply=true] [data-character-appearance=cat] canvas{transform:translate(-5%,-5%) scale(1.25)}

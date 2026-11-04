@@ -35,7 +35,7 @@ function Stage({ enabled, assets, compactOptions, showOptions, ...controls }: Ch
     </div>;
   const notice = <p className={styles.notice} role="status">{failed ? '모습을 불러오지 못했어요. 현재 모습으로 계속할게요.'
       : appearance.status === 'loading' ? `${names[requested]} 모습을 준비하고 있어요.` : `${names[appearance.appearance ?? requested]} 연이 · 같은 목소리로 이어서 말해요.`}</p>;
-  return <div className={styles.root} data-appearance-status={failed ? 'error' : appearance.status}>
+  return <div className={styles.root} data-character-appearance={appearance.appearance ?? requested} data-appearance-status={failed ? 'error' : appearance.status}>
     {showOptions && !compactOptions && choices}
     <div className={styles.stage} aria-busy={appearance.status === 'loading'}>
       <canvas ref={canvas} className={styles.canvas} role="img" aria-label={`${names[appearance.appearance ?? requested]} 연이`}
