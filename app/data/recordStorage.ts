@@ -168,7 +168,7 @@ export function isTodayKey(dateKey: string) {
 
 export function getPreviousWeightRecord(weights: WeightRecordStore, dateKey: string) {
   return Object.entries(weights)
-    .filter(([key, record]) => key < dateKey && Number.isFinite(record.weight))
+    .filter(([key, record]) => key < dateKey && Number.isFinite(record.weight) && record.weight > 0)
     .sort(([a], [b]) => b.localeCompare(a))[0];
 }
 
