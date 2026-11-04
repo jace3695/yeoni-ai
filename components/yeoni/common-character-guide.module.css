@@ -1,0 +1,11 @@
+.guide{display:grid;grid-template-columns:88px minmax(0,1fr);align-items:center;gap:12px;min-width:0;width:100%;margin-bottom:20px}
+.guide>[data-yeoni-common-slot]{min-width:0}
+.content{min-width:0;overflow-wrap:anywhere}
+.guide[data-character-visible=false]{grid-template-columns:minmax(0,1fr)}
+.guide[data-character-visible=false]>[data-yeoni-common-slot]{display:none}
+.guide [data-yeoni-common-host]{width:88px;margin:0;padding:0;border:0;background:transparent}
+.guide [data-yeoni-common-host]>div{margin:0;max-width:none}
+.guide [data-yeoni-common-host]>div>div{display:block}
+.guide [data-yeoni-common-host] [aria-busy]{width:88px;height:88px;margin:0}
+.guide [data-yeoni-common-host] canvas{max-height:88px;max-width:88px}
+@media(max-width:480px){.guide{grid-template-columns:72px minmax(0,1fr);gap:10px}.guide [data-yeoni-common-host]{width:72px}.guide [data-yeoni-common-host] [aria-busy]{width:72px;height:72px}.guide [data-yeoni-common-host] canvas{max-height:72px;max-width:72px}}

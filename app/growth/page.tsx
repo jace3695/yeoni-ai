@@ -1,6 +1,6 @@
 "use client";
 
-import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
+import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import AppIdentity from "../components/AppIdentity";
@@ -98,8 +98,7 @@ export default function GrowthPage() {
 
   return <main className={styles.page}>
     <header className={styles.header}><AppIdentity kind="growth" title="자기계발" subtitle="내가 정하는 작은 실천" /><Link href="/">홈</Link></header>
-      <CommonCharacterSlot />
-    <section className={styles.hero}><h1>내가 하고 싶은 일, 하나씩</h1><p>활동과 요일을 정하고, 마친 날에 체크해요.</p></section>
+    <CommonCharacterGuide><section className={styles.hero}><h1>내가 하고 싶은 일, 하나씩</h1><p>활동과 요일을 정하고, 마친 날에 체크해요.</p></section></CommonCharacterGuide>
     <section className={styles.panel} aria-label="기본 학습과 연습"><h2>앱에 있는 기본 기능</h2><p>활동을 등록하지 않아도 바로 시작할 수 있어요. 직접 정할 활동과 요일은 아래에서 관리해요.</p>
       <nav className={styles.actions} aria-label="기본 기능"><Link href="/growth/handwriting">손글씨 수업 · 53개 수업</Link><Link href="/growth/handwriting/free">손글씨 자유 연습</Link><Link href="/language">일본어 학습</Link><Link href="/fitness">운동</Link><Link href="/growth/resources">내 자료</Link></nav>
       {growth.dataReady && !routines.some(row => row.category === 'handwriting') && <button disabled={!ready} onClick={() => { resetEditor(); setCategory('handwriting'); setTitle('손글씨 연습'); editor.current?.focus(); }}>선택: 손글씨를 내 요일 일정에도 추가</button>}

@@ -1,6 +1,6 @@
 "use client";
 
-import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
+import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
 import { RECORDS_CHANGED_EVENT } from "../data/storageTransaction";
 import AppCompanion from "@/components/AppCompanion";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -724,11 +724,10 @@ function FitnessApp() {
           <AppModuleNav items={PRIMARY_NAV.map((item) => ({ ...item, icon: item.emoji }))} activeId={activePrimaryNav} ariaLabel="운동 주요 메뉴" onSelect={(id) => handlePrimaryNavigation(id as (typeof PRIMARY_NAV)[number]["id"])} />
         </div>
       </header>
-      <CommonCharacterSlot />
 
       {/* ── Main Content ── */}
       <main className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
-        <div className="mx-auto max-w-5xl"><AppCompanion home={activeTab === "ov"} compact={activeTab !== "ov"} quiet={activeTab !== "ov"}>{activeTab === "ov" ? todayRecord.workoutDone ? "오늘 운동을 해냈네요! 편하게 쉬어요." : "몸 상태를 살피며, 하나씩 함께해요." : activeTab === "record" ? "숫자 하나보다 기록의 흐름을 함께 봐요. 입력한 값도 한 번 확인해 주세요." : activeTab === "more" ? "필요한 도구와 설정을 여기서 찾아봐요." : "내 속도에 맞춰 천천히 해봐요. 운동 중에는 조용히 기다릴게요."}</AppCompanion></div>
+        <div className="mx-auto max-w-5xl"><CommonCharacterGuide><AppCompanion embedded home={activeTab === "ov"} compact={activeTab !== "ov"} quiet={activeTab !== "ov"}>{activeTab === "ov" ? todayRecord.workoutDone ? "오늘 운동을 해냈네요! 편하게 쉬어요." : "몸 상태를 살피며, 하나씩 함께해요." : activeTab === "record" ? "숫자 하나보다 기록의 흐름을 함께 봐요. 입력한 값도 한 번 확인해 주세요." : activeTab === "more" ? "필요한 도구와 설정을 여기서 찾아봐요." : "내 속도에 맞춰 천천히 해봐요. 운동 중에는 조용히 기다릴게요."}</AppCompanion></CommonCharacterGuide></div>
         {activeTab === "ov" && (
           <div className="mx-auto w-full max-w-5xl">
             {directionUpdateNotice && (

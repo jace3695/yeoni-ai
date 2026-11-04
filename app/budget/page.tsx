@@ -1,6 +1,6 @@
 'use client'
 import YeoniPreferencesPanel from "@/components/YeoniPreferencesPanel";
-import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
+import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
 import ManualEntry from './components/manual-entry'
 import { useManualBudgetDraft } from './lib/use-manual-draft'
 import { validBudgetDate } from './lib/manual-entry'
@@ -3247,7 +3247,6 @@ return (
           }} />
         </div>
       </header>
-      {tab !== 'home' && <CommonCharacterSlot />}
 
 
       <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete?.kind === 'all' ? '가계부 기록 전체 삭제' : '선택한 기록 삭제'} description={pendingDelete?.kind === 'all' ? '전체 기간의 지출·수입·저축 기록을 삭제합니다. 예산·설정과 다른 앱 기록은 유지됩니다. 삭제한 기록은 되돌릴 수 없어요.' : '선택한 기록만 삭제합니다. 삭제 직후에는 이 화면의 “삭제 되돌리기”로 원래 기록을 복원할 수 있어요.'} busy={Boolean(processingRecordKey) || resetLoading} onCancel={() => setPendingDelete(null)} onConfirm={() => {
@@ -3255,7 +3254,7 @@ return (
         const action = pendingDelete.kind === 'all' ? handleResetAllData() : handleDeleteRecord(pendingDelete.kind, pendingDelete.id)
         void action.finally(() => setPendingDelete(null))
       }} />
-      <div className="budget-guide"><AppCompanion home={tab === 'home'} compact={tab !== 'home'} quiet={tab !== 'home'}>{tab === 'home' ? '오늘 쓴 내역부터 가볍게 남겨봐요.' : tab === 'input' ? '금액과 날짜를 확인하고 저장해 주세요.' : tab === 'analysis' ? '항목별 흐름을 비교해봐요. 기록이 쌓이면 소비 습관이 더 잘 보여요.' : tab === 'settings' ? '설정을 바꾸기 전에 안내를 확인해 주세요. 초기화는 지워지는 기록부터 살펴봐요.' : '찾고 싶은 기간과 항목을 골라봐요. 저장한 내역을 다시 확인할 수 있어요.'}</AppCompanion></div>
+      {tab !== 'home' && <div className="budget-guide"><CommonCharacterGuide><AppCompanion embedded home={tab === 'home'} compact={tab !== 'home'} quiet={tab !== 'home'}>{tab === 'home' ? '오늘 쓴 내역부터 가볍게 남겨봐요.' : tab === 'input' ? '금액과 날짜를 확인하고 저장해 주세요.' : tab === 'analysis' ? '항목별 흐름을 비교해봐요. 기록이 쌓이면 소비 습관이 더 잘 보여요.' : tab === 'settings' ? '설정을 바꾸기 전에 안내를 확인해 주세요. 초기화는 지워지는 기록부터 살펴봐요.' : '찾고 싶은 기간과 항목을 골라봐요. 저장한 내역을 다시 확인할 수 있어요.'}</AppCompanion></CommonCharacterGuide></div>}
 
       {tab === 'home' && (
         <main className="living-finance-view living-finance-home app-safe-top" style={{ padding: '24px 20px 96px' }}>
@@ -3287,7 +3286,7 @@ return (
               <button className="home-logout" onClick={handleLogout}>로그아웃</button>
             </div>
           </header>
-          <CommonCharacterSlot />
+          <CommonCharacterGuide><AppCompanion embedded home={tab === 'home'} compact={tab !== 'home'} quiet={tab !== 'home'}>{tab === 'home' ? '오늘 쓴 내역부터 가볍게 남겨봐요.' : tab === 'input' ? '금액과 날짜를 확인하고 저장해 주세요.' : tab === 'analysis' ? '항목별 흐름을 비교해봐요. 기록이 쌓이면 소비 습관이 더 잘 보여요.' : tab === 'settings' ? '설정을 바꾸기 전에 안내를 확인해 주세요. 초기화는 지워지는 기록부터 살펴봐요.' : '찾고 싶은 기간과 항목을 골라봐요. 저장한 내역을 다시 확인할 수 있어요.'}</AppCompanion></CommonCharacterGuide>
 
           {user?.id && <PaymentPlans key={`home-plans:${user.id}`} userId={user.id} records={transactions} month={selectedMonth} budget={monthlyBudget} ready={recordsReady && !budgetLoading} currency={currency} compact onManage={() => { setTab('analysis'); setAnalysisView('stats'); }} onRefreshRecords={fetchTransactions} />}
           <section className="home-ai-card home-ai-card-primary">
