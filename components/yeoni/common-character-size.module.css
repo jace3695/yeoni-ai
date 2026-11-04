@@ -1,0 +1,3 @@
+/* Match the approved assistant portrait footprint across app guidance.
+   The 2rem + 46px allowance tracks assistant gutters and text scaling. */
+.size{--yeoni-character-height:min(320px,calc((100vw - 2rem - 46px) * .51923))}
