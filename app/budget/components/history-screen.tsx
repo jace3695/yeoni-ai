@@ -74,6 +74,8 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
   const filteredSavingItems = savings.filter((item: any) => (historyTypeFilter === 'all' || historyTypeFilter === 'saving') && range.matches(item.amount) && matchesHistoryDate(item.date) && includesHistoryQuery(item.goal_name, item.memo, item.date))
   const historyCategoryOptions = Array.from(new Set(transactions.map((item: any) => String(item.category || '')).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko-KR'))
   const paymentOptions = Array.from(new Set(transactions.map((item: any) => String(item.payment || '')))).sort((a, b) => a.localeCompare(b, 'ko-KR'))
+  const hasStoredRecords = incomeList.length + transactions.length + savings.length > 0
+  const hasHistoryFilters = Boolean(normalizedSearchQuery || historyStartDate || historyEndDate || historyTypeFilter !== 'all' || historyCategoryFilter !== 'all' || minimumAmount || maximumAmount || paymentFilter !== 'all')
   const resetHistoryFilters = () => { setSearchQuery(''); setHistoryStartDate(''); setHistoryEndDate(''); setHistoryTypeFilter('all'); setHistoryCategoryFilter('all'); setMinimumAmount(''); setMaximumAmount(''); setPaymentFilter('all') }
   const exportFilteredHistoryCsv = () => {
     const rows = [
@@ -246,7 +248,7 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                 </>
               )}
     
-              {filteredIncomeItems.length === 0 && filteredExpenseItems.length === 0 && filteredSavingItems.length === 0 && !searchQuery && (
+              {filteredIncomeItems.length === 0 && filteredExpenseItems.length === 0 && filteredSavingItems.length === 0 && !hasStoredRecords && !hasHistoryFilters && (
                 <div style={{ background: 'rgba(19,19,28,0.72)', border: '1px solid #1A1A24', borderRadius: 16, padding: '28px 20px', textAlign: 'center', marginTop: 8 }}>
                   <p style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 700, margin: '0 0 8px' }}>아직 데이터가 없어요</p>
                   <p style={{ color: '#AEB7C6', fontSize: 13, lineHeight: 1.6, margin: 0 }}>
@@ -258,14 +260,14 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                 </div>
               )}
     
-              {searchQuery && filteredIncomeItems.length === 0 && filteredExpenseItems.length === 0 && filteredSavingItems.length === 0 && (
+              {(hasStoredRecords || hasHistoryFilters) && filteredIncomeItems.length === 0 && filteredExpenseItems.length === 0 && filteredSavingItems.length === 0 && (
                 <div style={{ background: 'rgba(19,19,28,0.72)', border: '1px solid #1A1A24', borderRadius: 16, padding: '24px 20px', textAlign: 'center', marginTop: 8 }}>
-                  <p style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 700, margin: '0 0 8px' }}>검색 결과가 없어요</p>
+                  <p style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 700, margin: '0 0 8px' }}>조건에 맞는 내역이 없어요</p>
                   <p style={{ color: '#AEB7C6', fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                    장소명, 카테고리, 날짜처럼 다른 키워드로 다시 검색해보세요.
+                    검색어, 날짜, 유형, 금액 등의 조건을 바꾸거나 지워보세요.
                   </p>
-                  <button type="button" onClick={() => setSearchQuery('')} style={{ minHeight: 44, marginTop: 14, border: '1px solid rgba(102,138,115,.35)', borderRadius: 12, padding: '10px 16px', color: '#4F705C', background: 'rgba(102,138,115,.1)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                    검색어 지우기
+                  <button type="button" onClick={resetHistoryFilters} style={{ minHeight: 44, marginTop: 14, border: '1px solid rgba(102,138,115,.35)', borderRadius: 12, padding: '10px 16px', color: '#4F705C', background: 'rgba(102,138,115,.1)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    모든 조건 지우기
                   </button>
                 </div>
               )}
