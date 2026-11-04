@@ -33,11 +33,12 @@ function label(tree:any):string{if(typeof tree==='string')return tree;if(!tree||
 function button(tree:any,name:string){const b=nodes(tree).find(n=>n.type==='button'&&label(n)===name);assert.ok(b,name);return b;}
 async function settle(){for(let i=0;i<5;i++)await new Promise(r=>setImmediate(r));}
 
-test('assistant archive gate uses ready owner, not a new conversation, and keys account state',()=>{
-  const source=readFileSync(new URL('../app/assistant/AssistantClient.tsx',import.meta.url),'utf8');
-  const line=source.split('\n').find(l=>l.includes('<ConversationArchiveEntry'))!;
-  assert.match(line,/pending.ready && pending.ownerId/);assert.doesNotMatch(line,/localBodyActive &&/);
-  assert.match(line,/key=\{pending.ownerId\}/);assert.match(line,/localBodyCandidate\?\.ownerId === pending.ownerId/);
+test('settings archive remains available without a new conversation and is keyed by owner',()=>{
+  const source=readFileSync(new URL('../components/PrivacyArchiveSettings.tsx',import.meta.url),'utf8');
+  assert.match(source,/key=\{owner \?\? 'signed-out'\}/);
+  assert.match(source,/<ConfirmedConversationArchive ownerId=\{owner\} kind="body-dialogue" candidate=\{null\}/);
+  const settings=readFileSync(new URL('../app/settings/page.tsx',import.meta.url),'utf8');
+  assert.match(settings,/href="\/settings\/privacy"/);
 });
 test('fresh mount with no question offers manual loading and cannot save or auto-fetch',()=>{
   const f=fixture(),tree=f.render();

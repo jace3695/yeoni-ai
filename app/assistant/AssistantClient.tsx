@@ -3,10 +3,8 @@
 import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import { useUnsavedChanges } from "@/components/useUnsavedChanges";
 import { clearAssistantChatInputDraft, openAssistantChatInputDraft, updateAssistantChatInputDraft, type AssistantChatDraftLease } from '@/lib/assistant-chat-input-draft';
-import BodyAnalysisHistory from '@/app/components/BodyAnalysisHistory';
-import ConversationArchiveEntry from '@/components/ConversationArchiveEntry';
+import { stageBodyArchiveDraft } from '@/lib/body-archive-draft';
 import type { BodyAnalysisSnapshot } from '@/lib/body-analysis-history';
-import AssistantPromptExamples from "@/components/AssistantPromptExamples";
 import AssistantListEmptyState, { type AssistantListFilter } from "@/components/AssistantListEmptyState";
 import AppCompanion from "@/components/AppCompanion";
 import dynamic from 'next/dynamic';
@@ -711,16 +709,16 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
       <HomeOverview action={nextAction} loading={loading} failures={loadFailures} lastLoadedAt={lastLoadedAt} onRetry={() => void load()} />
       <section id="yeoni-chat" aria-label="연이에게 말하기" className="mt-5 scroll-mt-24 rounded-[28px] border border-white bg-white p-4 shadow-sm sm:p-6">
         <div className="flex items-start justify-between gap-3">
-          <div><h2 className="text-xl font-bold">연이에게 말하기</h2><p id="assistant-start-help" className="mt-1 text-sm text-gray-500">하고 싶은 일을 적거나 추천 질문을 고른 뒤, 보내기를 눌러 주세요.</p></div>
+          <div><h2 className="text-xl font-bold">연이에게 말하기</h2><p id="assistant-start-help" className="mt-1 text-sm text-gray-500">하고 싶은 일을 적은 뒤, 보내기를 눌러 주세요.</p></div>
         </div>
         <form onSubmit={(event) => { event.preventDefault(); void sendChat(); }} className="mt-3 flex gap-2">
           <label htmlFor="assistant-chat-input" className="sr-only">연이에게 하고 싶은 말</label><input id="assistant-chat-input" aria-describedby="assistant-start-help" value={chatInput} disabled={chatHistoryLoading || adviceBusy} onChange={(event) => setChatInput(event.target.value, true)} maxLength={500} placeholder="예: 오늘 운동 계획 알려줘" className="min-w-0 flex-1 rounded-2xl border-0 bg-yeoni-bg px-4 py-3 text-base outline-none ring-1 ring-gray-100 focus:ring-[#7F77DD] disabled:opacity-50" />
           <button disabled={chatSending || adviceBusy || chatHistoryLoading || !chatInput.trim()} className="rounded-2xl bg-[#5146A6] px-5 py-3 text-sm font-bold text-white disabled:bg-gray-300">보내기</button>
         </form>
         <CommonCharacterSlot>
-        <div ref={chatBoxRef} aria-live="polite" role="region" aria-label="연이와 대화 내역" tabIndex={0} className="mt-0 max-h-56 space-y-3 sm:max-h-80 overflow-y-auto rounded-2xl bg-[#F7F6FF] p-3 sm:p-4">
+        <div ref={chatBoxRef} aria-live="polite" role="region" aria-label="연이와 대화 내역" tabIndex={0} className="mt-0 max-h-56 space-y-3 sm:max-h-80 overflow-y-auto rounded-2xl border border-[#D8D0E8] bg-[#F7F6FF] p-3 sm:p-4">
           {chatHistoryLoading && <p className="text-xs font-semibold text-[#766DB8]">지난 대화를 불러오고 있어요…</p>}
-          {chatMessages.filter(chat => !chat.ownerId || chat.ownerId === pending.ownerId).map((chat) => <div key={chat.id} data-chat-message data-chat-role={chat.role} className={`flex ${chat.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${chat.role === "user" ? "bg-[#5146A6] text-white" : "bg-white text-gray-700 shadow-sm"}`}>{chat.historyOnly && <p className="text-xs font-bold">이전 대화 · 읽기 전용 (재전송·음성 제외)</p>}{chat.localOnly && <p className="text-xs font-bold">이 화면에서만 보는 로컬 대화</p>}<p className="whitespace-pre-wrap break-words">{chat.text}</p>{chat.action && <Link href={chat.action.href} onClick={(event) => {
+          {chatMessages.filter(chat => !chat.ownerId || chat.ownerId === pending.ownerId).map((chat) => <div key={chat.id} data-chat-message data-chat-role={chat.role} className={`flex ${chat.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${chat.role === "user" ? "bg-[#5146A6] text-white" : "bg-white text-gray-700 shadow-sm ring-1 ring-inset ring-[#C9C1DF]"}`}>{chat.localOnly && <p className="text-xs font-bold">이 화면에서만 보는 로컬 대화</p>}<p className="whitespace-pre-wrap break-words">{chat.text}</p>{chat.action && <Link href={chat.action.href} onClick={(event) => {
                 if (!chat.action?.href.startsWith('/assistant?advice=')) return;
                 const scope = new URLSearchParams(chat.action.href.split('?')[1].split('#')[0]).get('advice');
                 if (isFreeAdviceScope(scope)) {
@@ -730,30 +728,24 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
               }} className="mt-2 inline-block rounded-full bg-[#F1EFFF] px-3 py-1.5 text-xs font-bold text-[#5146A6]">{chat.action.label} →</Link>}{chat.role === 'assistant' && chat.id !== 'welcome' && !chat.localOnly && !chat.historyOnly && <ZephyrReadButton text={chat.text} />}</div></div>)}
           {pending.error && <p role="alert" className="text-red-700">{pending.error}</p>}
           {pending.drafts.map(draft => <AssistantCommandReview key={`${pending.ownerId}:${draft.proposal.requestId}`} proposal={draft.proposal} ownerId={pending.ownerId ?? undefined} initiallyAttempted={draft.attempted} onAttempt={(signal) => pending.markAttempted(draft.proposal.requestId, signal)} onSettled={(signal) => pending.remove(draft.proposal.requestId, signal)} onChanged={load} />)}
-          {chatSending && <p className="text-xs font-semibold text-[#766DB8]">답변을 준비하고 있어요…</p>}
+          {(chatSending || adviceBusy) && <p role="status" className="text-xs font-semibold text-[#766DB8]">답변을 준비하고 있어요…</p>}
         </div>
         </CommonCharacterSlot>
-        <AssistantPromptExamples disabled={chatSending || adviceBusy || chatHistoryLoading} hasDraft={!!chatInput.trim()} onSelect={(sample) => { setChatInput(sample, true); document.getElementById('assistant-chat-input')?.focus(); }} />
         <div className="mt-3">{characterAudio ? <AssistantCharacter key={pending.ownerId ?? 'signed-out'} audio={characterAudio}
           incoming={characterReply?.ownerId === pending.ownerId ? characterReply : null} busy={chatSending || adviceBusy} />
           : <AppCompanion compact embedded quiet={chatSending}>오늘은 무엇을 도와드릴까요?</AppCompanion>}</div>
-        <p className="mt-2 text-xs text-gray-600">인바디·체성분·BMI 질문은 브라우저 안에서 답하며 일반 서버 대화 이력이나 음성 읽기에 포함하지 않습니다. 아래 별도 동의 보관을 선택할 때만 확인한 질문·답변을 계정에 보냅니다.</p>
-        {localBodyActive && <div className="mt-2 text-xs">
-          <p>체성분 로컬 대화 중입니다. 모호한 후속 질문은 보내지 않습니다. 정해진 일반 조회 명령은 기존 경로를 사용합니다.</p>
-          <button type="button" className="min-h-11 px-3 font-semibold" onClick={() => { setLocalBodyCandidate(null); setLocalBodyActive(false); setChatInput(''); }}>기존 일반 대화로 돌아가기</button>
-        </div>}
-        {chatMessages.some(item => item.localOnly) && <button type="button" className="min-h-11 px-3 text-xs" onClick={() => { setLocalBodyCandidate(null); setChatMessages(items => items.filter(item => !item.localOnly)); }}>로컬 대화만 비우기</button>}
-        {localBodyActive && <BodyAnalysisHistory candidate={localBodyCandidate} />}
-        {pending.ready && pending.ownerId && <ConversationArchiveEntry key={pending.ownerId} ownerId={pending.ownerId} kind="body-dialogue" candidate={localBodyCandidate?.ownerId === pending.ownerId && localBodyCandidate.question ? { version: 1, kind: 'body-dialogue', date: localBodyCandidate.snapshot.date, question: localBodyCandidate.question, answer: `${LOCAL_BODY_NOTICE}\n\n${localBodyCandidate.snapshot.text}` } : null} />}
         {activeAdvice && <div aria-label="대화 중 조언 확인">
           <FreeAdvicePanel key={activeAdvice.id} scope={activeAdvice.scope} initialQuestion={activeAdvice.question} onComplete={finishAdvice} onBusyChange={changeAdviceBusy} />
           <button type="button" disabled={adviceBusy} onClick={() => { clearCharacter(); setActiveAdvice(null); }} className="min-h-11 rounded-xl px-4 py-2 text-sm font-bold text-gray-600 disabled:opacity-40">조언 취소</button>
         </div>}
         {chatHistoryNotice && <p role="status" className="mt-2 text-xs font-semibold text-amber-700">{chatHistoryNotice}</p>}
-        <p className="mt-2 text-xs leading-5 text-gray-500">저장하거나 AI에 보낼 내용은 먼저 보여드려요.</p>
         <details className="mt-2 border-t border-gray-100 pt-2">
-          <summary className="cursor-pointer py-2 text-sm font-semibold text-gray-600">대화 메뉴</summary>
-          <div className="flex flex-wrap gap-2"><button type="button" onClick={() => void clearChatHistory()} disabled={chatHistoryLoading || chatSending || adviceBusy || chatMessages.filter(item => !item.localOnly).length <= 1} className="rounded-full bg-gray-100 px-3 py-2 text-xs font-bold text-gray-600 disabled:opacity-40">대화 지우기</button><Link href="/assistant/advice" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">ChatGPT 조언 →</Link><Link href="/assistant/history" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">실행 이력 →</Link><Link href="/assistant/quick" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">Siri 빠른 명령 설정 →</Link></div>
+          <summary className="cursor-pointer py-2 text-sm font-semibold text-gray-600">대화 도구</summary>
+          {localBodyActive && <button type="button" className="min-h-11 px-3 text-xs" onClick={() => { setLocalBodyCandidate(null); setLocalBodyActive(false); setChatInput(''); }}>기존 일반 대화로 돌아가기</button>}
+          {chatMessages.some(item => item.localOnly) && <button type="button" className="min-h-11 px-3 text-xs" onClick={() => { setLocalBodyCandidate(null); setChatMessages(items => items.filter(item => !item.localOnly)); }}>로컬 대화만 비우기</button>}
+          {localBodyCandidate?.ownerId === pending.ownerId && localBodyCandidate && <Link href="/settings/privacy" className="inline-flex min-h-11 items-center px-3 text-xs" onClick={event => { if (!stageBodyArchiveDraft(localBodyCandidate)) event.preventDefault(); }}>설정에서 현재 체성분 답변 보관</Link>}
+
+          <div className="grid grid-cols-2 gap-2 pt-2 sm:grid-cols-4"><button type="button" onClick={() => void clearChatHistory()} disabled={chatHistoryLoading || chatSending || adviceBusy || chatMessages.filter(item => !item.localOnly).length <= 1} className="rounded-full bg-gray-100 px-3 py-2 text-xs font-bold text-gray-600 disabled:opacity-40">대화 지우기</button><Link href="/assistant/advice" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">ChatGPT 조언 →</Link><Link href="/assistant/history" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">실행 이력 →</Link><Link href="/assistant/quick" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">Siri 빠른 명령 설정 →</Link></div>
         </details>
       </section>
 

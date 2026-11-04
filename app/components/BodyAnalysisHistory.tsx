@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { authenticatedFetch } from '@/lib/supabase';
 import { parseBodyAnalysisEntry, type BodyAnalysisEntry, type BodyAnalysisSnapshot } from '@/lib/body-analysis-history';
 const endpoint = '/api/fitness/body-analysis-history';
-export default function BodyAnalysisHistory({ candidate }: { candidate: { ownerId: string; snapshot: BodyAnalysisSnapshot } | null }) {
+export default function BodyAnalysisHistory({ candidate, active = true, onBusyChange }: { candidate: { ownerId: string; snapshot: BodyAnalysisSnapshot } | null; active?: boolean; onBusyChange?: (busy: boolean) => void }) {
   const [entries, setEntries] = useState<BodyAnalysisEntry[]>([]);
   const [loaded, setLoaded] = useState(false), [cursor, setCursor] = useState<{ before: string; beforeId: string } | null>(null);
   const [ack, setAck] = useState(false), [busy, setBusy] = useState(false), [notice, setNotice] = useState('');
@@ -14,6 +14,8 @@ export default function BodyAnalysisHistory({ candidate }: { candidate: { ownerI
   const epoch = useRef(0), locked = useRef(false), owner = useRef<string | null>(null);
   const save = useRef<{ key: string; id: string } | null>(null);
   const signature = candidate ? JSON.stringify(candidate) : '';
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
+  useEffect(() => { if (!active) { setAck(false); setPreviewOpen(false); setDeleting(null); } }, [active]);
   useEffect(() => { setAck(false); setPreviewOpen(false); setNotice(''); save.current = null; }, [signature]);
   useEffect(() => {
     const invalidateRequests = () => { epoch.current++; controller.current?.abort(); };
@@ -28,7 +30,7 @@ export default function BodyAnalysisHistory({ candidate }: { candidate: { ownerI
     return () => { invalidateRequests(); subscription?.unsubscribe(); window.removeEventListener('yeoni-cloud-session-changed', clear); window.removeEventListener('storage', storage); };
   }, []);
   async function run(action: 'load' | 'more' | 'save' | 'delete', id?: string) {
-    if (locked.current || !supabase || action === 'save' && (!candidate || !ack)) return;
+    if (!active || locked.current || !supabase || action === 'save' && (!candidate || !ack)) return;
     locked.current = true; setBusy(true); setNotice('');
     const ticket = epoch.current;
     let requestId: string | undefined;

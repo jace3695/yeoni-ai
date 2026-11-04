@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { EMPTY_PLAYBACK } from '@/lib/yeoni/character-controller';
 import { isQuietCharacterRoute } from '@/lib/yeoni/common-host-policy';
 import { stopAllSpeech } from '@/lib/yeoni/speech-focus';
-import { updateYeoniPreferences, useYeoniPreferences } from '../useYeoniPreferences';
+import { useYeoniPreferences } from '../useYeoniPreferences';
 import SwitchableCharacterStage from './SwitchableCharacterStage';
 import type { CharacterControlProps } from './useCharacterStage';
 import styles from './common-character-host.module.css';
@@ -56,22 +56,10 @@ export default function CommonCharacterHost({ children, path, boundary = 0 }: {
     };
   }, []);
   const quiet = editing || quietCount > 0 || isQuietCharacterRoute(path);
-  const settings = <div className={styles.controls}>
-        <strong>연이</strong>
-        <button type="button" onClick={() => {
-          stopAllSpeech();
-          try { updateYeoniPreferences({ visible: !preferences.visible }); } catch { /* Memory fallback. */ }
-        }}>{preferences.visible ? '연이 숨기기' : '연이 보이기'}</button>
-        <button type="button" onClick={() => {
-          try { updateYeoniPreferences({ motion: preferences.motion === 'home' ? 'off' : 'home' }); } catch { /* Memory fallback. */ }
-        }}>{preferences.motion === 'home' ? '움직임 끄기' : '움직임 켜기'}</button>
-      </div>;
   const portrait = <aside className={styles.host} data-beside-reply={placement.besideReply} data-yeoni-common-host data-quiet={quiet} aria-label="공통 연이">
-      {!placement.besideReply && settings}
       {preferences.visible && <div className={styles.portrait}>
-        <SwitchableCharacterStage key={scope} speech={speech} emotion={controls.emotion} gesture={controls.gesture} quiet={quiet} compactOptions={placement.besideReply} />
+        <SwitchableCharacterStage key={scope} speech={speech} emotion={controls.emotion} gesture={controls.gesture} quiet={quiet} showOptions={false} />
       </div>}
-      {placement.besideReply && <details className={styles.settings}><summary>연이 설정</summary>{settings}</details>}
     </aside>;
   return <CommonCharacterContext.Provider value={channel}>
     <CommonCharacterPlacementContext.Provider value={registerPlacement}>

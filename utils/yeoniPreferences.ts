@@ -35,3 +35,24 @@ export function resolveYeoniMotion(preferences: YeoniPreferences, requested: "on
   if (!preferences.visible || preferences.motion === "off" || requested === "off") return "off";
   return requested === "ambient" && preferences.motion === "home" ? "ambient" : "once";
 }
+
+export const YEONI_APPS = { assistant: 'AI 연이', fitness: '운동', budget: '가계부', diet: '식단', language: '언어', growth: '자기계발', calendar: '달력' } as const;
+export type YeoniApp = keyof typeof YEONI_APPS;
+export const YEONI_APP_PREFERENCES_PREFIX = 'yeoniAppAppearanceSettingsV1:';
+export const YEONI_PREFERENCE_OWNER_EVENT = 'yeoni-preference-owner-changed';
+export function yeoniAppForPath(path: string): YeoniApp {
+  const segment = path.split('/')[1];
+  return Object.hasOwn(YEONI_APPS, segment) ? segment as YeoniApp : 'assistant';
+}
+export function yeoniAppPreferencesKey(owner: string | null) {
+  return YEONI_APP_PREFERENCES_PREFIX + (owner ? `account:${encodeURIComponent(owner)}` : 'guest');
+}
+export function parseAppYeoniPreferences(raw: string | null): Partial<Record<YeoniApp, YeoniPreferences>> {
+  const object = parseObject(raw);
+  const result: Partial<Record<YeoniApp, YeoniPreferences>> = {};
+  for (const app of Object.keys(YEONI_APPS) as YeoniApp[]) {
+    const value = object?.[app];
+    if (value && typeof value === 'object' && !Array.isArray(value)) result[app] = parseYeoniPreferences(JSON.stringify(value));
+  }
+  return result;
+}

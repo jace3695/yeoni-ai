@@ -18,12 +18,12 @@ test('recommendations show four choices and choose text only',()=>{
 test('busy or existing draft blocks even direct handler calls',()=>{
  for(const props of [{disabled:true,hasDraft:false},{disabled:false,hasDraft:true}]){let calls=0;const tree=exports.default({...props,onSelect:()=>calls++});for(const b of nodes(tree).filter(n=>n.type==='button')){assert.equal(b.props.disabled,true);b.props.onClick();}assert.equal(calls,0);}
 });
-test('home and assistant integration fills/focuses input instead of sending example',()=>{
- const client=readFileSync(new URL('../app/assistant/AssistantClient.tsx',import.meta.url),'utf8');const line=client.split(/\r?\n/).find(l=>l.includes('<AssistantPromptExamples'))!;
- assert.ok(client.indexOf('<AssistantPromptExamples') > client.indexOf('</form>'));
+test('home and assistant no longer mount recommendations; input and beside-reply slot remain',()=>{
+ const client=readFileSync(new URL('../app/assistant/AssistantClient.tsx',import.meta.url),'utf8');
+ assert.ok(!client.includes('AssistantPromptExamples'));
+ assert.ok(!client.includes('추천 질문'));
+ assert.ok(client.includes('id="assistant-chat-input"'));
  assert.ok(client.indexOf('<CommonCharacterSlot>') > client.indexOf('</form>'));
  assert.ok(client.indexOf('<div ref={chatBoxRef}') > client.indexOf('<CommonCharacterSlot>'));
- assert.ok(client.indexOf('<AssistantPromptExamples') > client.indexOf('</CommonCharacterSlot>'));
- assert.ok(line);assert.ok(line.includes('setChatInput(sample, true)'));assert.ok(line.includes("?.focus()"));assert.ok(!line.includes('sendChat('));assert.ok(line.includes('hasDraft={!!chatInput.trim()}'));
  const home=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');assert.ok(home.includes('<AssistantPage />'));
 });

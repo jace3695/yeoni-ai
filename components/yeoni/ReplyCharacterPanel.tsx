@@ -82,8 +82,8 @@ export default function ReplyCharacterPanel({ transport, clips, resolveClip, sam
     return commonHost.publish({ speech: () => session.current?.snapshot() ?? { manifest: null, playback: EMPTY_PLAYBACK },
       emotion: state?.emotion, gesture: state?.gesture });
   }, [commonHost, present, preferences.visible, state?.emotion, state?.gesture]);
-  return <section aria-label="연이 대화 캐릭터" className={`${styles.panel} ${embedded ? styles.embedded : ''}`} data-common-host={!!commonHost} data-reply-status={state?.status ?? 'idle'} data-speech-state={player.current?.state ?? 'empty'}>
-    <div className={styles.toolbar}>
+  return <section hidden={embedded && !['ready', 'error', 'loading'].includes(state?.status ?? 'idle')} aria-label="연이 대화 캐릭터" className={`${styles.panel} ${embedded ? styles.embedded : ''}`} data-common-host={!!commonHost} data-reply-status={state?.status ?? 'idle'} data-speech-state={player.current?.state ?? 'empty'}>
+    {!embedded && <div className={styles.toolbar}>
       <button onClick={() => { try { updateYeoniPreferences({ visible: true, motion: preferences.motion === 'home' ? 'off' : 'home' }); } catch { /* In-memory preference still applies. */ } }}>
         {preferences.motion === 'home' ? '움직임 끄기' : '움직임 켜기'}</button>
       <button onClick={() => {
@@ -91,10 +91,10 @@ export default function ReplyCharacterPanel({ transport, clips, resolveClip, sam
         if (commonHost) { try { updateYeoniPreferences({ visible: !preferences.visible }); } catch { /* Memory fallback. */ } }
         else setPresent(!present);
       }}>{commonHost ? preferences.visible ? '캐릭터 숨기기' : '캐릭터 보이기' : embedded ? present ? '캐릭터 숨기기' : '캐릭터 보이기' : present ? '화면 나가기' : '돌아오기'}</button>
-    </div>
+    </div>}
     {present && <div className={styles.columns}>
       {!commonHost && <div className={styles.portrait} data-reply-portrait><SwitchableCharacterStage speech={speech} emotion={state?.emotion}
-        gesture={state?.gesture} assets={assets} /></div>}
+        gesture={state?.gesture} assets={assets} showOptions={!embedded} /></div>}
       <div className={styles.conversation}>
         <p className={styles.eyebrow}>연이의 답변</p>
         <div role="status" aria-live="polite" className={styles.status}>{busy ? statusNames.waiting : statusNames[state?.status ?? 'idle']}</div>

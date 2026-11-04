@@ -1,4 +1,5 @@
 'use client'
+import YeoniPreferencesPanel from "@/components/YeoniPreferencesPanel";
 import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import ManualEntry from './components/manual-entry'
 import { useManualBudgetDraft } from './lib/use-manual-draft'
@@ -4211,6 +4212,7 @@ return (
         </div>
       )}
 
+      {tab === 'settings' && <YeoniPreferencesPanel app="budget" />}
       {tab === 'settings' && (
         <div className="settings-screen app-safe-top" style={{ padding: '24px 20px 96px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20 }}>

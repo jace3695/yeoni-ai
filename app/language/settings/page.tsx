@@ -404,7 +404,7 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      <div style={{ marginBottom: 20 }}><YeoniPreferencesPanel /></div>
+      <div style={{ marginBottom: 20 }}><YeoniPreferencesPanel app="language" /></div>
 
       <div className="card daily-goal-card" style={{ display: "grid", gap: "14px" }}>
         <div className="daily-goal-header">

@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Pause, Play } from "lucide-react";
-import { useYeoniPreferences, updateYeoniPreferences } from "@/components/useYeoniPreferences";
+import { useYeoniPreferences } from "@/components/useYeoniPreferences";
 import { CURRICULUM, TRACKS, getTrackLessons } from "@/data/curriculum";
 import { DEFAULT_CURRICULUM_PROGRESS, CURRICULUM_REVIEW_KEY, loadCurriculumProgress } from "@/utils/curriculumProgress";
 import { DEFAULT_INTEGRATED_LEARNING_SETTINGS, loadIntegratedLearningSettings, saveIntegratedLearningSettings, type IntegratedLearningSettings } from "@/utils/integratedLearningSettings";
@@ -45,19 +44,10 @@ export default function LearningWelcome() {
   const selectStart = (mode: "starter" | "reader") => {
     if (changeSettings({ ...settings, learnerMode: mode, hasChosenStart: true })) router.push(mode === "starter" ? "/language/start" : "/language/learn?lesson=" + nextLesson.id);
   };
-  const toggleMotion = () => {
-    try { updateYeoniPreferences({ motion: preferences.motion === "off" ? "reactions" : "off" }); setError(""); }
-    catch { setError("움직임 설정은 이 화면에 적용했지만 저장하지 못했어요. 기기의 저장 공간을 확인해 주세요."); }
-  };
   return <section className={styles.welcome}>
     <div className={styles.welcomeHeader}>
       <h1>나의 일본어 연습</h1>
-      {preferences.visible && <button type="button" className={styles.motionToggle} onClick={toggleMotion}
-        aria-label={preferences.motion !== "off" ? "움직임 멈추기" : "움직임 켜기"}
-        title={preferences.motion !== "off" ? "움직임 멈추기" : "움직임 켜기"}>
-        {preferences.motion !== "off" ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
-        <span>{preferences.motion !== "off" ? "움직임 멈추기" : "움직임 켜기"}</span>
-      </button>}
+
     </div>
     <LearningCompanion hidden={!preferences.visible} motion="ambient">
       {firstTime ? "안녕! 나랑 첫 글자부터 배워봐요." : draft ? "하던 연습을 나랑 이어갈까요?" : "오늘도 나랑 조금씩 배워봐요!"}

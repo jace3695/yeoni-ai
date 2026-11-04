@@ -104,6 +104,7 @@ export function clearLocalCloudState() {
   // Keep the records and their deletion baseline together, including recovery
   // of an interrupted storage transaction. Unrelated browser data is untouched.
   writeStorageBatch(storage, Object.fromEntries(keys.map(key => [key, null])));
+  window.dispatchEvent(new Event("yeoni-preference-owner-changed"));
 }
 
 export function prepareLocalCloudState(userId: string) {
@@ -117,6 +118,7 @@ export function prepareLocalCloudState(userId: string) {
     storage.removeItem(`${SYNC_BASE_PREFIX}${userId}`);
   }
   storage.setItem(SYNC_USER_KEY, userId);
+  if (previousUser !== userId) window.dispatchEvent(new Event("yeoni-preference-owner-changed"));
 }
 
 export function readCloudSyncEpoch() {
