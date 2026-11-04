@@ -49,6 +49,19 @@ function toCustomExercise(exercise: WorkoutGroupExercise): CustomExercise {
   };
 }
 
+function matchesExercise(
+  exercise: { exerciseId: string; name?: string },
+  name: string,
+  sourceId: string | undefined,
+  customExercises: CustomExercise[],
+) {
+  if (exercise.name === name) return true;
+  if (!sourceId) return false;
+  if (exercise.exerciseId === sourceId) return true;
+  const custom = customExercises.find(item => item.id === exercise.exerciseId);
+  return !!custom && customExerciseSource(custom) === sourceId;
+}
+
 export default function DailyWorkoutEditor({
   dayId,
   dateKey,
@@ -213,7 +226,7 @@ export default function DailyWorkoutEditor({
     if (!isHomeSelectable(candidate?.exerciseId || '', name)) { setNotice("슬라이딩보드와 힙브릿지는 추가 후보에서 제외됩니다."); return; }
 
     const removedBase = baseExercises.find(
-      (exercise) => exercise.name === name && removedIds.has(exercise.exerciseId),
+      (exercise) => matchesExercise(exercise, name, candidate?.exerciseId, []) && removedIds.has(exercise.exerciseId),
     );
     if (removedBase) {
       restoreExercise(removedBase.exerciseId);
@@ -222,7 +235,7 @@ export default function DailyWorkoutEditor({
       return;
     }
 
-    if (orderedExercises.some((exercise) => exercise.name === name)) {
+    if (orderedExercises.some((exercise) => matchesExercise(exercise, name, candidate?.exerciseId, currentEdit.customExercises || []))) {
       setNotice("이미 들어 있는 운동이에요.");
       return;
     }
@@ -452,7 +465,7 @@ export default function DailyWorkoutEditor({
           <div className="my-3 grid gap-3">{homeExerciseCandidates(equipment).map(candidate => {
             const guide = exerciseGuides[candidate.exerciseId] || exerciseGuides[candidate.name || ''];
             const name = candidate.name || candidate.exerciseId;
-            const alreadyAdded = orderedExercises.some((item) => item.name === name);
+            const alreadyAdded = orderedExercises.some((item) => matchesExercise(item, name, candidate.exerciseId, currentEdit.customExercises || []));
             return <div key={candidate.exerciseId} className="rounded-xl border border-gray-200 p-3">
               <p className="text-sm font-bold text-gray-900">{name}</p>
               <button type="button" disabled={alreadyAdded} onClick={() => addExercise(candidate)} className="mt-2 min-h-11 w-full rounded-xl bg-[#534AB7] px-3 py-2 text-sm font-bold text-white disabled:bg-gray-100 disabled:text-gray-500">
