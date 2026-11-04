@@ -493,11 +493,20 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
     else setChatHistoryLoading(false);
   }, [pending.ready, pending.ownerId, loadChatHistory]);
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible') void load(); };
+    let observedDay = getLocalDateKey();
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      observedDay = getLocalDateKey();
+      void load();
+    };
+    // Browsers may throttle hidden tabs; visibility refresh catches missed midnight checks.
+    const dayTimer = window.setInterval(() => {
+      if (getLocalDateKey() !== observedDay) refresh();
+    }, 30_000);
     window.addEventListener('focus', refresh);
     window.addEventListener('online', refresh);
     document.addEventListener('visibilitychange', refresh);
-    return () => { window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
+    return () => { window.clearInterval(dayTimer); window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [load]);
   useEffect(() => {
     const box = chatBoxRef.current;
