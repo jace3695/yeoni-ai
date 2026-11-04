@@ -44,7 +44,7 @@ function toCustomExercise(exercise: WorkoutGroupExercise): CustomExercise {
     sourceExerciseId: exercise.exerciseId,
     name: exercise.name || exercise.exerciseId,
     durationMinutes: exercise.duration ? readFirstNumber(exercise.duration) : undefined,
-    reps: exercise.sets && /회|걸음/.test(exercise.sets) ? readFirstNumber(exercise.sets) : undefined,
+    reps: readFirstNumber(exercise.sets?.match(/\d+(?:\s*[~～–-]\s*\d+)?\s*(?:회|걸음)/)?.[0]),
     sets: exercise.sets?.match(/(\d+)\s*세트/) ? Number(exercise.sets.match(/(\d+)\s*세트/)?.[1]) : undefined,
   };
 }
