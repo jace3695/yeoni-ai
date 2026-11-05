@@ -3261,7 +3261,7 @@ return (
           <header className="home-header">
             <div className="home-title-copy">
               <div className="home-title-row">
-                <div style={{ display:'inline-flex', alignItems:'center', gap:10 }}><AppIcon kind="budget" /><p className="home-eyebrow">AI 가계부</p></div>
+                <h1>{nickname ? `${nickname}님의 생활 금융` : '나의 생활 금융'}</h1>
                 <label className="home-month-picker">
                   <span>조회 월</span>
                   <input
@@ -3278,7 +3278,6 @@ return (
                   />
                 </label>
               </div>
-              <h1>{nickname ? `${nickname}님의 생활 금융` : '나의 생활 금융'}</h1>
               <p className="home-greeting">{selectedMonthLabel} 돈의 흐름을 편안하게 살펴보세요.</p>
             </div>
             <div className="home-header-actions">
