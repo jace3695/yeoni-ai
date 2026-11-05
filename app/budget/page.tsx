@@ -11,7 +11,6 @@ import { useUnsavedChanges } from '@/components/useUnsavedChanges'
 import { getLocalDateKey } from '@/utils/dateKey'
 import { pendingBudgetSaveKey, readPendingBudgetSave, type PendingBudgetSave } from './lib/pending-save'
 import ConfirmDialog from "@/components/ConfirmDialog";
-import AppCompanion from "@/components/AppCompanion";
 import YeoniAdviceEntry from "@/components/YeoniAdviceEntry";
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { Capacitor } from '@capacitor/core'
@@ -20,7 +19,7 @@ import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
 import { authenticatedFetch, createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowRight, ChevronDown, ChevronUp, CircleDollarSign, PiggyBank, ReceiptText, Sparkles } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronUp, CircleDollarSign, PiggyBank, ReceiptText } from 'lucide-react'
 import FixedSpaceBackground from './components/fixed-space-background'
 import PreferencesSettingsCards from './components/preferences-settings-cards'
 import HistoryScreen from './components/history-screen'
@@ -1699,7 +1698,7 @@ function BudgetDashboard() {
       await buildExpenseAnswer(question)
     } catch (error) {
       console.error('AI 질문 처리 오류:', error)
-      setAiAnswer('AI 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
+      setAiAnswer('연이의 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
       setAiFollowUpQuestions([])
     } finally {
       setAnalyzing(false)
@@ -1714,7 +1713,7 @@ function BudgetDashboard() {
       await buildExpenseAnswer(q)
     } catch (error) {
       console.error('AI 추천 질문 처리 오류:', error)
-      setAiAnswer('AI 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
+      setAiAnswer('연이의 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
       setAiFollowUpQuestions([])
     } finally {
       setAnalyzing(false)
@@ -2765,7 +2764,7 @@ function BudgetDashboard() {
 
     const data = await res.json().catch(() => null)
     if (!res.ok || !data?.answer) {
-      const errorAnswer = data?.error || 'AI 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.'
+      const errorAnswer = data?.error || '연이의 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.'
       finishAiAnswer(errorAnswer, ['선택 월 지출을 요약해줘', '가장 많이 쓴 항목은?', '예산 사용률을 알려줘'])
       return
     }
@@ -3287,13 +3286,11 @@ return (
               <button className="home-logout" onClick={handleLogout}>로그아웃</button>
             </div>
           </header>
-          <CommonCharacterGuide><AppCompanion embedded home={tab === 'home'} compact={tab !== 'home'} quiet={tab !== 'home'}>{tab === 'home' ? '오늘 쓴 내역부터 가볍게 남겨봐요.' : tab === 'input' ? '금액과 날짜를 확인하고 저장해 주세요.' : tab === 'analysis' ? '항목별 흐름을 비교해봐요. 기록이 쌓이면 소비 습관이 더 잘 보여요.' : tab === 'settings' ? '설정을 바꾸기 전에 안내를 확인해 주세요. 초기화는 지워지는 기록부터 살펴봐요.' : '찾고 싶은 기간과 항목을 골라봐요. 저장한 내역을 다시 확인할 수 있어요.'}</AppCompanion></CommonCharacterGuide>
-
-          {user?.id && <PaymentPlans key={`home-plans:${user.id}`} userId={user.id} records={transactions} month={selectedMonth} budget={monthlyBudget} ready={recordsReady && !budgetLoading} currency={currency} compact onManage={() => { setTab('analysis'); setAnalysisView('stats'); }} onRefreshRecords={fetchTransactions} />}
-          <section className="home-ai-card home-ai-card-primary">
-            <div className="home-ai-icon" aria-hidden="true"><Sparkles size={22} strokeWidth={1.8} /></div>
+          <CommonCharacterGuide>
+          <section className="home-ai-card home-ai-card-primary home-yeoni-diagnosis">
             <div className="home-ai-content">
-              <p className="home-section-label">AI 소비 진단</p>
+              <p className="home-section-label">연이와 소비 살펴보기</p>
+              <p className="home-diagnosis-basis">기록의 합계와 예산을 기준으로 살펴본 내용이에요.</p>
               <h2>{aiMain}</h2>
               <p className="home-ai-summary">{aiSub}</p>
               <div className="home-ai-action-line">
@@ -3305,6 +3302,10 @@ return (
               </button>
             </div>
           </section>
+          </CommonCharacterGuide>
+
+          {user?.id && <PaymentPlans key={`home-plans:${user.id}`} userId={user.id} records={transactions} month={selectedMonth} budget={monthlyBudget} ready={recordsReady && !budgetLoading} currency={currency} compact onManage={() => { setTab('analysis'); setAnalysisView('stats'); }} onRefreshRecords={fetchTransactions} />}
+
 
           {(() => {
             const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate()
@@ -3819,7 +3820,7 @@ return (
         <header className="living-finance-view analysis-header app-safe-top">
           <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 6px' }}>분석</h2>
           <p style={{ color: '#9CA3AF', fontSize: 13, lineHeight: 1.6, margin: '0 0 14px' }}>
-            숫자로 흐름을 확인하고, 궁금한 내용은 AI에게 바로 물어보세요.
+            숫자로 흐름을 확인하고, 궁금한 내용은 연이에게 바로 물어보세요.
           </p>
           <div className="analysis-tabs"
             role="tablist"
@@ -3827,7 +3828,7 @@ return (
           >
             {([
               { id: 'stats', label: '소비 분석' },
-              { id: 'ai', label: 'AI 상담' }
+              { id: 'ai', label: '연이 상담' }
             ] as const).map(item => {
               const isActive = analysisView === item.id
               return (
@@ -3856,7 +3857,7 @@ return (
           <section style={{ background: 'rgba(19,19,28,0.75)', border: '1px solid #1A1A24', borderRadius: 16, padding: 16, marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
               <div>
-                <p style={{ color: '#E8A87C', fontSize: 12, fontWeight: 700, margin: '0 0 6px', letterSpacing: 1 }}>AI 상담</p>
+                <p style={{ color: '#E8A87C', fontSize: 12, fontWeight: 700, margin: '0 0 6px', letterSpacing: 1 }}>연이 상담</p>
                 <h3 style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 700, margin: '0 0 6px' }}>가계부에 궁금한 점을 물어보세요</h3>
                 <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.6, margin: 0 }}>
                   통계 보고서는 소비 분석에 모으고, 이곳에서는 질문과 답변에만 집중해요.
@@ -3904,7 +3905,7 @@ return (
                 onChange={e => setQuestion(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !analyzing && handleAnalyze()}
                 placeholder="예: 이번 달 식비는 얼마나 썼어?"
-                aria-label="AI에게 질문할 내용"
+                aria-label="연이에게 질문할 내용"
                 style={{ flex: '1 1 220px', minHeight: 46, background: 'rgba(8,8,12,0.46)', border: '1px solid rgba(255,255,255,0.24)', borderRadius: 10, padding: '12px 14px', color: '#FFFFFF', fontSize: 14, outline: 'none', textShadow: '0 1px 2px rgba(0,0,0,0.45)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.08)' }}
               />
               <button type="button" aria-label="음성으로 질문 입력" onClick={handleQuestionVoiceInput} disabled={analyzing} style={{ minWidth: 52, minHeight: 46, background: 'rgba(26,26,46,0.75)', border: '1px solid #2A2A3E', borderRadius: 10, color: '#D0D0E0', padding: '10px 14px', cursor: analyzing ? 'wait' : 'pointer', fontSize: 18, fontWeight: 700 }}>🎤</button>
@@ -3917,7 +3918,7 @@ return (
             <div role="region" aria-label="연이의 가계부 상담" tabIndex={0} aria-live="polite" className="budget-consultation-response">
               {aiAnswer ? (
                 <div className="budget-consultation-bubble">
-                  <p style={{ color: '#E8A87C', fontSize: 11, fontWeight: 700, margin: '0 0 8px', letterSpacing: 0.5 }}>AI 답변</p>
+                  <p style={{ color: '#E8A87C', fontSize: 11, fontWeight: 700, margin: '0 0 8px', letterSpacing: 0.5 }}>연이의 답변</p>
                   <div className="budget-consultation-copy">
                     {aiAnswer.split('\n').map((line, i) => <span key={i}>{line}<br /></span>)}
                   </div>
@@ -4039,7 +4040,7 @@ return (
               <div><p style={{ color: '#777F8E', fontSize: 10, margin: '0 0 4px' }}>지출</p><strong style={{ color: '#FF7D75', fontSize: 13 }}>{formatKRW(allExpenseTotal)}</strong></div>
               <div><p style={{ color: '#777F8E', fontSize: 10, margin: '0 0 4px' }}>저축</p><strong style={{ color: '#7EA6D9', fontSize: 13 }}>{formatKRW(allSavingsTotal)}</strong></div>
             </div>
-            <p style={{ color: '#777F8E', fontSize: 10, margin: '10px 0 0' }}>선택 월 예산과 AI 진단에는 포함하지 않아요.</p>
+            <p style={{ color: '#777F8E', fontSize: 10, margin: '10px 0 0' }}>선택 월 예산과 소비 진단에는 포함하지 않아요.</p>
           </details>
 
           <div style={{ background: 'rgba(19,19,28,0.75)', border: '1px solid #1A1A24', borderRadius: 16, padding: 16, marginBottom: 16 }}>

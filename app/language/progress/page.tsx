@@ -809,7 +809,7 @@ export default function ProgressPage() {
   const currentSentenceQuiz = sentenceQuizItems[sentenceQuizIndex] ?? null;
 
   return (
-    <div style={{ maxWidth: 700, margin: "0 auto", padding: "1.5rem 1rem 3rem", color: "#0f172a" }}>
+    <div style={{ width: "100%", margin: "0 auto", padding: "1.5rem 0 3rem", color: "#0f172a" }}>
       <section style={{ marginBottom: "1.1rem", border: "1px solid #dbeafe", borderRadius: 20, padding: "1.2rem", background: "linear-gradient(145deg, #f8fbff 0%, #eef4ff 100%)", boxShadow: "0 10px 28px rgba(59, 130, 246, 0.08)" }}>
         <h1 style={{ fontSize: "1.8rem", margin: "0 0 0.5rem", color: "#1e3a8a" }}>학습 진도</h1>
         <p style={{ color: "#334155", margin: 0, lineHeight: 1.55 }}>
@@ -1359,11 +1359,13 @@ export default function ProgressPage() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                flexWrap: "wrap",
+                gap: "0.5rem",
                 marginBottom: "0.75rem",
               }}
             >
               <h2 style={{ fontSize: "1.1rem", margin: 0 }}>{label}</h2>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
                 <Link
                   href={href}
                   style={{
@@ -1404,7 +1406,7 @@ export default function ProgressPage() {
               <ul style={{ margin: 0, paddingLeft: 0 }}>
                 {items.map((item, i) => (
                   <li key={`wrong-kana-item-${i}`} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", listStyle: "none" }}>
-                    <div style={{ flex: 1 }}>{renderKanaItem(item, i)}</div>
+                    <div style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{renderKanaItem(item, i)}</div>
                     <button
                       onClick={() => removeWrongKanaItem(item)}
                       style={{
@@ -1428,7 +1430,7 @@ export default function ProgressPage() {
                 {items.map((item, i) => (
                   <li key={`wrong-item-${key}-${i}`} style={{ marginBottom: "0.35rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", alignItems: "center" }}>
-                      <span style={{ flex: 1 }}>{renderWordOrSentenceItem(item, i)}</span>
+                      <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{renderWordOrSentenceItem(item, i)}</span>
                       <button
                         onClick={() => {
                           if (key === "wrongWords") {

@@ -1886,3 +1886,16 @@ button, input, textarea, select { font: inherit; }
   background: var(--surface-muted) !important;
   border-color: var(--border) !important;
 }
+
+/* The local record-based summary is the home companion's single guidance surface. */
+.budget-app-shell .home-yeoni-diagnosis { display: block; min-width: 0; padding: 12px; }
+.budget-app-shell .home-yeoni-diagnosis h2,
+.budget-app-shell .home-yeoni-diagnosis .home-ai-summary,
+.budget-app-shell .home-yeoni-diagnosis .home-ai-action-line strong {
+  font-size: var(--yeoni-guidance-font-size);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.budget-app-shell .home-yeoni-diagnosis .home-ai-summary { display: block; overflow: visible; -webkit-line-clamp: unset; }
+.budget-app-shell .home-yeoni-diagnosis .home-diagnosis-basis { font-size: .75rem; line-height: 1.5; }
+.budget-app-shell .home-yeoni-diagnosis .home-text-action { min-height: 44px; flex-wrap: wrap; }
