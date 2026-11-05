@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { commonCharacterEnabled, isQuietCharacterRoute, isCharacterReviewRoute } from './common-host-policy.ts';
+import { commonCharacterEnabled, isQuietCharacterRoute, isCharacterReviewRoute, isCharacterSettingsRoute } from './common-host-policy.ts';
 import { parseYeoniPreferences } from '../../utils/yeoniPreferences.ts';
 
 test('common host is a local/explicit Preview candidate, never production rollout', () => {
@@ -25,4 +25,9 @@ test('focus route and review boundaries do not accidentally match other app name
   for (const path of ['/', '/diet', '/budget', '/language', '/assistant', '/fitness-other']) assert.equal(isQuietCharacterRoute(path), false);
   assert.equal(isCharacterReviewRoute('/assistant/character-check'), true);
   assert.equal(isCharacterReviewRoute('/assistant'), false);
+});
+
+test('settings route suppression covers app/global settings without hiding learning routes', () => {
+  for (const path of ['/settings', '/settings/privacy', '/assistant/settings', '/fitness/settings', '/diet/settings', '/growth/settings', '/language/settings', '/budget/settings', '/calendar/settings']) assert.equal(isCharacterSettingsRoute(path), true);
+  for (const path of ['/', '/assistant', '/budget', '/language/learn', '/language/settings-help', '/settings-preview']) assert.equal(isCharacterSettingsRoute(path), false);
 });

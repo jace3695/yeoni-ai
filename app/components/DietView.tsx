@@ -906,8 +906,31 @@ export default function DietView() {
         )}
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-[1.35fr_0.65fr] lg:items-start">
-        <div className="space-y-4">
+      <div className="space-y-4" data-diet-entry-flow>
+          <section className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm sm:p-5" aria-label="식단 간편 입력">
+            <h3 className="text-[15px] font-bold text-gray-900">식단 간편 입력</h3>
+            <p className="mt-2 text-xs leading-5 text-gray-500">먹은 양과 비교한 뒤 입력칸에 반영하세요. 하루 기록은 아래 저장 버튼으로 저장해요.</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {(['lunch', 'dinner'] as const).map(slot => <div key={slot} className="space-y-2">
+                <button type="button" onClick={() => setQuickMeal(quickMealPreset(slot))} className="min-h-11 w-full rounded-xl bg-violet-50 p-2 text-xs font-bold text-violet-800">{slot === 'lunch' ? '점심' : '저녁'} 기본값 보기</button>
+                <button type="button" onClick={() => { const previous = previousMeal(mealStore, slot === 'lunch' ? lunchCarbStore : dinnerCarbStore, lunchProteinStore, slot, todayKey); setQuickMeal(previous); if (!previous) setMessage('불러올 이전 식사 기록이 없어요. 직접 입력으로 시작해 주세요.'); }} className="min-h-11 w-full rounded-xl bg-gray-50 p-2 text-xs font-bold text-gray-700">지난 {slot === 'lunch' ? '점심' : '저녁'} 불러오기</button>
+              </div>)}
+            </div>
+            {quickMeal ? <div className="mt-3 rounded-xl bg-violet-50 p-3" role="region" aria-label="불러올 식사 확인">
+              <strong className="text-sm">{quickMeal.label}</strong>
+              <p className="mt-2 text-xs leading-5">{quickMeal.slot === 'lunch' ? '점심' : '저녁'} 식품 단백질 {quickMeal.patch[`${quickMeal.slot}ProteinChoice`] === 'custom' ? quickMeal.patch[`${quickMeal.slot}ProteinCustom`] : quickMeal.patch[`${quickMeal.slot}ProteinChoice`] === 'none' ? '미기록' : quickMeal.patch[`${quickMeal.slot}ProteinChoice`]}g · 밥 {quickMeal.carb.grams}g{quickMeal.slot === 'lunch' ? ` · 보충 단백질 ${quickMeal.supplement.protein}g` : ''}</p>
+              <p className="mt-1 text-xs leading-5">이 식사의 단백질·밥 입력값을 바꿉니다. 물·공복·상태·다른 끼니는 유지합니다.</p>
+              <div className="mt-3 flex flex-wrap gap-2"><button type="button" className="min-h-11 rounded-lg bg-violet-700 px-3 text-xs font-bold text-white" onClick={() => {
+                setMealLog(current => ({ ...current, ...quickMeal.patch }));
+                if (quickMeal.slot === 'lunch') { setLunchCarb(quickMeal.carb); setLunchProtein(quickMeal.supplement); } else setDinnerCarb(quickMeal.carb);
+                setMessage('식사 입력칸에 반영했습니다. 아직 저장되지 않았습니다.'); setQuickMeal(null);
+              }}>식사 입력칸에 적용</button><button type="button" className="min-h-11 rounded-lg bg-white px-3 text-xs" onClick={() => setQuickMeal(null)}>취소</button></div>
+            </div> : null}
+          </section>
+          <DietFavorites meal={mealLog} lunchRice={lunchCarb} dinnerRice={dinnerCarb} supplement={lunchProtein} onApply={value => {
+            setMealLog(current => ({ ...current, ...value.patch }));
+            if (value.slot === 'lunch') { setLunchCarb(value.carb); setLunchProtein(value.supplement); } else setDinnerCarb(value.carb);
+          }} />
           <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1406,48 +1429,6 @@ export default function DietView() {
               </article>
             </div>
           </section>
-        </div>
-
-        <aside className="space-y-4">
-          <section className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm sm:p-5" aria-label="식단 간편 입력">
-            <h3 className="text-[15px] font-bold text-gray-900">식단 간편 입력</h3>
-            <p className="mt-2 text-xs leading-5 text-gray-500">먹은 양과 비교한 뒤 입력칸에 반영하세요. 하루 기록은 아래 저장 버튼으로 저장해요.</p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {(['lunch', 'dinner'] as const).map(slot => <div key={slot} className="space-y-2">
-                <button type="button" onClick={() => setQuickMeal(quickMealPreset(slot))} className="min-h-11 w-full rounded-xl bg-violet-50 p-2 text-xs font-bold text-violet-800">{slot === 'lunch' ? '점심' : '저녁'} 기본값 보기</button>
-                <button type="button" onClick={() => { const previous = previousMeal(mealStore, slot === 'lunch' ? lunchCarbStore : dinnerCarbStore, lunchProteinStore, slot, todayKey); setQuickMeal(previous); if (!previous) setMessage('불러올 이전 식사 기록이 없어요. 직접 입력으로 시작해 주세요.'); }} className="min-h-11 w-full rounded-xl bg-gray-50 p-2 text-xs font-bold text-gray-700">지난 {slot === 'lunch' ? '점심' : '저녁'} 불러오기</button>
-              </div>)}
-            </div>
-            {quickMeal ? <div className="mt-3 rounded-xl bg-violet-50 p-3" role="region" aria-label="불러올 식사 확인">
-              <strong className="text-sm">{quickMeal.label}</strong>
-              <p className="mt-2 text-xs leading-5">{quickMeal.slot === 'lunch' ? '점심' : '저녁'} 식품 단백질 {quickMeal.patch[`${quickMeal.slot}ProteinChoice`] === 'custom' ? quickMeal.patch[`${quickMeal.slot}ProteinCustom`] : quickMeal.patch[`${quickMeal.slot}ProteinChoice`] === 'none' ? '미기록' : quickMeal.patch[`${quickMeal.slot}ProteinChoice`]}g · 밥 {quickMeal.carb.grams}g{quickMeal.slot === 'lunch' ? ` · 보충 단백질 ${quickMeal.supplement.protein}g` : ''}</p>
-              <p className="mt-1 text-xs leading-5">이 식사의 단백질·밥 입력값을 바꿉니다. 물·공복·상태·다른 끼니는 유지합니다.</p>
-              <div className="mt-3 flex flex-wrap gap-2"><button type="button" className="min-h-11 rounded-lg bg-violet-700 px-3 text-xs font-bold text-white" onClick={() => {
-                setMealLog(current => ({ ...current, ...quickMeal.patch }));
-                if (quickMeal.slot === 'lunch') { setLunchCarb(quickMeal.carb); setLunchProtein(quickMeal.supplement); } else setDinnerCarb(quickMeal.carb);
-                setMessage('식사 입력칸에 반영했습니다. 아직 저장되지 않았습니다.'); setQuickMeal(null);
-              }}>식사 입력칸에 적용</button><button type="button" className="min-h-11 rounded-lg bg-white px-3 text-xs" onClick={() => setQuickMeal(null)}>취소</button></div>
-            </div> : null}
-          </section>
-          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5" aria-label="최근 7일 식단 요약">
-            <h3 className="text-[15px] font-bold text-gray-900">최근 7일 식단 요약</h3>
-            <p className="mt-2 text-xs text-gray-500">저장한 {weeklyDiet.recordedDays}일 기준 · 미응답은 계산에서 제외</p>
-            <ul className="mt-3 space-y-2 text-xs leading-5 text-gray-700">
-              <li>단백질 평균 {weeklyDiet.averageProtein === null ? '미기록' : `${weeklyDiet.averageProtein}g · ${weeklyDiet.proteinDays}일 입력`}</li>
-              <li>수분 평균 {weeklyDiet.averageWater === null ? '미기록' : `${weeklyDiet.averageWater}mL · ${weeklyDiet.waterDays}일 입력`}</li>
-              <li>소화 불편 {weeklyDiet.discomfortDays}일 / 상태 응답 {weeklyDiet.digestionDays}일</li>
-              <li>야식 {weeklyDiet.lateSnackDays}일 / 응답 {weeklyDiet.lateSnackAnswers}일</li>
-              <li>운동 후 식사 {weeklyDiet.afterWorkoutDays}일 / 응답 {weeklyDiet.afterWorkoutAnswers}일</li>
-            </ul>
-          </section>
-          <DietFavorites meal={mealLog} lunchRice={lunchCarb} dinnerRice={dinnerCarb} supplement={lunchProtein} onApply={value => {
-            setMealLog(current => ({ ...current, ...value.patch }));
-            if (value.slot === 'lunch') { setLunchCarb(value.carb); setLunchProtein(value.supplement); } else setDinnerCarb(value.carb);
-          }} />
-          <DietPatterns store={store} today={dietPatternToday(now)} />
-          {hydrated && <DietWorkoutContext diet={store} workout={workoutContext} today={dietPatternToday(now)} />}
-          {hydrated && <WorkoutTimes initialDate={dietPatternToday(now)} meals={store} />}
-          {hydrated && <WorkoutTimeHistory today={dietPatternToday(now)} meals={store} />}
           <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="text-[15px] font-bold text-gray-900">단백질 합계</h3>
             <div className="mt-3 flex items-end justify-between gap-3">
@@ -1462,6 +1443,7 @@ export default function DietView() {
             </div>
           </section>
 
+        <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
           <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="text-[15px] font-bold text-gray-900">물 섭취</h3>
             <p className="mt-2 text-[20px] font-bold text-blue-700">
@@ -1538,6 +1520,7 @@ export default function DietView() {
             </p>
           </section>
 
+        </div>
           <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="text-[15px] font-bold text-gray-900">오늘 상태</h3>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1572,7 +1555,23 @@ export default function DietView() {
               className="mt-2 min-h-24 w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px]"
             />
           </section>
-        </aside>
+      </div>
+      <div className="space-y-4" data-diet-insights>
+          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5" aria-label="최근 7일 식단 요약">
+            <h3 className="text-[15px] font-bold text-gray-900">최근 7일 식단 요약</h3>
+            <p className="mt-2 text-xs text-gray-500">저장한 {weeklyDiet.recordedDays}일 기준 · 미응답은 계산에서 제외</p>
+            <ul className="mt-3 space-y-2 text-xs leading-5 text-gray-700">
+              <li>단백질 평균 {weeklyDiet.averageProtein === null ? '미기록' : `${weeklyDiet.averageProtein}g · ${weeklyDiet.proteinDays}일 입력`}</li>
+              <li>수분 평균 {weeklyDiet.averageWater === null ? '미기록' : `${weeklyDiet.averageWater}mL · ${weeklyDiet.waterDays}일 입력`}</li>
+              <li>소화 불편 {weeklyDiet.discomfortDays}일 / 상태 응답 {weeklyDiet.digestionDays}일</li>
+              <li>야식 {weeklyDiet.lateSnackDays}일 / 응답 {weeklyDiet.lateSnackAnswers}일</li>
+              <li>운동 후 식사 {weeklyDiet.afterWorkoutDays}일 / 응답 {weeklyDiet.afterWorkoutAnswers}일</li>
+            </ul>
+          </section>
+          <DietPatterns store={store} today={dietPatternToday(now)} />
+          {hydrated && <DietWorkoutContext diet={store} workout={workoutContext} today={dietPatternToday(now)} />}
+          {hydrated && <WorkoutTimes initialDate={dietPatternToday(now)} meals={store} />}
+          {hydrated && <WorkoutTimeHistory today={dietPatternToday(now)} meals={store} />}
       </div>
 
       <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">

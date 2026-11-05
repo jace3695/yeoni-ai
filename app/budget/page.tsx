@@ -1,6 +1,7 @@
 'use client'
 import YeoniPreferencesPanel from "@/components/YeoniPreferencesPanel";
 import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
+import CommonCharacterSuspension from '@/components/yeoni/CommonCharacterSuspension';
 import ManualEntry from './components/manual-entry'
 import { useManualBudgetDraft } from './lib/use-manual-draft'
 import { validBudgetDate } from './lib/manual-entry'
@@ -3238,6 +3239,7 @@ return (
       `}</style>
 
 
+      <CommonCharacterSuspension active={tab === 'settings'} />
       <header className="app-module-header">
         <div className="app-module-header-inner">
           <AppIdentity kind="budget" title="AI 가계부" subtitle="생활 금융 기록" />
@@ -3254,7 +3256,7 @@ return (
         const action = pendingDelete.kind === 'all' ? handleResetAllData() : handleDeleteRecord(pendingDelete.kind, pendingDelete.id)
         void action.finally(() => setPendingDelete(null))
       }} />
-      {tab !== 'home' && <div className="budget-guide"><CommonCharacterGuide><AppCompanion embedded home={tab === 'home'} compact={tab !== 'home'} quiet={tab !== 'home'}>{tab === 'home' ? '오늘 쓴 내역부터 가볍게 남겨봐요.' : tab === 'input' ? '금액과 날짜를 확인하고 저장해 주세요.' : tab === 'analysis' ? '항목별 흐름을 비교해봐요. 기록이 쌓이면 소비 습관이 더 잘 보여요.' : tab === 'settings' ? '설정을 바꾸기 전에 안내를 확인해 주세요. 초기화는 지워지는 기록부터 살펴봐요.' : '찾고 싶은 기간과 항목을 골라봐요. 저장한 내역을 다시 확인할 수 있어요.'}</AppCompanion></CommonCharacterGuide></div>}
+      {tab !== 'home' && tab !== 'settings' && <div className="budget-guide"><CommonCharacterGuide><AppCompanion embedded home={tab === 'home'} compact={tab !== 'home'} quiet={tab !== 'home'}>{tab === 'home' ? '오늘 쓴 내역부터 가볍게 남겨봐요.' : tab === 'input' ? '금액과 날짜를 확인하고 저장해 주세요.' : tab === 'analysis' ? '항목별 흐름을 비교해봐요. 기록이 쌓이면 소비 습관이 더 잘 보여요.' : tab === 'settings' ? '설정을 바꾸기 전에 안내를 확인해 주세요. 초기화는 지워지는 기록부터 살펴봐요.' : '찾고 싶은 기간과 항목을 골라봐요. 저장한 내역을 다시 확인할 수 있어요.'}</AppCompanion></CommonCharacterGuide></div>}
 
       {tab === 'home' && (
         <main className="living-finance-view living-finance-home app-safe-top" style={{ padding: '24px 20px 96px' }}>

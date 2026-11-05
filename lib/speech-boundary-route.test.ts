@@ -9,6 +9,7 @@ import { createBoundaryCheck, type BoundaryState } from './speech-boundary-check
 import { createBoundaryFetch, invokeBoundaryProbe } from './speech-boundary-transport.ts';
 import { isSpeechBoundaryPath, SPEECH_BOUNDARY_PATH } from './speech-boundary-path.ts';
 import { verifyBoundaryPage } from './speech-boundary-page-gate.ts';
+import { isCharacterSettingsRoute } from './yeoni/common-host-policy.ts';
 
 type Element = { type: string | ((props: Record<string, unknown>) => unknown); props: Record<string, unknown> };
 const jsx = (type: Element['type'], props: Element['props']) => ({ type, props });
@@ -84,8 +85,12 @@ function routeHarness(path: string | null, gateAllowed = true, delays: { beforeD
   }, { process: { env: { NODE_ENV: 'development' } } }).default as (props: Record<string, unknown>) => Element;
   const language = load('../app/language/layout.tsx', {
     ...modules, './language.css': {}, '../components/DiagnosticIsolation': { default: isolation }, '../components/AuthGate': component('AuthGate'),
-    '@/components/yeoni/CommonCharacterGuide': component('CommonCharacterGuide'),
-    '@/components/AppCompanion': component('AppCompanion'),
+    '@/components/language/LanguageCompanion': { default: load('../components/language/LanguageCompanion.tsx', {
+      ...modules,
+      '@/lib/yeoni/common-host-policy': { isCharacterSettingsRoute },
+      '@/components/yeoni/CommonCharacterGuide': component('CommonCharacterGuide'),
+      '@/components/AppCompanion': component('AppCompanion'),
+    }).default },
     '@/components/TopNav': component('TopNav'), '@/components/LanguageCloudSync': component('LanguageCloudSync'), '../components/AppIdentity': component('AppIdentity'),
   }).default as (props: Record<string, unknown>) => Element;
   const sdk = createClient('http://127.0.0.1:54321', 'sb_publishable_synthetic_boundary_only', {

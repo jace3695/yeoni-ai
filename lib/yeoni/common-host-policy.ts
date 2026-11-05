@@ -12,3 +12,8 @@ export function isQuietCharacterRoute(path: string) {
 export function isCharacterReviewRoute(path: string) {
   return /^\/assistant\/.*check(\/|$)/.test(path);
 }
+
+/** Settings pages keep their controls without a decorative character host. */
+export function isCharacterSettingsRoute(path: string) {
+  return /(?:^|\/)settings(?:\/|$)/.test(path);
+}

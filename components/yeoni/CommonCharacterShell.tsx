@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { supabase } from '@/app/lib/supabase';
-import { isCharacterReviewRoute } from '@/lib/yeoni/common-host-policy';
+import { isCharacterReviewRoute, isCharacterSettingsRoute } from '@/lib/yeoni/common-host-policy';
 import { stopAllSpeech } from '@/lib/yeoni/speech-focus';
 import CommonCharacterHost from './CommonCharacterHost';
 import { CHARACTER_RESET_EVENT } from './CommonCharacterContext';
@@ -25,6 +25,6 @@ export default function CommonCharacterShell({ children, enabled }: { children: 
     });
     return () => data.subscription.unsubscribe();
   }, [enabled]);
-  if (!enabled || isCharacterReviewRoute(path) || /^\/calendar(\/|$)/.test(path)) return children;
+  if (!enabled || isCharacterReviewRoute(path) || isCharacterSettingsRoute(path) || /^\/calendar(\/|$)/.test(path)) return children;
   return <CommonCharacterHost path={path} boundary={boundary}>{children}</CommonCharacterHost>;
 }

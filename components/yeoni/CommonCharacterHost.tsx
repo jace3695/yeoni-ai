@@ -9,7 +9,7 @@ import { useYeoniPreferences } from '../useYeoniPreferences';
 import SwitchableCharacterStage from './SwitchableCharacterStage';
 import type { CharacterControlProps } from './useCharacterStage';
 import styles from './common-character-host.module.css';
-import { CHARACTER_RESET_EVENT, CommonCharacterContext, CommonCharacterPlacementContext, type CharacterChannel } from './CommonCharacterContext';
+import { CHARACTER_RESET_EVENT, CommonCharacterContext, CommonCharacterPlacementContext, CommonCharacterSuppressionContext, type CharacterChannel } from './CommonCharacterContext';
 const emptySpeech = () => ({ manifest: null, playback: EMPTY_PLAYBACK });
 
 /** One renderer per app shell. Only ephemeral control inputs enter this channel;
@@ -25,6 +25,13 @@ export default function CommonCharacterHost({ children, path, boundary = 0 }: {
   const [quietCount, setQuietCount] = useState(0);
   const [controls, setControls] = useState<CharacterControlProps>({});
   const current = useRef<CharacterControlProps | null>(null);
+  const [suppressionCount, setSuppressionCount] = useState(0);
+  const suppress = useCallback(() => {
+    current.current = null; setControls({}); stopAllSpeech();
+    window.dispatchEvent(new Event(CHARACTER_RESET_EVENT));
+    setSuppressionCount(count => count + 1);
+    return () => setSuppressionCount(count => Math.max(0, count - 1));
+  }, []);
   const scope = `${path}:${boundary}`;
   const liveScope = useRef(scope); liveScope.current = scope;
   const channel = useMemo<CharacterChannel>(() => ({ publish(next) {
@@ -56,15 +63,17 @@ export default function CommonCharacterHost({ children, path, boundary = 0 }: {
     };
   }, []);
   const quiet = editing || quietCount > 0 || isQuietCharacterRoute(path);
-  const portrait = <aside className={styles.host} data-beside-reply={placement.besideReply} data-yeoni-common-host data-quiet={quiet} aria-label="공통 연이">
+  const portrait = suppressionCount > 0 ? null : <aside className={styles.host} data-beside-reply={placement.besideReply} data-yeoni-common-host data-quiet={quiet} aria-label="공통 연이">
       {preferences.visible && <div className={styles.portrait}>
         <SwitchableCharacterStage key={scope} speech={speech} emotion={controls.emotion} gesture={controls.gesture} quiet={quiet} showOptions={false} />
       </div>}
     </aside>;
   return <CommonCharacterContext.Provider value={channel}>
+    <CommonCharacterSuppressionContext.Provider value={suppress}>
     <CommonCharacterPlacementContext.Provider value={registerPlacement}>
       {children}
       {placement.node ? createPortal(portrait, placement.node) : portrait}
     </CommonCharacterPlacementContext.Provider>
+    </CommonCharacterSuppressionContext.Provider>
   </CommonCharacterContext.Provider>;
 }
