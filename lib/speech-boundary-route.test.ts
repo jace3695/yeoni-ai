@@ -85,6 +85,7 @@ function routeHarness(path: string | null, gateAllowed = true, delays: { beforeD
   const language = load('../app/language/layout.tsx', {
     ...modules, './language.css': {}, '../components/DiagnosticIsolation': { default: isolation }, '../components/AuthGate': component('AuthGate'),
     '@/components/yeoni/CommonCharacterGuide': component('CommonCharacterGuide'),
+    '@/components/AppCompanion': component('AppCompanion'),
     '@/components/TopNav': component('TopNav'), '@/components/LanguageCloudSync': component('LanguageCloudSync'), '../components/AppIdentity': component('AppIdentity'),
   }).default as (props: Record<string, unknown>) => Element;
   const sdk = createClient('http://127.0.0.1:54321', 'sb_publishable_synthetic_boundary_only', {
@@ -163,7 +164,7 @@ test('terminal wait remains pending across held real crypto and SDK probe work, 
 
 test('ordinary language route still mounts every original service; diagnostic variants remain isolated', () => {
   const h = routeHarness('/language/practice');
-  assert.deepEqual(h.mounted, ['PwaManager', 'AiBudgetNotifier', 'RecordResetListener', 'SyncQaPanel', 'CommonCharacterShell', 'AuthGate', 'AppIdentity', 'TopNav', 'LanguageCloudSync', 'CommonCharacterGuide', 'CloudSyncPanel']);
+  assert.deepEqual(h.mounted, ['PwaManager', 'AiBudgetNotifier', 'RecordResetListener', 'SyncQaPanel', 'CommonCharacterShell', 'AuthGate', 'AppIdentity', 'TopNav', 'LanguageCloudSync', 'CommonCharacterGuide', 'AppCompanion', 'CloudSyncPanel']);
   h.cleanup();
   for (const path of [SPEECH_BOUNDARY_PATH, `${SPEECH_BOUNDARY_PATH}/`, `${SPEECH_BOUNDARY_PATH}/missing`]) assert.equal(isSpeechBoundaryPath(path), true);
   for (const path of ['/language/practice', '/', `${SPEECH_BOUNDARY_PATH}-other`, null]) assert.equal(isSpeechBoundaryPath(path), false);

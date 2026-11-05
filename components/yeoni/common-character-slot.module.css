@@ -7,6 +7,7 @@
 .layout[data-character-visible=false]>[data-yeoni-common-slot]{display:none}
 .layout[data-character-visible=false] .reply>[role=region]{height:auto;max-height:20rem}
 @media(min-width:640px){.layout{grid-template-columns:minmax(0,320px) minmax(0,1fr)}}
+@media(min-width:1024px){.layout{grid-template-columns:minmax(0,var(--yeoni-character-height)) minmax(0,1fr)}}
 
 /* Reclaim nested message gutters in the narrow reply column without resizing art. */
 @media(max-width:639px){
