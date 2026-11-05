@@ -8,7 +8,9 @@ import styles from "./app-companion.module.css";
 export default function YeoniPreferencesPanel({ app }: { app?: YeoniApp }) {
   const owner = useYeoniPreferenceOwner();
   const motionHelpId = useId();
-  const apps = app ? [app] : Object.keys(YEONI_APPS) as YeoniApp[];
+  // Calendar has no character UI; retain its stored preference data for compatibility.
+  const apps = (app ? [app] : Object.keys(YEONI_APPS) as YeoniApp[]).filter(target => target !== 'calendar');
+  if (apps.length === 0) return null;
   return <section className={styles.preferences} aria-label="연이 캐릭터 설정">
     <h2>앱별 연이 설정</h2>
     <p id={motionHelpId} className={styles.hint}>캐릭터 움직임만 바꾸는 설정이며, 요금이나 AI 사용량과는 관계없어요. 옵션 차이는 아래 도움말에서 확인할 수 있어요.</p>

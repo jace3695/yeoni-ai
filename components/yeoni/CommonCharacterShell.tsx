@@ -25,6 +25,6 @@ export default function CommonCharacterShell({ children, enabled }: { children: 
     });
     return () => data.subscription.unsubscribe();
   }, [enabled]);
-  if (!enabled || isCharacterReviewRoute(path)) return children;
+  if (!enabled || isCharacterReviewRoute(path) || /^\/calendar(\/|$)/.test(path)) return children;
   return <CommonCharacterHost path={path} boundary={boundary}>{children}</CommonCharacterHost>;
 }

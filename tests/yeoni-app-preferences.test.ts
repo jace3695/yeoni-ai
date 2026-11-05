@@ -19,6 +19,7 @@ test('independent apps retain three motion modes and normalize unsupported field
 });
 test('dedicated settings entry points target their own app',async()=>{
  const {readFileSync}=await import('node:fs');
- for(const [file,app] of [['app/language/settings/page.tsx','language'],['app/calendar/settings/page.tsx','calendar'],['app/budget/page.tsx','budget']])assert.match(readFileSync(new URL('../'+file,import.meta.url),'utf8'),new RegExp('<YeoniPreferencesPanel app="'+app+'"'));
+ for(const [file,app] of [['app/language/settings/page.tsx','language'],['app/budget/page.tsx','budget']])assert.match(readFileSync(new URL('../'+file,import.meta.url),'utf8'),new RegExp('<YeoniPreferencesPanel app="'+app+'"'));
+ assert.doesNotMatch(readFileSync(new URL('../app/calendar/settings/page.tsx',import.meta.url),'utf8'),/YeoniPreferencesPanel|AppCompanion/);
  assert.match(readFileSync(new URL('../app/components/AppRecordSettings.tsx',import.meta.url),'utf8'),/<YeoniPreferencesPanel app=\{app\}/);
 });

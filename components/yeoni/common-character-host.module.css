@@ -16,7 +16,7 @@
 
 /* Reply-side stage and actual canvas share the reply's measured square footprint.
    Human art retains its 2:3 ratio; no stretched pixels or focus-time shrink. */
-.host[data-beside-reply=true]{margin:0;padding:0;width:100%;border:0;border-radius:12px}
+.host[data-beside-reply=true]{margin:0;padding:0;width:100%;border:0;border-radius:12px;background:transparent}
 .host[data-beside-reply=true] .portrait{margin:0;max-width:none}
 .host[data-beside-reply=true] .portrait>div{display:block}
 .host[data-beside-reply=true] .portrait [aria-busy]{width:100%;height:var(--paired-height);aspect-ratio:auto;margin:0}
@@ -26,3 +26,7 @@
    that margin inside the same stage; human portrait keeps its native framing. */
 .host[data-beside-reply=true] .portrait [aria-busy]{overflow:hidden}
 .host[data-beside-reply=true] [data-character-appearance=cat] canvas{transform:translate(-5%,-5%) scale(1.25)}
+
+/* Blend the opaque white backdrop into the light app surface. This changes no
+   asset alpha or RGB: white fur keeps its shading, contour and animated parts. */
+.host [data-character-appearance=cat] canvas{mix-blend-mode:multiply}

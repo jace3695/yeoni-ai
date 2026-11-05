@@ -1,7 +1,7 @@
 .page { max-width: 880px; margin: auto; padding: 24px 20px 100px; color: #233044; }
 .header,.dateRow,.actions { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .hero { padding:10px 14px; border:1px solid var(--yeoni-border); border-radius:19px; background:var(--yeoni-soft); }
-.hero h1 { font-size:clamp(1.5rem,4vw,2rem); font-weight:800; letter-spacing:-.04em; }
+.hero h1 { margin:0; font-size:var(--yeoni-guidance-font-size,1rem); font-weight:550; line-height:1.6; letter-spacing:normal; }
 .hero p { color:#526277; margin:10px 0 0; font-size:var(--yeoni-guidance-font-size,1rem); font-weight:550; line-height:1.6; }
 .hint { color:#526277; margin:10px 0; line-height:1.7; }
 .panel { background:white; border:1px solid #e1e5ef; border-radius:20px; padding:24px; margin-bottom:20px; box-shadow:0 4px 18px #26334b05; }

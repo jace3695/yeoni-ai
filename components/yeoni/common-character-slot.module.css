@@ -1,14 +1,12 @@
-.layout{container-type:inline-size;display:grid;grid-template-columns:minmax(0, 1.08fr) minmax(0,1fr);gap:12px;align-items:start;margin-top:12px}
+.layout{container-type:inline-size;display:grid;grid-template-columns:minmax(0,var(--yeoni-character-height)) minmax(0,1fr);gap:12px;align-items:start;margin-top:12px}
 .layout>[data-yeoni-common-slot]{min-width:0;--paired-height:var(--yeoni-character-height)}
 .reply{min-width:0;overflow-wrap:anywhere}
 .reply p{overflow-wrap:anywhere}
-.reply [data-chat-message]>div{font-size:var(--yeoni-guidance-font-size);line-height:1.6}
+.reply [data-chat-message]>div{font-size:var(--yeoni-guidance-font-size);font-weight:550;line-height:1.6}
 .reply>[role=region]{height:auto;max-height:var(--yeoni-character-height);padding:10px}
 .layout[data-character-visible=false]{grid-template-columns:minmax(0,1fr)}
 .layout[data-character-visible=false]>[data-yeoni-common-slot]{display:none}
 .layout[data-character-visible=false] .reply>[role=region]{height:auto;max-height:20rem}
-@media(min-width:640px){.layout{grid-template-columns:minmax(0,320px) minmax(0,1fr)}}
-@media(min-width:1024px){.layout{grid-template-columns:minmax(0,var(--yeoni-character-height)) minmax(0,1fr)}}
 
 /* Reclaim nested message gutters in the narrow reply column without resizing art. */
 @media(max-width:639px){

@@ -1,9 +1,6 @@
-/* Match the approved assistant portrait footprint across app guidance.
-   The 2rem + 46px allowance tracks assistant gutters and text scaling. */
-.size{--yeoni-character-height:min(320px,calc((100vw - 2rem - 46px) * .51923));--yeoni-guidance-font-size:1rem}
+/* Shared portrait footprint: a modest 12.5% reduction leaves more reply space. */
+.size{--yeoni-character-height:min(280px,calc((100vw - 2rem - 46px) * .45432625));--yeoni-guidance-font-size:1rem}
 @media(max-width:420px){.size{--yeoni-guidance-font-size:.875rem}}
-
-/* Keep the accepted phone/tablet geometry; balance desktop art with its text. */
 @media(min-width:1024px){
-  .size[data-yeoni-reply-layout],.size[data-desktop-compact=true]{--yeoni-character-height:240px}
+  .size[data-yeoni-reply-layout],.size[data-desktop-compact=true]{--yeoni-character-height:210px}
 }
