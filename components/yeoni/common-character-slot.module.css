@@ -2,8 +2,16 @@
 .layout>[data-yeoni-common-slot]{min-width:0;--paired-height:var(--yeoni-character-height)}
 .reply{min-width:0;overflow-wrap:anywhere}
 .reply p{overflow-wrap:anywhere}
-.reply>[role=region]{height:var(--yeoni-character-height);max-height:none;padding:10px}
+.reply>[role=region]{height:auto;max-height:var(--yeoni-character-height);padding:10px}
 .layout[data-character-visible=false]{grid-template-columns:minmax(0,1fr)}
 .layout[data-character-visible=false]>[data-yeoni-common-slot]{display:none}
 .layout[data-character-visible=false] .reply>[role=region]{height:auto;max-height:20rem}
 @media(min-width:640px){.layout{grid-template-columns:minmax(0,320px) minmax(0,1fr)}}
+
+/* Reclaim nested message gutters in the narrow reply column without resizing art. */
+@media(max-width:639px){
+  .reply>[role=region]{padding:4px}
+  .reply [data-chat-message]>div{max-width:100%;min-width:0;padding:8px}
+  .reply [aria-label="Zephyr 답변 읽기"]{padding:4px}
+  .reply [aria-label="Zephyr 답변 읽기"] button{max-width:100%;padding-inline:4px}
+}
