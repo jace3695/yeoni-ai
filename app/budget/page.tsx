@@ -1,6 +1,7 @@
 'use client'
 import YeoniPreferencesPanel from "@/components/YeoniPreferencesPanel";
 import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
+import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import CommonCharacterSuspension from '@/components/yeoni/CommonCharacterSuspension';
 import ManualEntry from './components/manual-entry'
 import { useManualBudgetDraft } from './lib/use-manual-draft'
@@ -3239,7 +3240,7 @@ return (
       `}</style>
 
 
-      <CommonCharacterSuspension active={tab === 'settings'} />
+      <CommonCharacterSuspension active={tab !== 'home' && !(tab === 'analysis' && analysisView === 'ai')} />
       <header className="app-module-header">
         <div className="app-module-header-inner">
           <AppIdentity kind="budget" title="AI 가계부" subtitle="생활 금융 기록" />
@@ -3256,7 +3257,6 @@ return (
         const action = pendingDelete.kind === 'all' ? handleResetAllData() : handleDeleteRecord(pendingDelete.kind, pendingDelete.id)
         void action.finally(() => setPendingDelete(null))
       }} />
-      {tab !== 'home' && tab !== 'settings' && <div className="budget-guide"><CommonCharacterGuide><AppCompanion embedded home={tab === 'home'} compact={tab !== 'home'} quiet={tab !== 'home'}>{tab === 'home' ? '오늘 쓴 내역부터 가볍게 남겨봐요.' : tab === 'input' ? '금액과 날짜를 확인하고 저장해 주세요.' : tab === 'analysis' ? '항목별 흐름을 비교해봐요. 기록이 쌓이면 소비 습관이 더 잘 보여요.' : tab === 'settings' ? '설정을 바꾸기 전에 안내를 확인해 주세요. 초기화는 지워지는 기록부터 살펴봐요.' : '찾고 싶은 기간과 항목을 골라봐요. 저장한 내역을 다시 확인할 수 있어요.'}</AppCompanion></CommonCharacterGuide></div>}
 
       {tab === 'home' && (
         <main className="living-finance-view living-finance-home app-safe-top" style={{ padding: '24px 20px 96px' }}>
@@ -3530,18 +3530,17 @@ return (
       {tab === 'input' && (
         <main className="record-screen app-safe-top" style={{ padding: '24px 20px 88px' }}>
           <header className="record-header">
-            <h2>{showConfirm ? '2. 내용을 확인하고 저장해요' : '1. 쓴 돈이나 받은 돈을 적어요'}</h2>
+            <h2>{showConfirm ? '2. 입력 내용을 확인하고 저장하세요' : '1. 수입·지출 내역을 입력하세요'}</h2>
             <p>
               {showConfirm
                 ? '날짜·금액·분류를 확인하고 필요한 내용을 수정한 뒤 저장하세요.'
-                : '날짜와 금액을 직접 적고 확인해요. 아직 저장되지 않아요.'}
+                : '문장으로 입력하거나 아래 상세 항목을 직접 작성하세요. 확인 후 저장됩니다.'}
             </p>
           </header>
 
-          <ManualEntry draft={manualEntry.draft} onDraftChange={manualEntry.change} key={String(user?.id ?? '') + ':' + manualReset} owner={user?.id ?? ''} hidden={showConfirm} disabled={isSavingRecords || hasPendingSave || aiLoading} categories={BUDGET_CATEGORIES} onReview={handleManualReview} />
           {!showConfirm ? (
             <>
-              <details><summary style={{minHeight:44,cursor:'pointer'}}>문장으로 입력하기 · 기존 방식</summary><p>이 방식은 앱 서버에 문장을 보내 해석을 요청해요. 직접 적기는 위에서 할 수 있어요.</p>
+              <details open className="budget-sentence-entry"><summary style={{minHeight:44,cursor:'pointer'}}>문장으로 입력하기</summary><p>입력한 문장을 앱 서버에 보내 해석을 요청합니다. 직접 입력하려면 아래 상세 항목을 이용하세요.</p>
               <section style={{ background: 'rgba(19,19,28,0.72)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 18, padding: 14, marginBottom: 12, backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
                 <label htmlFor="ai-record-input" style={{ display: 'block', color: '#F8FAFC', fontSize: 13, fontWeight: 700, marginBottom: 9 }}>
                   기록할 내용
@@ -3789,6 +3788,8 @@ return (
             </section>
           ) : null}
 
+          <ManualEntry draft={manualEntry.draft} onDraftChange={manualEntry.change} key={String(user?.id ?? '') + ':' + manualReset} owner={user?.id ?? ''} hidden={showConfirm} disabled={isSavingRecords || hasPendingSave || aiLoading} categories={BUDGET_CATEGORIES} onReview={handleManualReview} />
+
           {!showConfirm && feedback && (
             <p aria-live="polite" style={{ color: feedback.includes('오류') || feedback.includes('못했') ? '#FF9B9B' : '#4ECDC4', fontSize: 13, lineHeight: 1.6, margin: '12px 2px 0' }}>
               {feedback}
@@ -3912,13 +3913,24 @@ return (
               </button>
             </div>
 
-            <div aria-live="polite">
+            <CommonCharacterSlot>
+            <div role="region" aria-label="연이의 가계부 상담" tabIndex={0} aria-live="polite" className="budget-consultation-response">
               {aiAnswer ? (
-                <div style={{ marginTop: 16, background: 'rgba(15,15,20,0.75)', border: '1px solid #2A2A3E', borderRadius: 12, padding: 14 }}>
+                <div className="budget-consultation-bubble">
                   <p style={{ color: '#E8A87C', fontSize: 11, fontWeight: 700, margin: '0 0 8px', letterSpacing: 0.5 }}>AI 답변</p>
-                  <div style={{ color: '#FFFFFF', fontSize: 14, lineHeight: 1.7 }}>
+                  <div className="budget-consultation-copy">
                     {aiAnswer.split('\n').map((line, i) => <span key={i}>{line}<br /></span>)}
                   </div>
+                </div>
+              ) : (
+                <div className="budget-consultation-bubble budget-consultation-copy">
+                  <p style={{ margin: '0 0 6px' }}>아직 대화가 없어요</p>
+                  <p style={{ margin: 0 }}>추천 질문을 누르거나 직접 입력해 시작해보세요.</p>
+                </div>
+              )}
+            </div>
+            </CommonCharacterSlot>
+            {aiAnswer && <div className="budget-consultation-actions">
                   <ZephyrReadButton text={aiAnswer} />
                   {aiFollowUpQuestions.length > 0 && (
                     <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #2A2A3E' }}>
@@ -3927,6 +3939,7 @@ return (
                         {aiFollowUpQuestions.map((followUp) => (
                           <button
                             key={followUp}
+                            className="budget-consultation-follow-up"
                             type="button"
                             onClick={() => handleSuggestedQuestion(followUp)}
                             disabled={analyzing}
@@ -3938,14 +3951,7 @@ return (
                       </div>
                     </div>
                   )}
-                </div>
-              ) : (
-                <div style={{ marginTop: 16, background: 'rgba(15,15,20,0.62)', border: '1px dashed #2A2A3E', borderRadius: 12, padding: '18px 14px', textAlign: 'center' }}>
-                  <p style={{ color: '#FFFFFF', fontSize: 14, fontWeight: 700, margin: '0 0 6px' }}>아직 대화가 없어요</p>
-                  <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.6, margin: 0 }}>추천 질문을 누르거나 직접 입력해 시작해보세요.</p>
-                </div>
-              )}
-            </div>
+            </div>}
 
             <p style={{ color: '#7C8596', fontSize: 10, lineHeight: 1.6, margin: '12px 0 0' }}>
               AI에는 거래처·메모·개별 날짜가 아닌 합계 중심 정보만 전달돼요.

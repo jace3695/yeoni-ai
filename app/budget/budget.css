@@ -1860,3 +1860,29 @@ button, input, textarea, select { font: inherit; }
 .living-finance-app .budget-plan-form input:not([type='checkbox']) { display: block; width: 100%; min-width: 0; min-height: 44px; padding: 8px; border: 1px solid #71877b; border-radius: 8px; background: #fff; color: #172320; }
 .living-finance-app .budget-plan-form input[type='checkbox'] { width: 22px; height: 22px; margin: 11px 0; }
 .living-finance-app .budget-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Consultation shares the established portrait/reply footprint; only its
+   response scrolls, so input and question controls remain easy to reach. */
+.budget-app-shell .ai-screen .budget-consultation-response {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-muted);
+}
+.budget-app-shell .ai-screen .budget-consultation-bubble { min-width: 0; padding: 4px; }
+.budget-app-shell .ai-screen .budget-consultation-copy {
+  color: var(--foreground);
+  font-size: var(--yeoni-guidance-font-size);
+  font-weight: 550;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.budget-app-shell .ai-screen .budget-consultation-actions { margin-top: 12px; min-width: 0; }
+.budget-app-shell .ai-screen .budget-consultation-actions button { max-width: 100%; overflow-wrap: anywhere; }
+.budget-app-shell .record-screen .budget-sentence-entry { margin-bottom: 20px; }
+
+.budget-app-shell .ai-screen .budget-consultation-follow-up {
+  color: var(--sage-dark) !important;
+  background: var(--surface-muted) !important;
+  border-color: var(--border) !important;
+}
