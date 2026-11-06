@@ -4,7 +4,7 @@ import { RECORD_AI_DISABLED } from '@/lib/yeoni/generated-record-reply';
 /** Mock answers are visibly marked. No production provider or voice resolver. */
 export default function GeneratedReplyView({ outcome, onMockListen }: { outcome: Outcome; onMockListen?: (text: string) => void }) {
   if (outcome.status !== 'ready') return <span className="block text-sm leading-6" data-record-ai-mode="disabled">
-    {outcome.status === 'disabled' ? RECORD_AI_DISABLED : '생성형 답변을 확인하지 못했어요. 아래 규칙 요약은 AI가 작성한 답변이 아니에요.'}
+    {outcome.status === 'disabled' ? RECORD_AI_DISABLED : outcome.status === 'deleted' ? '삭제한 답변은 복원하지 않아요. 같은 기록으로 자동 재생성하지도 않아요.' : '생성형 답변을 확인하지 못했어요. 아래 규칙 요약은 AI가 작성한 답변이 아니에요.'}
     <button type="button" disabled className="ml-2 min-h-11 rounded-lg border px-3" aria-label="답변 듣기 — 음성 연결 전">답변 듣기 · 연결 전</button>
   </span>;
   const a = outcome.answer;
