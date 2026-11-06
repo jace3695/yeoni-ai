@@ -13,6 +13,8 @@ import {
 import { requestSafeReload } from "@/app/lib/unsavedChanges";
 import { isRecordResetRunning, RECORD_RESET_EVENT } from "@/app/data/appRecordReset";
 
+import { LanguageRecordReadiness } from "@/components/yeoni/LocalRecordGuidance";
+
 type SyncStatus = "pending" | "syncing" | "synced" | "error";
 type RemoteRow = { state: Record<string, unknown>; updated_at: string };
 
@@ -243,12 +245,12 @@ export default function LanguageCloudSync({ children }: { children?: ReactNode }
         ? "학습 기록 · 기기 저장, 서버 반영 대기"
         : "학습 기록 · 동기화 확인 필요";
 
-  return <>
+  return <LanguageRecordReadiness.Provider value={!initialized || status === "syncing" ? "loading" : status === "error" ? "error" : "ready"}>
     {initialized ? children : <section style={{ padding: 24 }} aria-live="polite"><p>{status === "error" ? "학습 기록 연결을 확인하지 못했어요. 잠시 후 다시 열어 주세요." : "이 계정의 학습 기록을 준비하고 있어요."}</p>{status === "error" && <button type="button" className="btn" onClick={() => setSyncRequest((value) => value + 1)}>다시 연결하기</button>}</section>}
     <div role={status === "error" ? "alert" : "status"} className={`yeoni-sync-notice fixed z-[95] flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-bold shadow-md ring-1 backdrop-blur ${status === "error" ? "bg-red-50/95 text-red-700 ring-red-200" : status === "synced" ? "bg-emerald-50/95 text-emerald-700 ring-emerald-200" : "bg-amber-50/95 text-amber-700 ring-amber-200"}`}>
       <span>{label}</span>
       {status === "error" && <button type="button" onClick={() => setSyncRequest((value) => value + 1)} className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-red-700 shadow-sm">다시 시도</button>}
     </div>
     {status === "error" && message && <span className="sr-only">{message}</span>}
-  </>;
+  </LanguageRecordReadiness.Provider>;
 }

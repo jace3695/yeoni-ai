@@ -1,5 +1,6 @@
 "use client";
 
+import { assistantGuidance, guidanceText } from "@/lib/yeoni/record-guidance";
 import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import { useUnsavedChanges } from "@/components/useUnsavedChanges";
 import { clearAssistantChatInputDraft, openAssistantChatInputDraft, updateAssistantChatInputDraft, type AssistantChatDraftLease } from '@/lib/assistant-chat-input-draft';
@@ -670,6 +671,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
   const waiting = items.filter((item) => item.kind === "waiting" && !["completed", "cancelled"].includes(item.status)).length;
   const todayKey = getLocalDateKey();
   const unavailableAll = loadFailures.includes('연결 확인') || loadFailures.includes('로그인 확인');
+  const welcomeText = guidanceText(assistantGuidance(loading || !pending.ready ? "loading" : !pending.ownerId || unavailableAll || loadFailures.includes("할 일") ? "error" : "ready", items.filter(item => item.user_id === pending.ownerId && item.kind !== "waiting" && !["completed", "cancelled"].includes(item.status)).length));
   const nextActionInput = {
     items,
     budget: briefing.budget,
@@ -718,7 +720,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
         <CommonCharacterSlot>
         <div ref={chatBoxRef} aria-live="polite" role="region" aria-label="연이와 대화 내역" tabIndex={0} className="mt-0 max-h-56 space-y-3 sm:max-h-80 overflow-y-auto rounded-2xl border border-[#D8D0E8] bg-[#F7F6FF] p-3 sm:p-4">
           {chatHistoryLoading && <p className="text-xs font-semibold text-[#766DB8]">지난 대화를 불러오고 있어요…</p>}
-          {chatMessages.filter(chat => !chat.ownerId || chat.ownerId === pending.ownerId).map((chat) => <div key={chat.id} data-chat-message data-chat-role={chat.role} className={`flex ${chat.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${chat.role === "user" ? "bg-[#5146A6] text-white" : "bg-white text-gray-700 shadow-sm ring-1 ring-inset ring-[#C9C1DF]"}`}>{chat.localOnly && <p className="text-xs font-bold">이 화면에서만 보는 로컬 대화</p>}<p className="whitespace-pre-wrap break-words">{chat.text}</p>{chat.action && <Link href={chat.action.href} onClick={(event) => {
+          {chatMessages.filter(chat => !chat.ownerId || chat.ownerId === pending.ownerId).map((chat) => <div key={chat.id} data-chat-message data-chat-role={chat.role} className={`flex ${chat.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${chat.role === "user" ? "bg-[#5146A6] text-white" : "bg-white text-gray-700 shadow-sm ring-1 ring-inset ring-[#C9C1DF]"}`}>{chat.localOnly && <p className="text-xs font-bold">이 화면에서만 보는 로컬 대화</p>}<p className="whitespace-pre-wrap break-words">{chat.id === "welcome" ? welcomeText : chat.text}</p>{chat.action && <Link href={chat.action.href} onClick={(event) => {
                 if (!chat.action?.href.startsWith('/assistant?advice=')) return;
                 const scope = new URLSearchParams(chat.action.href.split('?')[1].split('#')[0]).get('advice');
                 if (isFreeAdviceScope(scope)) {
@@ -733,7 +735,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
         </CommonCharacterSlot>
         <div className="mt-3">{characterAudio ? <AssistantCharacter key={pending.ownerId ?? 'signed-out'} audio={characterAudio}
           incoming={characterReply?.ownerId === pending.ownerId ? characterReply : null} busy={chatSending || adviceBusy} />
-          : <AppCompanion compact embedded quiet={chatSending}>오늘은 무엇을 도와드릴까요?</AppCompanion>}</div>
+          : <AppCompanion compact embedded quiet={chatSending}>{welcomeText}</AppCompanion>}</div>
         {activeAdvice && <div aria-label="대화 중 조언 확인">
           <FreeAdvicePanel key={activeAdvice.id} scope={activeAdvice.scope} initialQuestion={activeAdvice.question} onComplete={finishAdvice} onBusyChange={changeAdviceBusy} />
           <button type="button" disabled={adviceBusy} onClick={() => { clearCharacter(); setActiveAdvice(null); }} className="min-h-11 rounded-xl px-4 py-2 text-sm font-bold text-gray-600 disabled:opacity-40">조언 취소</button>

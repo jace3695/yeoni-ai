@@ -1,4 +1,5 @@
 'use client'
+import { budgetGuidance } from "@/lib/yeoni/record-guidance";
 import YeoniPreferencesPanel from "@/components/YeoniPreferencesPanel";
 import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
 import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
@@ -267,6 +268,7 @@ function BudgetDashboard() {
   const [categoryBudgetInputs, setCategoryBudgetInputs] = useState<Record<string, string>>({})
   const [showBudgetEditor, setShowBudgetEditor] = useState(false)
   const [budgetLoading, setBudgetLoading] = useState(false)
+  const [guidanceBudgetScope, setGuidanceBudgetScope] = useState<{ owner: string; month: string; error: boolean } | null>(null)
   const [budgetSaving, setBudgetSaving] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -610,6 +612,7 @@ function BudgetDashboard() {
         setCategoryBudgets({})
         setCategoryBudgetInputs({})
         setActionError('선택한 달의 예산을 불러오지 못했어요.')
+        setGuidanceBudgetScope({ owner: user.id, month: selectedMonth, error: true })
         setBudgetLoading(false)
         return
       }
@@ -620,6 +623,7 @@ function BudgetDashboard() {
         return acc
       }, {})
 
+      setGuidanceBudgetScope({ owner: user.id, month: selectedMonth, error: false })
       setMonthlyBudget(loadedBudget)
       setBudgetInput(loadedBudget && loadedBudget > 0 ? String(loadedBudget) : '')
       setCategoryBudgets(loadedCategories)
@@ -1047,6 +1051,7 @@ function BudgetDashboard() {
         if (deleteError) throw deleteError
       }
 
+      setGuidanceBudgetScope({ owner: user.id, month: selectedMonth, error: false })
       setMonthlyBudget(totalAmount)
       setCategoryBudgets(normalizedCategories)
       setShowBudgetEditor(false)
@@ -2190,15 +2195,17 @@ function BudgetDashboard() {
         const expenseChangeRate = previousMonthExpenses > 0 ? (((currentMonthExpenses - previousMonthExpenses) / previousMonthExpenses) * 100) : 0
         const incomeChangeRate = previousMonthIncome > 0 ? (((currentMonthIncome - previousMonthIncome) / previousMonthIncome) * 100) : 0
       
-        let aiMain = '아직 충분한 데이터가 없어요. 기록을 더 쌓아보세요.'
-        let aiSub = '수입, 지출, 저축 데이터를 조금 더 쌓으면 더 정확하게 분석할 수 있어요.'
         let aiStyle = '분석 대기'
         let aiStyleDetail = '기록이 조금 더 쌓이면 소비 성향을 더 정확하게 보여줄 수 있어요.'
-        let aiKeyIssue = '아직 핵심 문제를 판단할 데이터가 부족해요.'
-        let aiActionTip = '조금 더 기록이 쌓이면 바로 실천할 행동도 함께 알려드릴게요.'
         
         if (total > 0 || incomeTotal > 0 || savingsRecordedTotal > 0) {
-          if (savingsRate >= 20 && rawPct < 80) {
+          if (!recordsReady || budgetLoading || guidanceBudgetScope?.month !== selectedMonth || guidanceBudgetScope?.owner !== user?.id || guidanceBudgetScope.error) {
+            aiStyle = '기록 확인 중'
+            aiStyleDetail = '선택한 월의 기록과 예산을 확인한 뒤 살펴볼게요.'
+          } else if (!budgetConfigured || incomeTotal <= 0) {
+            aiStyle = '판단 보류'
+            aiStyleDetail = '예산 또는 수입 기록이 없어 전체적인 여유나 저축 흐름은 판단하지 않아요.'
+          } else if (savingsRate >= 20 && rawPct < 80) {
             aiStyle = '절약형'
             aiStyleDetail = '저축 비중이 높고 예산 사용도 비교적 안정적인 편이에요.'
           } else if (estimatedFixedTotal > 0 && incomeTotal > 0 && (estimatedFixedTotal / incomeTotal) * 100 >= 40) {
@@ -2214,74 +2221,9 @@ function BudgetDashboard() {
             aiStyle = '균형형'
             aiStyleDetail = '수입, 지출, 저축 흐름이 한쪽으로 크게 치우치지 않은 편이에요.'
           }
-          if (rawPct >= 100) {
-            aiMain = `${currentMonth + 1}월은 예산을 초과했어요. 큰 지출 항목부터 점검해보세요.`
-            aiKeyIssue = '핵심 문제: 현재 지출이 이미 예산 범위를 넘어선 상태예요.'
-            aiActionTip = '추천 행동: 오늘부터 가장 큰 지출 카테고리 1개만 먼저 줄여보세요.'
-          } else if (rawPct >= 80) {
-            aiMain = `${currentMonth + 1}월 예산 사용률이 높아요. 남은 기간 지출을 조금만 조절해보세요.`
-            aiKeyIssue = '핵심 문제: 예산 소진 속도가 빨라서 후반부에 부담이 커질 수 있어요.'
-            aiActionTip = '추천 행동: 남은 기간에는 필수 지출 외 소비를 한 번 더 체크해보세요.'
-          } else if (savingsRate >= 20) {
-            aiMain = '저축률이 아주 좋아요. 지금 흐름을 유지하면 안정적으로 모을 수 있어요.'
-            aiKeyIssue = '핵심 문제: 큰 문제는 없지만 현재의 좋은 흐름을 유지하는 것이 중요해요.'
-            aiActionTip = '추천 행동: 지금 저축 패턴을 유지하면서 갑작스러운 소비만 조심해보세요.'
-          } else if (savingsRate >= 10) {
-            aiMain = '저축 흐름이 괜찮아요. 소소한 소비만 줄이면 더 좋아질 수 있어요.'
-            aiKeyIssue = '핵심 문제: 저축은 하고 있지만 자잘한 소비가 누적될 가능성이 있어요.'
-            aiActionTip = `추천 행동: 반복되는 소액 소비 1개만 정해서 ${currentMonth + 1}월에 줄여보세요.`
-          } else if (foodRatio >= 45) {
-            aiMain = '식비 관련 지출 비중이 높아요. 외식이나 배달 빈도를 점검해보세요.'
-            aiKeyIssue = '핵심 문제: 식비·카페·배달 비중이 전체 지출에서 너무 큰 편이에요.'
-            aiActionTip = '추천 행동: 배달이나 외식 횟수를 이번 주에 1~2번만 줄여도 체감이 클 수 있어요.'
-          } else if (deliveryRatio >= 20) {
-            aiMain = `배달 지출 비중이 높은 편이에요. ${currentMonth + 1}월 절약 포인트가 될 수 있어요.`
-            aiKeyIssue = '핵심 문제: 배달처럼 반복되는 편의성 소비가 누적되고 있어요.'
-            aiActionTip = '추천 행동: 이번 주는 배달 대신 대체 식사 1~2회를 먼저 시도해보세요.'
-          } else if (cafeRatio >= 15) {
-            aiMain = '카페 지출이 조금 높아요. 작은 습관 조정만으로도 절약 효과가 있어요.'
-            aiKeyIssue = '핵심 문제: 카페 소비가 자주 반복되면서 고정 습관처럼 쌓이고 있어요.'
-            aiActionTip = '추천 행동: 카페 이용 횟수를 하루나 이틀만 줄여도 누적 절약에 도움이 돼요.'
-          } else if (livingSuppliesRatio >= 15) {
-            aiMain = '생활용품 지출 비중이 높은 편이에요. 꼭 필요한 소모품인지 한 번 점검해보세요.'
-            aiKeyIssue = '핵심 문제: 생활용품 구매가 반복되면서 전체 지출에서 차지하는 비중이 커지고 있어요.'
-            aiActionTip = '추천 행동: 다이소, 올리브영, 휴지, 샴푸 같은 소모품은 구매 전 재고를 먼저 확인해보세요.'
-          } else if (estimatedFixedTotal > 0 && incomeTotal > 0 && (estimatedFixedTotal / incomeTotal) * 100 >= 40) {
-            aiMain = '고정지출 비중이 높은 편이에요. 매달 반복되는 지출을 먼저 관리해보세요.'
-            aiKeyIssue = '핵심 문제: 고정성 지출이 커서 자유롭게 쓸 수 있는 돈이 적은 편이에요.'
-            aiActionTip = '추천 행동: 구독, 통신, 정기결제처럼 반복되는 항목부터 점검해보세요.'
-          } else {
-            aiMain = '전체적으로 안정적인 흐름이에요. 지금처럼 기록을 유지해보세요.'
-            aiKeyIssue = '핵심 문제: 현재는 큰 위험 신호 없이 비교적 안정적인 소비 흐름이에요.'
-            aiActionTip = '추천 행동: 지금 패턴을 유지하면서 한 달 단위로만 계속 점검해보세요.'
-          }
-        
-          if (topCategoryName !== '-') {
-            aiSub = `가장 많이 쓴 항목은 ${topCategoryName}이고, 누적 ${formatKRW(topCategoryAmount)} 사용 중이에요.`
-          }
-        
-          if (previousMonthExpenses > 0) {
-            aiSub = `${currentMonth + 1}월 지출은 지난달보다 ${expenseChangeRate >= 0 ? `${expenseChangeRate.toFixed(1)}% 증가` : `${Math.abs(expenseChangeRate).toFixed(1)}% 감소`}했어요.`
-          }
-        
-          if (savingsRate > 0 && incomeTotal > 0) {
-            aiSub = `현재 저축률은 ${savingsRate.toFixed(1)}%이고, 수입 대비 저축 흐름을 계속 확인해보면 좋아요.`
-          }
-        
-          if (estimatedFixedTotal > 0 && incomeTotal > 0 && (estimatedFixedTotal / incomeTotal) * 100 >= 40) {
-            aiSub = `예상 고정지출은 ${formatKRW(estimatedFixedTotal)}으로, 수입 대비 비중이 높은 편이에요.`
-          }
-        
-          if (foodRatio >= 45) {
-            aiSub = `식비·카페·배달 합계가 전체 지출의 ${foodRatio.toFixed(1)}%예요. 생활 소비보다 먹는 지출 비중이 큰 편이에요.`
-          } else if (deliveryRatio >= 20) {
-            aiSub = `배달 지출 비중이 ${deliveryRatio.toFixed(1)}%로 높아요. 줄이면 가장 빨리 체감될 가능성이 커요.`
-          } else if (cafeRatio >= 15) {
-            aiSub = `카페 지출 비중이 ${cafeRatio.toFixed(1)}%예요. 자주 반복되는 소액 소비일 가능성이 있어요.`
-          } else if (livingSuppliesRatio >= 15) {
-            aiSub = `생활용품 지출 비중이 ${livingSuppliesRatio.toFixed(1)}%예요. 소모품 구매 주기와 재고를 함께 확인해보면 좋아요.`
-          }
         }
+
+        const homeGuidance = budgetGuidance(loading || budgetLoading || guidanceBudgetScope?.owner !== user?.id || guidanceBudgetScope?.month !== selectedMonth || Object.values(recordLoads).includes('loading') ? 'loading' : !recordsReady || !user || guidanceBudgetScope.error ? 'error' : 'ready', selectedMonth, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`, selectedTransactions.length + selectedIncomeList.length + selectedSavings.length, total, incomeTotal, monthlyBudget)
 
         const currentMonthExpenseItems = selectedTransactions
 
@@ -3290,12 +3232,12 @@ return (
           <section className="home-ai-card home-ai-card-primary home-yeoni-diagnosis">
             <div className="home-ai-content">
               <p className="home-section-label">연이와 소비 살펴보기</p>
-              <p className="home-diagnosis-basis">기록의 합계와 예산을 기준으로 살펴본 내용이에요.</p>
-              <h2>{aiMain}</h2>
-              <p className="home-ai-summary">{aiSub}</p>
+              <p className="home-diagnosis-basis">{homeGuidance.basis}</p>
+              <h2>{homeGuidance.title}</h2>
+              <p className="home-ai-summary">{homeGuidance.detail}</p>
               <div className="home-ai-action-line">
-                <span>이번 달 한 가지</span>
-                <strong>{aiActionTip}</strong>
+                <span>선택 월 살펴보기</span>
+                <strong>필요한 항목을 자세한 분석에서 확인할 수 있어요.</strong>
               </div>
               <button type="button" className="home-text-action" onClick={() => { setAnalysisView('ai'); setTab('analysis') }}>
                 자세한 분석 보기 <ArrowRight size={15} aria-hidden="true" />
