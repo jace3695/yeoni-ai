@@ -1,5 +1,7 @@
 'use client'
 import { formatDisplayCurrency } from "@/lib/budget-display-currency";
+import RecordReplyStatus from '@/components/yeoni/RecordReplyStatus';
+import { rollingReplySource } from '@/lib/yeoni/record-reply-sources';
 import { budgetGuidance } from "@/lib/yeoni/record-guidance";
 import YeoniPreferencesPanel from "@/components/YeoniPreferencesPanel";
 import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
@@ -3220,6 +3222,7 @@ return (
             <div className="home-ai-content">
               <p className="home-section-label">연이와 소비 살펴보기</p>
               <p className="home-diagnosis-basis">{homeGuidance.basis}</p>
+              <RecordReplyStatus source={rollingReplySource(user?.id, "budget", { transactions, incomeList, savings, currency }, recordsReady && guidanceCurrencyScope?.owner === user?.id && guidanceCurrencyScope?.status === "ready")} />
               <h2>{homeGuidance.title}</h2>
               <p className="home-ai-summary">{homeGuidance.detail}</p>
               <div className="home-ai-action-line">

@@ -1,6 +1,8 @@
 "use client";
 
 import readability from "./assistant-readability.module.css";
+import RecordReplyStatus from '@/components/yeoni/RecordReplyStatus';
+import { rollingReplySource } from '@/lib/yeoni/record-reply-sources';
 import { assistantGuidance, guidanceText } from "@/lib/yeoni/record-guidance";
 import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import { useUnsavedChanges } from "@/components/useUnsavedChanges";
@@ -734,6 +736,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
           {(chatSending || adviceBusy) && <p role="status" className="text-xs font-semibold text-[#766DB8]">답변을 준비하고 있어요…</p>}
         </div>
         </CommonCharacterSlot>
+        <RecordReplyStatus source={rollingReplySource(pending.ownerId, "assistant", items.filter(item => item.user_id === pending.ownerId), !loading && pending.ready)} />
         <div className="mt-3">{characterAudio ? <AssistantCharacter key={pending.ownerId ?? 'signed-out'} audio={characterAudio}
           incoming={characterReply?.ownerId === pending.ownerId ? characterReply : null} busy={chatSending || adviceBusy} />
           : <AppCompanion compact embedded quiet={chatSending}>{welcomeText}</AppCompanion>}</div>

@@ -115,6 +115,7 @@ test('actual list branch retains existing rows and wires the empty retry to the 
   let reads = 0;
   const context = {
     require: (name: string) => { assert.equal(name, 'react/jsx-runtime'); return jsx; }, exports: {},
+    readability: { item: 'synthetic-readability-item' },
     AssistantListEmptyState: moduleExports.default, loading: false, rows: [] as unknown[], filter: 'memory',
     loadFailures: ['기억'], showEntryForm: () => {}, load: () => { reads++; }, filterLabels: { memory: '기억' },
   };
