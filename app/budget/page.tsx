@@ -1,4 +1,5 @@
 'use client'
+import { formatDisplayCurrency } from "@/lib/budget-display-currency";
 import { budgetGuidance } from "@/lib/yeoni/record-guidance";
 import YeoniPreferencesPanel from "@/components/YeoniPreferencesPanel";
 import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
@@ -73,29 +74,6 @@ const QUICK_INPUT_EXAMPLES = [
   '적금 5만원 넣었어',
 ]
 
-function formatDisplayCurrency(n: number, currency: string) {
-  if (currency === 'USD') {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0
-    }).format(n)
-  }
-
-  if (currency === 'JPY') {
-    return new Intl.NumberFormat('ja-JP', {
-      style: 'currency',
-      currency: 'JPY',
-      maximumFractionDigits: 0
-    }).format(n)
-  }
-
-  return new Intl.NumberFormat('ko-KR', {
-    style: 'currency',
-    currency: 'KRW',
-    maximumFractionDigits: 0
-  }).format(n)
-}
 
 function getCategoryIcon(category?: string) {
   const map: Record<string, string> = {
@@ -259,6 +237,9 @@ function BudgetDashboard() {
   const resetRequestId = useRef('')
   const [autoAnalyzeRan, setAutoAnalyzeRan] = useState(false)
   const [currency, setCurrency] = useState('KRW')
+  const [guidanceCurrencyScope, setGuidanceCurrencyScope] = useState<{ owner: string; status: 'loading' | 'ready' | 'error' } | null>(null)
+  const currencyReadVersion = useRef(0)
+  useEffect(() => () => { currencyReadVersion.current += 1 }, [])
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
   const [budgetAlertEnabled, setBudgetAlertEnabled] = useState(true)
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('unsupported')
@@ -1087,6 +1068,8 @@ function BudgetDashboard() {
       return
     }
 
+    if (liveBudgetOwner.current !== user.id) return
+    setGuidanceCurrencyScope({ owner: user.id, status: 'ready' })
     setCurrency(value)
     setPageNotice('통화 설정이 저장되었어요.')
   }
@@ -1136,15 +1119,19 @@ function BudgetDashboard() {
   }
 
   const loadUserSettings = async (userId: string) => {
+    const version = ++currencyReadVersion.current
+    setGuidanceCurrencyScope({ owner: userId, status: 'loading' })
     const { data, error } = await supabase
       .from('budget_user_settings')
       .select('currency, notifications_enabled, budget_alert_enabled, simple_pin_enabled')
       .eq('user_id', userId)
-      .single()
+      .maybeSingle()
 
-    if (error || !data) {
-      return null
-    }
+    if (version !== currencyReadVersion.current) return null
+    if (error) { setGuidanceCurrencyScope({ owner: userId, status: 'error' }); return null }
+    if (!data) { setCurrency('KRW'); setGuidanceCurrencyScope({ owner: userId, status: 'ready' }); return null }
+    if (data.currency && !['KRW', 'USD', 'JPY'].includes(data.currency)) { setGuidanceCurrencyScope({ owner: userId, status: 'error' }); return null }
+    setGuidanceCurrencyScope({ owner: userId, status: 'ready' })
 
     setCurrency(data.currency || 'KRW')
     setNotificationsEnabled(data.notifications_enabled ?? true)
@@ -2223,7 +2210,7 @@ function BudgetDashboard() {
           }
         }
 
-        const homeGuidance = budgetGuidance(loading || budgetLoading || guidanceBudgetScope?.owner !== user?.id || guidanceBudgetScope?.month !== selectedMonth || Object.values(recordLoads).includes('loading') ? 'loading' : !recordsReady || !user || guidanceBudgetScope.error ? 'error' : 'ready', selectedMonth, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`, selectedTransactions.length + selectedIncomeList.length + selectedSavings.length, total, incomeTotal, monthlyBudget)
+        const homeGuidance = budgetGuidance(loading || budgetLoading || guidanceCurrencyScope?.owner !== user?.id || guidanceCurrencyScope?.status === 'loading' || guidanceBudgetScope?.owner !== user?.id || guidanceBudgetScope?.month !== selectedMonth || Object.values(recordLoads).includes('loading') ? 'loading' : !recordsReady || !user || guidanceBudgetScope.error || guidanceCurrencyScope?.status !== 'ready' ? 'error' : 'ready', selectedMonth, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`, selectedTransactions.length + selectedIncomeList.length + selectedSavings.length, total, incomeTotal, monthlyBudget, { currency, topCategory: topCategoryName !== '-' ? { name: topCategoryName, amount: topCategoryAmount } : undefined, previousExpense: previousMonthExpenses })
 
         const currentMonthExpenseItems = selectedTransactions
 
@@ -3237,7 +3224,7 @@ return (
               <p className="home-ai-summary">{homeGuidance.detail}</p>
               <div className="home-ai-action-line">
                 <span>선택 월 살펴보기</span>
-                <strong>필요한 항목을 자세한 분석에서 확인할 수 있어요.</strong>
+                <strong>{homeGuidance.action ?? "확인된 기록이 준비되면 함께 살펴볼게요."}</strong>
               </div>
               <button type="button" className="home-text-action" onClick={() => { setAnalysisView('ai'); setTab('analysis') }}>
                 자세한 분석 보기 <ArrowRight size={15} aria-hidden="true" />

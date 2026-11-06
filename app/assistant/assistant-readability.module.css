@@ -1,0 +1,8 @@
+.list{container-type:inline-size}
+/* Enlarged text must not let the task actions force a wider-than-screen row. */
+@container (max-width:12em){
+  .list .item{grid-template-columns:minmax(0,1fr)}
+  .item>div{min-width:0;overflow-wrap:anywhere}
+  .item>div>p{white-space:normal;overflow:visible;text-overflow:clip}
+  .item>div:last-child{justify-content:flex-end;flex-wrap:wrap}
+}

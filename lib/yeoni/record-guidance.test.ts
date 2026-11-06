@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fitnessGuidance, dietGuidance, languageGuidance as rawLanguageGuidance, growthGuidance, collectionGuidance, assistantGuidance, budgetGuidance, guidanceText, validDate, type RecordState } from './record-guidance.ts';
+import { fitnessGuidance, dietGuidance, languageGuidance as rawLanguageGuidance, growthGuidance, collectionGuidance, assistantGuidance, budgetGuidance, guidanceText, validDate, savedReviewItemId, type RecordState } from './record-guidance.ts';
 const today = '2026-11-06';
 const languageGuidance = (state: RecordState, date: string, progress: unknown, reviews: unknown) => rawLanguageGuidance(state, date, progress, reviews, Date.parse(date + 'T12:00:00Z'));
 const variants = [
@@ -38,3 +38,21 @@ test('budget empty no claim zero actual spending',()=>assert.match(budgetGuidanc
 
 test('language same-day future review is not due',()=>{ const g=rawLanguageGuidance('ready',today,{},[{createdAt:today+'T01:00:00Z',nextReviewAt:today+'T13:00:00Z'}],Date.parse(today+'T12:00:00Z'));assert.doesNotMatch(g.title,/복습 시점/); });
 test('language UTC previous date not mistaken for due local day',()=>{ const g=rawLanguageGuidance('ready','2026-11-07',{},[{createdAt:'2026-11-06T10:00:00Z',nextReviewAt:'2026-11-06T23:00:00Z'}],Date.parse('2026-11-06T15:30:00Z'));assert.doesNotMatch(g.title,/복습 시점/); });
+
+for (const [currency, expected] of [['KRW','₩1,235'],['USD','$1,235'],['JPY','￥1,235']]) test(`budget ${currency} matches dashboard rounding`,()=>{const g=budgetGuidance('ready','2026-11',today,2,1234.56,3000,2000,{currency,topCategory:{name:'식비',amount:1234.56}});assert.ok(g.title.includes(expected));assert.ok(g.detail.includes(expected));assert.match(g.action!,/식비 상세 내역/);assert.doesNotMatch(guidanceText(g),/습관|반복|정답률/);});
+test('budget specific category retained when budget/income absent',()=>{const g=budgetGuidance('ready','2026-11',today,2,100,0,null,{currency:'USD',topCategory:{name:'교통',amount:75}});assert.match(g.detail,/예산이 설정되지/);assert.match(g.detail,/교통 \$75/);assert.match(g.action!,/한 건/);});
+test('budget previous month comparison is exact not a habit claim',()=>{const g=budgetGuidance('ready','2026-10',today,2,200,1000,500,{currency:'JPY',previousExpense:100});assert.match(g.detail,/직전 월 기록보다 ￥100 많아요/);assert.match(g.action!,/기록 기간/);assert.doesNotMatch(g.detail,/이번 달|습관/);});
+test('budget unavailable currency or settings does not invent won',()=>{assert.match(budgetGuidance('ready','2026-11',today,2,20,30,40,{currency:'unknown'}).title,/확인하지 못/);assert.doesNotMatch(budgetGuidance('loading','2026-11',today,2,20,30,40,{currency:'USD'}).title,/20|\$/);});
+const coreNow=Date.parse(today+'T12:00:00Z');
+const coreGuide=(core: Parameters<typeof rawLanguageGuidance>[5],path='/language')=>rawLanguageGuidance('ready',today,{},[],coreNow,core,path);
+test('direct kana completion is not missing curriculum',()=>{const g=coreGuide({routine:{date:today,completedIds:['kana','kana']} });assert.match(g.title,/오늘 가나 연습/);assert.doesNotMatch(g.title,/순서 학습|완료 수업/);});
+test('direct grammar counts topics, not attempts or mastery',()=>{const row={lessonId:'desu',lastAnsweredAt:today+'T11:00:00Z',lastResult:'wrong',correctCount:5,wrongCount:3};const g=coreGuide({grammar:[row,row]},'/language/grammar');assert.match(g.title,/1개 주제/);assert.match(g.detail,/1개 주제/);assert.doesNotMatch(g.title,/8|정답률|완료/);});
+test('word saved and review counts stay separate and deduplicated',()=>{const w={word:'ねこ',meaning:'고양이',example:'ねこです。',category:'animal'};const g=coreGuide({savedWords:[w,w],wrongWords:[{...w,createdAt:today+'T11:00:00Z',quizType:'meaning'}]},'/language/words');assert.match(g.title,/저장 단어 1개.*항목 1개/);assert.doesNotMatch(g.title,/완료 수업/);});
+test('kana lists overlap by char, reviewed markers remove pending entries',()=>{const k={char:'あ',romaji:'a',mode:'quiz',type:'hiragana',createdAt:today+'T11:00:00Z'};assert.match(coreGuide({wrongKana:[k],wrongKanaChars:['あ']},'/language/kana').title,/1개/);const reviewed=[{date:today,items:[savedReviewItemId('wrong-kana',k),'kana-char:あ']}];assert.match(coreGuide({wrongKana:[k],wrongKanaChars:['あ'],reviewed},'/language/kana').title,/0개/);assert.match(coreGuide({reviewed}).title,/오늘 복습 완료 표시/);});
+test('word review completion uses existing persisted ID, not deletion',()=>{const w={word:'ねこ',meaning:'고양이',quizType:'meaning',createdAt:today+'T11:00:00Z'};const g=coreGuide({wrongWords:[w],reviewed:[{date:today,items:[savedReviewItemId('wrong-word',w)]}]},'/language/words');assert.match(g.title,/항목 0개/);});
+test('future core activity and future grammar attempts excluded',()=>{const g=coreGuide({routine:{date:'2026-11-07',completedIds:['kana']},grammar:[{lessonId:'x',lastAnsweredAt:today+'T13:00:00Z'}]},'/language/grammar');assert.match(g.title,/0개 주제/);assert.doesNotMatch(g.title,/오늘.*남겼/);});
+test('core reset has no stale counts and scopes remain separate',()=>{assert.match(coreGuide({savedWords:[{word:'x',meaning:'x',example:'x',category:'x'}]}).title,/저장 단어 1개/);assert.doesNotMatch(coreGuide({}).title,/저장 단어 1개/);assert.match(coreGuide({routine:{date:today,completedIds:['kana']}},'/language/learn').title,/순서 학습/);});
+
+test('grammar earlier wrong remains pending after a later correct answer, matching review list',()=>{const row={lessonId:'desu',lastAnsweredAt:today+'T11:00:00Z',lastResult:'correct',wrongCount:1};assert.match(coreGuide({grammar:[row]},'/language/grammar').detail,/남은 1개/);assert.doesNotMatch(coreGuide({grammar:[row],reviewed:[{date:today,items:['grammar:desu']}]},'/language/grammar').detail,/남은 1개/);assert.match(coreGuide({grammar:[row],reviewed:[]},'/language/grammar').detail,/남은 1개/);});
+
+test('incomplete saved words are excluded like the actual word screen normalizer',()=>{assert.match(coreGuide({savedWords:[{word:'x',meaning:'x',category:'x'}]},'/language/words').title,/저장 단어 0개/);});

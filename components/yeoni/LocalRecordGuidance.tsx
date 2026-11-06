@@ -9,17 +9,17 @@ type App = 'fitness' | 'diet' | 'language';
 const keys: Record<App, string[]> = {
   fitness: ['ai-fitness-workout-completed-days', 'ai-fitness-daily-condition', 'ai-fitness-recovery-mode-days'],
   diet: ['ai-fitness-diet-completed-days', 'ai-fitness-diet-meal-log', 'ai-fitness-water-intake'],
-  language: ['japaneseCurriculumProgressV1', 'japaneseCurriculumReviewV1'],
+  language: ['japaneseCurriculumProgressV1', 'japaneseCurriculumReviewV1', 'dailyRoutineProgress', 'grammarProgress', 'savedWords', 'wrongWords', 'wrongKana', 'wrongKanaChars', 'reviewCompletedItemsByDate'],
 };
 const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
-export default function LocalRecordGuidance({ app, date }: { app: App; date?: string }) {
+export default function LocalRecordGuidance({ app, date, languagePath }: { app: App; date?: string; languagePath?: string }) {
   const languageState = useContext(LanguageRecordReadiness);
-  const [snapshot, setSnapshot] = useState<{ app: App; date?: string; guidance: Guidance } | null>(null);
+  const [snapshot, setSnapshot] = useState<{ app: App; date?: string; path?: string; guidance: Guidance } | null>(null);
   useEffect(() => {
     let stopped = false;
     const publish = (guidance: Guidance) => {
-      if (!stopped) setSnapshot(previous => previous?.app === app && previous.date === date && JSON.stringify(previous.guidance) === JSON.stringify(guidance) ? previous : { app, date, guidance });
+      if (!stopped) setSnapshot(previous => previous?.app === app && previous.date === date && previous.path === languagePath && JSON.stringify(previous.guidance) === JSON.stringify(guidance) ? previous : { app, date, path: languagePath, guidance });
     };
     const invalidate = () => publish(unavailable(app === 'language' ? '학습' : app === 'diet' ? '식단' : '운동', 'loading')!);
     const read = () => {
@@ -29,10 +29,11 @@ export default function LocalRecordGuidance({ app, date }: { app: App; date?: st
         if (localStorage.getItem('yeoni-storage-transaction-v1')) { invalidate(); return; }
         if (!owner || app === 'language' && localStorage.getItem('language-cloud-sync-user') !== owner) { invalidate(); return; }
         if (ready !== 'ready') { publish(unavailable('학습', ready)!); return; }
-        const values = keys[app].map((key, index) => {
+        const values = keys[app].map((key) => {
+          const arrayValue = app === 'language' && !['japaneseCurriculumProgressV1', 'dailyRoutineProgress'].includes(key);
           const raw = localStorage.getItem(key);
-          const value: unknown = raw === null ? (app === 'language' && index === 1 ? [] : {}) : JSON.parse(raw);
-          if (app === 'language' && index === 1 ? !Array.isArray(value) : value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid saved record');
+          const value: unknown = raw === null ? (arrayValue ? [] : {}) : JSON.parse(raw);
+          if (arrayValue ? !Array.isArray(value) : value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid saved record');
           return value;
         });
         const today = todayKey(), selected = date ?? today;
@@ -42,7 +43,7 @@ export default function LocalRecordGuidance({ app, date }: { app: App; date?: st
           if (app === 'diet' && index === 2) { if (typeof row !== 'number' || !Number.isFinite(row) || row < 0) throw new Error('Invalid water'); }
           else if (!(app === 'fitness' && index === 0 && typeof row === 'boolean') && (row === null || typeof row !== 'object' || Array.isArray(row))) throw new Error('Invalid day record');
         });
-        publish(app === 'language' ? languageGuidance('ready', today, values[0], values[1], Date.now()) : app === 'diet' ? dietGuidance('ready', selected, today, object(values[0])[selected], object(values[1])[selected], object(values[2])[selected]) : fitnessGuidance('ready', selected, today, object(values[0])[selected], object(values[1])[selected], object(values[2])[selected]));
+        publish(app === 'language' ? languageGuidance('ready', today, values[0], values[1], Date.now(), { routine: values[2], grammar: values[3], savedWords: values[4], wrongWords: values[5], wrongKana: values[6], wrongKanaChars: values[7], reviewed: values[8] }, languagePath) : app === 'diet' ? dietGuidance('ready', selected, today, object(values[0])[selected], object(values[1])[selected], object(values[2])[selected]) : fitnessGuidance('ready', selected, today, object(values[0])[selected], object(values[1])[selected], object(values[2])[selected]));
       } catch { publish(unavailable(app === 'language' ? '학습' : app === 'diet' ? '식단' : '운동', 'error')!); }
     };
     read();
@@ -54,7 +55,7 @@ export default function LocalRecordGuidance({ app, date }: { app: App; date?: st
     // Session invalidation fires before old records are removed: never read in it.
     window.addEventListener('yeoni-cloud-session-changed', invalidate);
     return () => { stopped = true; clearInterval(timer); events.forEach(event => window.removeEventListener(event, read)); window.removeEventListener('yeoni-cloud-session-changed', invalidate); };
-  }, [app, date, languageState]);
-  const current = app === 'language' && languageState !== 'ready' ? unavailable('학습', languageState)! : snapshot?.app === app && snapshot.date === date ? snapshot.guidance : unavailable('저장된', 'loading')!;
+  }, [app, date, languageState, languagePath]);
+  const current = app === 'language' && languageState !== 'ready' ? unavailable('학습', languageState)! : snapshot?.app === app && snapshot.date === date && snapshot.path === languagePath ? snapshot.guidance : unavailable('저장된', 'loading')!;
   return <span data-record-guidance={app}>{guidanceText(current)}</span>;
 }
