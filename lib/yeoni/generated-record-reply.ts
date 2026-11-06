@@ -65,12 +65,12 @@ export class MockReplyLedger {
   select(scope: string, version: string) { this.latest.set(scope, version); }
   current(scope: string, version: string) { return this.latest.get(scope) === version; }
   total(owner: string) { return this.spent.get(owner) ?? 0; }
-  reserve(owner: string, app: RecordApp, version: string, cost: number): { key: string; answer?: Analysis; status: 'reserved' | 'ready' | 'busy' | 'uncertain' | 'failed' | 'budget' | 'deleted' } {
+  reserve(owner: string, app: RecordApp, version: string, cost: number | null): { key: string; answer?: Analysis; status: 'reserved' | 'ready' | 'busy' | 'uncertain' | 'failed' | 'budget' | 'deleted' } {
     const key = JSON.stringify([owner, app, version]), old = this.entries.get(key);
     if (old?.purged) return { key, status: 'deleted' };
     if (old?.answer) return { key, status: 'ready', answer: old.answer };
     if (old) return { key, status: old.status === 'done' ? 'failed' : old.status === 'pending' ? 'busy' : old.status };
-    if (!Number.isFinite(cost) || cost <= 0 || this.total(owner) + cost > this.cap) return { key, status: 'budget' };
+    if (cost === null || !Number.isFinite(cost) || cost <= 0 || this.total(owner) + cost > this.cap) return { key, status: 'budget' };
     this.entries.set(key, { status: 'pending', cost }); this.spent.set(owner, this.total(owner) + cost);
     return { key, status: 'reserved' };
   }
@@ -90,7 +90,7 @@ export type MockTransport = { mode: 'mock'; generate(input: { records: unknown; 
 export class MockRecordReplyService {
   private ledger: MockReplyLedger; private transport: MockTransport;
   constructor(ledger: MockReplyLedger, transport: MockTransport) { this.ledger = ledger; this.transport = transport; }
-  async analyze(source: SourceSnapshot, analysisDate: string, now: string, reservedCost = 1): Promise<Outcome> {
+  async analyze(source: SourceSnapshot, analysisDate: string, now: string, reservedCost: number | null = 1): Promise<Outcome> {
     source = { ...source };
     if (!source.owner || !source.complete) { if (source.owner) { this.ledger.observe(this.ledger.scope(source.owner, source.app)); this.ledger.select(this.ledger.scope(source.owner, source.app), 'unavailable'); } return { status: 'incomplete' }; }
     if (this.transport.mode !== 'mock' || this.ledger.mode !== 'mock') return { status: 'disabled' };

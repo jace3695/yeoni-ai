@@ -17,16 +17,13 @@ export function createMockReplyBudgets() {
   return { analysis: new MockReplyLedger(mockSpendableKrw('analysis')), voice: new MockReplyLedger(mockSpendableKrw('voice')) };
 }
 
-/** Budgeted mock entry point. Generic service unit fixtures use abstract costs. */
+/** Budgeted mock entry point. Exact cache reuse never needs a fresh price quote. */
 export function createQuotedMockReplyService(kind: keyof typeof REPLY_BUDGET_TARGETS_KRW, book: ReturnType<typeof createMockReplyBudgets>, transport: MockTransport) {
   const service = new MockRecordReplyService(book[kind], transport);
   return { async analyze(source: SourceSnapshot, analysisDate: string, now: string, allInUpperEstimate: number | null): Promise<Outcome> {
     const cost = conservativeReservationKrw(allInUpperEstimate);
-    if (cost === null) {
-      const scope = book[kind].scope(source.owner, source.app);
-      book[kind].observe(scope); book[kind].select(scope, 'quote-unavailable');
-      return { status: 'budget' };
-    }
+    // Observe the current source and look up its exact cache key first. Missing
+    // price blocks a NEW reservation/transport, not a zero-cost cache read.
     return service.analyze(source, analysisDate, now, cost);
   } };
 }
