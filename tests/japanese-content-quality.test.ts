@@ -11,10 +11,17 @@ import { chooseJapaneseLevel, dueUpperAnswers, emptyLevelJourney, rememberUpperA
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const lesson = (id: string) => getJapaneseReadingLesson(id)!;
 
-test('all 62 legacy lessons and 496 questions retain everything except reviewed Korean explanations', () => {
+test('all 62 legacy lessons and 496 questions retain everything except reviewed explanations and two scoped wording fixes', () => {
   assert.equal(CURRICULUM.length, 62);
   assert.equal(CURRICULUM.flatMap(l => l.quiz).length, 496);
-  const exceptExplanation = CURRICULUM.map(l => ({ ...l, quiz: l.quiz.map(q => { const { explanation, ...rest } = q; assert.ok(explanation); return rest; }) }));
+  const exceptExplanation = CURRICULUM.map(l => ({ ...l, quiz: l.quiz.map((q, index) => {
+    const { explanation, ...rest } = q; assert.ok(explanation);
+    // Restore only the reviewed distractor and ambiguous prompt for the frozen
+    // baseline comparison. Answer positions, spoken targets and stored IDs stay fixed.
+    if (l.id === 't19' && index === 0) return { ...rest, choices: [rest.choices[0], '韓国まで何日かかりますか。', ...rest.choices.slice(2)] };
+    if (l.id === 'w12' && index === 0) return { ...rest, prompt: '메일의 정중한 확인 요청은?' };
+    return rest;
+  }) }));
   // Frozen c241877f source contract before the two explanation-template corrections.
   assert.equal(digest(exceptExplanation), '53f84910ab43acdbb125d37c2090f71dcef42055cfc4850b17e3588f1e5637d0');
   const fixed = CURRICULUM.flatMap(l => l.quiz).filter(q => /의 뜻은 ‘.+’입니다\./.test(q.explanation));
