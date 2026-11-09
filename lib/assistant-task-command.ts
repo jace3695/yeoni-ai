@@ -42,8 +42,30 @@ export function parseTaskCompletionTarget(message: string): string {
 }
 
 export function commandDueDate(message: string, today: string) {
-  const explicit = message.match(/(20\d{2})[-./년]\s*(\d{1,2})[-./월]\s*(\d{1,2})일?/);
-  const monthDay = message.match(/(\d{1,2})월\s*(\d{1,2})일/);
+  // Inspect complete date-shaped tokens before selecting a date. Otherwise an
+  // invalid explicit date can be truncated or silently fall back to "내일".
+  const invalidDate = () => new Error('존재하는 날짜를 말씀해 주세요. 예: 9월 20일');
+  const explicitTokens = [...message.matchAll(/(?<!\d)(\d{4,})[-./년]\s*(\d+)[-./월]\s*(\d+)((?:[./-]\d+)*)일?/g)];
+  for (const token of explicitTokens) {
+    if (!/^20\d{2}$/.test(token[1]) || token[2].length > 2 || token[3].length > 2 || token[4]) throw invalidDate();
+    const value = `${token[1]}-${token[2].padStart(2, '0')}-${token[3].padStart(2, '0')}`;
+    const date = new Date(`${value}T12:00:00Z`);
+    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw invalidDate();
+  }
+  const monthDayTokens = [...message.matchAll(/(?<!\d)(\d+)월\s*(\d+)((?:[./-]\d+)*)일/g)];
+  for (const token of monthDayTokens) {
+    if (token[1].length > 2 || token[2].length > 2 || token[3]) throw invalidDate();
+    // A month/day inside an explicit year uses that year (including leap years).
+    const hasExplicitYear = explicitTokens.some(explicit => token.index >= explicit.index
+      && token.index < explicit.index + explicit[0].length);
+    if (!hasExplicitYear) {
+      const value = `${today.slice(0, 4)}-${token[1].padStart(2, '0')}-${token[2].padStart(2, '0')}`;
+      const date = new Date(`${value}T12:00:00Z`);
+      if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw invalidDate();
+    }
+  }
+  const explicit = explicitTokens[0];
+  const monthDay = monthDayTokens[0];
   let result: string | null = null;
   if (explicit) result = `${explicit[1]}-${explicit[2].padStart(2, '0')}-${explicit[3].padStart(2, '0')}`;
   else if (monthDay) result = `${today.slice(0, 4)}-${monthDay[1].padStart(2, '0')}-${monthDay[2].padStart(2, '0')}`;

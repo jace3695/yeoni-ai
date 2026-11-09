@@ -1,4 +1,4 @@
-import { detectAdviceScope } from '@/lib/assistant-advice-intent';
+import { detectAdviceScope, detectShortTaskOperation } from '@/lib/assistant-advice-intent';
 import { buildReplyPlan } from '@/lib/yeoni/reply-plan';
 import type { FreeAdviceScope } from '@/lib/free-advice-context';
 import {isWorkoutFeedbackIntent,parseWorkoutFeedbackCommand} from '@/lib/assistant-workout-feedback-command';
@@ -219,6 +219,7 @@ async function processSingleCommand(
   const today = seoulDate();
   const monthStart = `${today.slice(0, 7)}-01`;
   let result: AssistantReply;
+  const shortTaskOperation = detectShortTaskOperation(message);
   const adviceScope = detectAdviceScope(message);
   if (adviceScope) return {
     reply: '기록을 보고 함께 생각해 볼게요. 아래에서 보낼 기록을 확인하면 무료 AI 조언을 받을 수 있어요.',
@@ -226,19 +227,19 @@ async function processSingleCommand(
     action: { label: '연이와 조언 이어가기', href: `/assistant?advice=${adviceScope}#yeoni-chat` },
   };
 
-  if (isDietRecordIntent(message)) {
+  if (!shortTaskOperation && isDietRecordIntent(message)) {
     const change = parseDietCommand(message);
     const proposal = await proposeDietCommand(supabase, userId, today, change);
     result = { reply: `${today} ${dietCommandLabel(change)} 내용을 확인해 주세요. 확인 버튼을 눌러야 저장됩니다.`, proposal };
-  } else if (isGrowthCompletionIntent(message)) {
+  } else if (!shortTaskOperation && isGrowthCompletionIntent(message)) {
     const command = parseGrowthCompletion(message);
     const proposal = await proposeGrowthCompletion(supabase, userId, today, command);
     result = { reply: `오늘 ‘${proposal.expected.title}’ 완료 내용을 확인해 주세요. 확인 버튼을 눌러야 저장됩니다.`, proposal, action: { label: '자기계발 루틴 보기', href: '/growth' } };
-  } else if (isBudgetEditIntent(message)) {
+  } else if (!shortTaskOperation && isBudgetEditIntent(message)) {
     const target = parseBudgetAmountCommand(message, today);
     const proposal = await proposeBudgetAmount(supabase, userId, target);
     result = { reply: `${target.date} ‘${target.place}’의 금액 변경을 확인해 주세요. 확인 버튼을 눌러야 저장됩니다.`, proposal };
-  } else if (/(할\s*일|일정)/.test(message) && /(?:완료|끝)(?:\s*처리)?(?:해\s*줘|해주세요|해요|했어|했어요)[.!。]*$/.test(message.trim())) {
+  } else if (!shortTaskOperation && /(할\s*일|일정)/.test(message) && /(?:완료|끝)(?:\s*처리)?(?:해\s*줘|해주세요|해요|했어|했어요)[.!。]*$/.test(message.trim())) {
     const target = parseTaskCompletionTarget(message);
     const { data, error } = await supabase.from("assistant_items").select("*").eq("user_id", userId)
       .in("status", ["open", "in_progress", "waiting"]).eq("title", target).limit(2);
@@ -251,7 +252,7 @@ async function processSingleCommand(
         recurrence_rule: item.recurrence_rule, project_id: item.project_id,
       }, item);
     }
-  } else if (/(할\s*일|일정).*(수정|변경)|(수정|변경).*(할\s*일|일정)/.test(message)) {
+  } else if (shortTaskOperation === 'update' || (!shortTaskOperation && /(할\s*일|일정).*(수정|변경)|(수정|변경).*(할\s*일|일정)/.test(message))) {
     const target = cleanTaskTarget(message);
     const dueDate = commandDueDate(message, today);
     const hasPriority = /(긴급|최우선|중요|우선순위|여유)/.test(message);
@@ -273,7 +274,7 @@ async function processSingleCommand(
         }, item);
       }
     }
-  } else if (/브리핑/.test(message)) {
+  } else if (!shortTaskOperation && /브리핑/.test(message)) {
     const start = `${today}T00:00:00+09:00`;
     const end = `${today}T23:59:59+09:00`;
     const [taskResult, budgetResult, fitnessResult, languageResult, growthRoutineResult, growthSessionResult] = await Promise.all([
@@ -303,7 +304,7 @@ async function processSingleCommand(
       !growthRoutineResult.error && !growthSessionResult.error && `자기계발은 활성 루틴 중 ${growthCompleted}개 완료, ${growthMinutes}분 기록했습니다.`,
     ].filter(Boolean);
     result = { reply: `${/저녁/.test(message)?'저녁':/아침/.test(message)?'아침':'오늘'} 브리핑입니다. ${sections.join(' ')}${failures.length?` 조회 실패: ${failures.join(' · ')}. 해당 영역은 미기록으로 판단하지 않았습니다.`:''}`, action: { label: "통합 브리핑 자세히 보기", href: "/assistant" } };
-  } else if (/(이번\s*달|월).*(지출|소비)|(지출|소비).*(이번\s*달|월)/.test(message)) {
+  } else if (!shortTaskOperation && /(이번\s*달|월).*(지출|소비)|(지출|소비).*(이번\s*달|월)/.test(message)) {
     const { data, error } = await supabase.from("budget_transactions").select("amount,type,category").eq("user_id", userId).gte("date", monthStart).lte("date", today);
     if (error) throw new Error("가계부 데이터를 불러오지 못했습니다.");
     const rows = data ?? [];
@@ -311,7 +312,7 @@ async function processSingleCommand(
     const categories = rows.reduce<Record<string, number>>((acc, row) => { const key = row.category || "기타"; acc[key] = (acc[key] || 0) + Number(row.amount || 0); return acc; }, {});
     const top = Object.entries(categories).sort((a, b) => b[1] - a[1])[0];
     result = { reply: `이번 달 지출은 ${won(total)}, 총 ${rows.length}건입니다.${top ? ` 가장 큰 항목은 ${top[0]} ${won(top[1])}이에요.` : ""}`, action: { label: "가계부 자세히 보기", href: "/budget" } };
-  } else if (/(할\s*일|일정).*(추가|등록|기록)|(추가|등록|기록).*(할\s*일|일정)/.test(message)) {
+  } else if (shortTaskOperation === 'create' || (!shortTaskOperation && /(할\s*일|일정).*(추가|등록|기록)|(추가|등록|기록).*(할\s*일|일정)/.test(message))) {
     const title = taskTitle(message);
     if (!title || /^(추가|등록|기록)$/.test(title)) {
       result = { reply: "추가할 내용을 함께 말해 주세요. 예: ‘오늘 할 일에 우유 사기 추가해줘’" };
