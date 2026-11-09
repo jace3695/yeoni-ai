@@ -69,7 +69,10 @@ test('all component hrefs remain hash-only including unsupported, hostile and ne
   assert.equal(previewHash('/language/levels?level=advanced'), '#/language/levels?level=advanced');
   assert.equal(previewHash('/language/levels?lesson=middle-01&review=1'), '#/language/levels?lesson=middle-01&review=1');
   assert.equal(previewHash('/language/chunk-review'), '#/language/chunk-review');
-  for (const href of ['https://example.com', '//example.com', 'javascript:alert(1)', '/language/learn?lesson=f01',
+  assert.equal(previewHash('/language/learn?lesson=f01'), '#/language/learn?lesson=f01');
+  assert.equal(previewHash('/language/qa-catalog'), '#/language/qa-catalog');
+  assert.equal(previewHash('/language/qa-chunks?lesson=upper-mech-06'), '#/language/qa-chunks?lesson=upper-mech-06');
+  for (const href of ['https://example.com', '//example.com', 'javascript:alert(1)', '/language/practice', '/language/conversation', '/language/writing', '/language/kana-writing',
     '/language/kana', '/language/settings', '/language/levels#outside', '/language/levels\\evil', '/language/levels\n']) {
     assert.equal(previewHash(href), '#/unsupported');
   }
@@ -97,7 +100,7 @@ test('the real compiled Link shim preserves cancellation and keeps modified clic
   const cancelled = cjsModule.exports.default({ href: '/language/learn?lesson=f01', children: '기존 수업',
     onClick: (e: typeof event) => e.preventDefault(), onNavigate: () => { throw new Error('Cancelled click navigated'); } });
   cancelled.props.onClick({ ...event, defaultPrevented: false });
-  assert.equal(cancelled.props.href, '#/unsupported');
+  assert.equal(cancelled.props.href, '#/language/learn?lesson=f01');
 });
 
 test('memory records have no browser backing, support explicit failure, and do not survive a new instance', () => {
@@ -161,10 +164,15 @@ test('a queued old answer cannot enter a reseeded scenario with the same synthet
 
 test('built artifact contains actual latest components but no actual services, storage APIs or external resources', async () => {
   const built = await buildJapanesePreview();
-  for (const name of ['LevelLearningWorkspace', 'UpperReadingLesson', 'JapaneseChunkPractice', 'ChunkReviewWorkspace', 'useLevelJourney', 'useChunkReview']) {
+  for (const name of ['FocusedLesson', 'LearningQuestion', 'LearningCompanion', 'LevelLearningWorkspace', 'UpperReadingLesson', 'JapaneseChunkPractice', 'ChunkReviewWorkspace', 'useLevelJourney', 'useChunkReview']) {
     assert.ok(built.inputs.some(path => path.endsWith(`/${name}.tsx`) || path.endsWith(`/${name}.ts`)), name);
   }
   assert.ok(built.inputs.includes('app/data/languageStorageLock.ts'));
+  for (const name of ['scripts/japanese-preview/next-navigation.ts', 'scripts/japanese-preview/image.tsx', 'app/globals.css', 'app/language/language.css']) assert.ok(built.inputs.includes(name), name);
+  assert.ok(built.inputs.every(path => !/(?:^|\/)node_modules\/next\//.test(path)));
+  assert.doesNotMatch(built.payload.script, /createElement\("img"|jsx\)\("img"|jsx\("img"/);
+  assert.match(built.payload.styles, /--yeoni-ink:\s*#302a46/);
+  assert.doesNotMatch(built.payload.styles, /@tailwind/);
   assert.ok(built.inputs.some(path => path.startsWith('node_modules/fake-indexeddb/')));
   assert.ok(built.inputs.every(path => !forbiddenPreviewInput.test(path)));
   for (const forbidden of ['lib/supabase.ts', 'app/layout.tsx', 'app/language/layout.tsx', 'app/data/languageCloudSync.ts',
@@ -173,7 +181,9 @@ test('built artifact contains actual latest components but no actual services, s
   }
   // Deliberately strict: new native-storage aliases or service code must fail
   // this fixture review instead of silently expanding its permissions.
-  assert.doesNotMatch(built.payload.script, /\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|navigator\.locks|XMLHttpRequest|WebSocket|sendBeacon|serviceWorker|document\.cookie|speechSynthesis|SpeechRecognition|\.getUser\(|\bfetch\(/);
+  assert.doesNotMatch(built.payload.script, /\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|navigator\.locks|XMLHttpRequest|WebSocket|sendBeacon|serviceWorker|document\.cookie|SpeechRecognition|\.getUser\(|\bfetch\(/);
+  assert.equal((built.payload.script.match(/\bwindow\.speechSynthesis\b/g) ?? []).length, 1);
+  assert.equal((built.payload.script.match(/\bnew SpeechSynthesisUtterance\s*\(/g) ?? []).length, 1);
   assert.doesNotMatch(built.payload.script, /levelFixture|applyLanguageState|prepareLanguageLocalState|NEXT_PUBLIC_SUPABASE/);
   assert.doesNotMatch(built.payload.styles, /@import\b|url\s*\(/i);
   assert.doesNotMatch(built.payload.script, /sourceMappingURL|<\/script/i);

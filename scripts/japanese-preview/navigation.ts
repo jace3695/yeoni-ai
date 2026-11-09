@@ -1,4 +1,4 @@
-const supported = new Set(['/language', '/language/levels', '/language/chunk-review']);
+const supported = new Set(['/language', '/language/levels', '/language/chunk-review', '/language/learn', '/language/qa-catalog', '/language/qa-chunks']);
 
 /** A hash cannot load /language, even via middle click, new tab or context menu. */
 export function previewHash(href: string): string {

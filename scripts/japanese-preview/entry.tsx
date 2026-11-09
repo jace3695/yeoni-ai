@@ -1,25 +1,40 @@
+import '../../app/globals.css';
+import '../../app/language/language.css';
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import LevelLearningWorkspace from '../../components/language/LevelLearningWorkspace';
+import FocusedLesson from '../../components/language/FocusedLesson';
+import JapaneseChunkPractice from '../../components/language/JapaneseChunkPractice';
+import { CURRICULUM } from '../../data/curriculum';
+import { getLessonStudyLevel, isJapaneseLevel } from '../../data/japaneseLevels';
+import PreviewCatalog from './PreviewCatalog';
+import SessionOptions from './SessionOptions';
+import LocalAudioProbe from './LocalAudioProbe';
+import { PREVIEW_CURRICULUM_CATALOG, PREVIEW_READING_CATALOG, PREVIEW_CHUNK_CATALOG } from './catalog';
 import ChunkReviewWorkspace from '../../components/language/ChunkReviewWorkspace';
 import { getLevelReadingLessons } from '../../data/japaneseReadingLessons';
 import { JAPANESE_CHUNK_LESSONS } from '../../data/japaneseChunkLessons';
 import { LEVEL_JOURNEY_KEY, emptyLevelJourney, rememberUpperAnswer } from '../../utils/japaneseLevelJourney';
 import { CHUNK_REVIEW_KEY, emptyChunkReview, rememberChunkAnswer } from '../../utils/japaneseChunkReview';
 import { assertOpaquePreviewOrigin, qaLocalStorage, seedSyntheticOwner } from './runtime';
-import { readPreviewLocation } from './navigation';
+import { previewHash, readPreviewLocation } from './navigation';
 import './preview.css';
 
 function Preview() {
   const [hash, setHash] = useState(location.hash);
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState('');
+  const [audioPanelOpen, setAudioPanelOpen] = useState(false);
   useEffect(() => {
     const update = () => { setHash(location.hash); setNotice(''); };
     window.addEventListener('hashchange', update);
     return () => window.removeEventListener('hashchange', update);
   }, []);
   const route = readPreviewLocation(hash);
+  const lesson = CURRICULUM.find(item => item.id === route.query.get('lesson'));
+  const chunk = JAPANESE_CHUNK_LESSONS.find(item => item.lessonId === route.query.get('lesson'));
+  const requestedLevel = route.query.get('level');
+  const studyLevel = lesson && isJapaneseLevel(requestedLevel) && getLessonStudyLevel(lesson.id) === requestedLevel ? requestedLevel : undefined;
   const remount = () => setRevision(value => value + 1);
   const seedReview = () => {
     // Use a fresh in-memory scenario only. No real account, dates or user inputs.
@@ -41,21 +56,26 @@ function Preview() {
   return <>
     <aside className="qa-banner" aria-label="가상 검사 범위">
       <strong>연이 일본어 · 실제 컴포넌트의 가상 화면 검사</strong>
-      <p>실제 계정·클라우드·외부 AI·음성을 연결하지 않아요. 기록은 이 화면의 메모리에만 남고 새로고침하면 사라져요. 실제 영속 저장·기기간 동기화 검증은 아니에요.</p>
-      <p>단계 선택, 읽기 20단원, 표현 조각과 보충복습을 확인해요. 가나·기존 문법/문장 수업 연결은 이 검사 화면에서 열지 않아요.</p>
-      <nav aria-label="가상 검사 이동"><a href="#/language/levels">단계 화면</a><a href="#/language/chunk-review">보충복습</a></nav>
+      <p>실제 계정·클라우드·외부 AI는 연결하지 않아요. 일반 수업 음성은 차단하며, 아래 별도 검사에서만 명시 선택한 로컬 일본어 음성을 요청할 수 있어요. 기록은 이 화면의 메모리에만 남고 새로고침하면 사라져요. 실제 영속 저장·기기간 동기화 검증은 아니에요.</p>
+      <p>기존 본수업 {PREVIEW_CURRICULUM_CATALOG.length}개, 읽기 {PREVIEW_READING_CATALOG.length}개, 표현 조각 {PREVIEW_CHUNK_CATALOG.length}개를 실제 학습 화면으로 열어요. 가나 별도 화면·문법 자료실·타자·녹음·발음평가·음성대화·그림 기능은 연결하지 않아요. 장식 이미지는 요청하지 않아요.</p>
+      <nav aria-label="가상 검사 이동"><a href="#/language/qa-catalog">전체 단원 목차</a><a href="#/language/levels">단계 화면</a><a href="#/language/chunk-review">보충복습</a></nav>
       <div className="qa-actions">
         <button type="button" onClick={seedReview}>가상 오답 예시 열기</button>
         <button type="button" onClick={() => { qaLocalStorage.failNextWrite(); setNotice('다음 가상 저장 1회가 실패하도록 준비했어요. 답이나 단계를 선택한 뒤 오류와 재시도를 확인하세요.'); }}>다음 가상 저장 실패시키기</button>
         <button type="button" onClick={() => { remount(); setNotice('같은 화면의 메모리 기록으로 컴포넌트를 다시 열었어요. 새로고침 후 영속 복구 검증은 아닙니다.'); }}>화면 다시 열어 기록 확인</button>
       </div>
+      <SessionOptions key={revision} />
       {notice && <p role="status">{notice}</p>}
     </aside>
-    <main key={`${hash}:${revision}`}>
+    <details className="qa-audio-probe" open={audioPanelOpen} onToggle={event => setAudioPanelOpen(event.currentTarget.open)}><summary>기기 내 일본어 음성 검사 · 접으면 검사 취소</summary><LocalAudioProbe isOpen={audioPanelOpen} /></details>
+    <div className="language-app-shell"><main className="app-main" key={`${hash}:${revision}`}>
       {route.pathname === '/language/levels' ? <LevelLearningWorkspace requestedLevel={route.query.get('level')} lessonId={route.query.get('lesson')} reviewOnly={route.query.get('review') === '1'} />
         : route.pathname === '/language/chunk-review' ? <ChunkReviewWorkspace />
-          : <section className="qa-unsupported"><h1>이 연결은 이번 가상 검사 범위 밖이에요</h1><p>실제 계정 화면으로 이동하지 않았어요. 가상 기록은 그대로예요.</p><a href="#/language/levels">단계 화면으로 돌아가기</a></section>}
-    </main>
+          : route.pathname === '/language/qa-catalog' || (route.pathname === '/language/learn' && !route.query.has('lesson')) ? <PreviewCatalog track={route.query.get('track')} />
+            : route.pathname === '/language/learn' && lesson ? <FocusedLesson lesson={lesson} studyLevel={studyLevel} />
+              : route.pathname === '/language/qa-chunks' && chunk ? <JapaneseChunkPractice lesson={chunk} closeLabel="닫고 전체 단원 목차로" onClose={() => { location.hash = previewHash('/language/qa-catalog'); }} />
+          : <section className="qa-unsupported"><h1>이 연결은 이번 가상 검사 범위 밖이거나 단원 ID가 없어요</h1><p>실제 계정 화면으로 이동하지 않았어요. 가상 기록은 그대로예요.</p><a href="#/language/levels">단계 화면으로 돌아가기</a></section>}
+    </main></div>
   </>;
 }
 
