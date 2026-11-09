@@ -19,7 +19,7 @@ const own = (file: string) => resolve('scripts/japanese-preview', file);
 async function compile(source: string, globals: Record<string, unknown> = {}, react: unknown = React) {
   const built = await build({ stdin: { contents: source, resolveDir: process.cwd(), loader: 'tsx' },
     bundle: true, write: false, platform: 'browser', format: 'cjs', target: 'es2022', jsx: 'automatic',
-    jsxImportSource: 'qa-preview-jsx', define: previewDefines(), inject: [own('runtime.ts'), own('asset-request.ts')],
+    jsxImportSource: 'qa-preview-jsx', define: previewDefines(), inject: [own('runtime.ts'), own('asset-request.ts'), own('location-query.ts')],
     external: ['react', 'react/jsx-runtime'], plugins: [{ name: 'reference-test-ports', setup(builder) {
       builder.onResolve({ filter: /^qa-preview-jsx\/jsx-runtime$/ }, () => ({ path: own('jsx-runtime.ts') }));
       builder.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: own('next-navigation.ts') }));
@@ -30,7 +30,7 @@ async function compile(source: string, globals: Record<string, unknown> = {}, re
   });
   const cjsModule = { exports: {} as Record<string, unknown> };
   new Script(built.outputFiles[0].text).runInNewContext({ module: cjsModule, exports: cjsModule.exports,
-    DOMException, AbortController, URLSearchParams, setTimeout, clearTimeout, structuredClone,
+    DOMException, AbortController, URLSearchParams, setTimeout, clearTimeout, setImmediate, clearImmediate, structuredClone,
     require: (name: string) => name === 'react' ? react : require(name), ...globals });
   return cjsModule.exports;
 }
@@ -134,15 +134,15 @@ test('plain anchors retain handlers but normalize every DOM destination and remo
   const create = compiled.jsx as (type: string, props: object) => Element;
   let clicks = 0;
   const onClick = () => clicks++;
-  for (const href of ['https://example.com', '//example.com', 'javascript:alert(1)', '/language/sentences?word=水', '/language/settings', '/language/grammar#outside']) {
+  for (const href of ['https://example.com', '//example.com', 'javascript:alert(1)', '/language/profile?word=水', '/language/settings', '/language/grammar#outside']) {
     const link = create('a', { href, target: '_blank', download: 'file', ping: 'https://example.com', onClick, children: 'source' });
     assert.equal(link.props.href, '#/unsupported');
     assert.equal(link.props.target, undefined); assert.equal(link.props.download, undefined); assert.equal(link.props.ping, undefined);
     assert.equal(link.props.onClick, onClick);
   }
-  for (const href of ['/language/kana', '#/language/words', '/language/grammar']) {
+  for (const href of ['/language/kana', '#/language/words', '/language/grammar', '/language/sentences?word=水', '/language/review']) {
     const link = create('a', { href, onClick });
-    assert.equal(link.props.href, href.startsWith('#') ? href : `#${href}`);
+    assert.equal(decodeURIComponent(String(link.props.href)), href.startsWith('#') ? href : `#${href}`);
   }
   (create('a', { href: '/language/grammar', onClick }).props.onClick as () => void)();
   assert.equal(clicks, 1);
@@ -154,18 +154,32 @@ test('Words router only changes a hash and keeps unsupported destinations inside
   const compiled = await compile('export { useRouter } from "./scripts/japanese-preview/next-navigation";', { location });
   const router = (compiled.useRouter as () => { push(href: string): void })();
   assert.deepEqual(Object.keys(router), ['push']);
-  for (const href of ['/language/kana', '/language/words', '/language/grammar']) { router.push(href); assert.equal(location.hash, `#${href}`); }
-  for (const href of ['/language/sentences?word=水', '/language/conversation', 'https://example.com', '//example.com']) { router.push(href); assert.equal(location.hash, '#/unsupported'); }
+  for (const href of ['/language/kana', '/language/words', '/language/grammar', '/language/sentences?word=水', '/language/review']) { router.push(href); assert.equal(decodeURIComponent(location.hash), `#${href}`); }
+  for (const href of ['/language/profile?word=水', '/language/conversation', 'https://example.com', '//example.com']) { router.push(href); assert.equal(location.hash, '#/unsupported'); }
+});
+
+test('product query readers use validated hash queries without accessing outer document or window search', async () => {
+  const location = { hash: '#/language/sentences?word=水&pattern=masu', get search(): string { throw new Error('Outer query must not be read'); } };
+  const native = new Proxy({}, { get() { throw new Error('Native window must not be accessed'); } });
+  const compiled = await compile('export const queries = [() => location.search, () => window.location.search, () => globalThis.location.search, () => self.location.search];', { location, window: native, globalThis: native, self: native });
+  const queries = compiled.queries as (() => string)[];
+  for (const read of queries) {
+    const params = new URLSearchParams(read());
+    assert.equal(params.get('word'), '水'); assert.equal(params.get('pattern'), 'masu');
+  }
+  location.hash = '#https://example.com?word=unsafe';
+  for (const read of queries) assert.equal(read(), '');
 });
 
 test('actual grammar component can fail one memory write, show an error, retry the same answer and prevent double counting', async () => {
   const state = hooks();
   const window = { addEventListener() {}, removeEventListener() {} };
-  const document = { addEventListener() {}, removeEventListener() {} };
+  const document = { documentElement: { dataset: {} }, addEventListener() {}, removeEventListener() {} };
   const compiled = await compile(`export { default as Component } from './app/language/grammar/page';
-    export { qaLocalStorage as store } from './scripts/japanese-preview/runtime';`, { window, document }, state.api);
+    export { qaLocalStorage as store, seedSyntheticOwner } from './scripts/japanese-preview/runtime';`, { window, document }, state.api);
   const Component = compiled.Component as () => Element;
   const store = compiled.store as PreviewMemoryStorage;
+  (compiled.seedSyntheticOwner as () => void)();
   const render = () => state.render(Component);
   const button = (text: string) => nodes(render()).find(node => node.type === 'button' && label(node.props.children as ReactNode).startsWith(text))!;
   const click = (node: Element) => (node.props.onClick as () => void)();
@@ -184,13 +198,57 @@ test('actual grammar component can fail one memory write, show an error, retry t
   click(retry); click(retry);
   const saved = JSON.parse(store.getItem(GRAMMAR_PROGRESS_KEY)!);
   assert.equal(saved.length, 1); assert.equal(saved[0].correctCount, 1);
+  for (let attempt = 0; attempt < 100 && !store.getItem('dailyRoutineProgress'); attempt++) await new Promise(resolve => setTimeout(resolve, 5));
   assert.ok(JSON.parse(store.getItem('dailyRoutineProgress')!).completedIds.includes('grammar'));
+  assert.ok(store.getItem('dailyLearningHistory'));
+  assert.equal(store.getItem('language-storage-transaction-v1'), null);
   assert.doesNotMatch(label(render()), /같은 답을 다시 눌러/);
   assert.equal(button(lesson.quiz.answer).props.disabled, true);
 });
 
+test('actual grammar answer survives history-only failure while both daily keys roll back and same-intent retry does not regrade', async () => {
+  const state = hooks();
+  const window = { addEventListener() {}, removeEventListener() {} };
+  const document = { documentElement: { dataset: {} }, addEventListener() {}, removeEventListener() {} };
+  const compiled = await compile(`export { default as Component } from './app/language/grammar/page';
+    export { default as Notice } from './components/language/DailyRoutineSaveNotice';
+    export { qaLocalStorage as store, seedSyntheticOwner } from './scripts/japanese-preview/runtime';`, { window, document }, state.api);
+  const Component = compiled.Component as () => Element;
+  const Notice = compiled.Notice as (props: Record<string, unknown>) => Element;
+  const store = compiled.store as PreviewMemoryStorage;
+  (compiled.seedSyntheticOwner as () => void)();
+  const render = () => state.render(Component);
+  const notice = () => nodes(render()).find(node => node.type === Notice)!;
+  const click = (node: Element) => (node.props.onClick as () => void)();
+  const button = (text: string) => nodes(render()).find(node => node.type === 'button' && label(node.props.children as ReactNode).startsWith(text))!;
+  const waitFor = async (condition: () => boolean) => {
+    for (let attempt = 0; attempt < 200 && !condition(); attempt++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.ok(condition(), 'asynchronous component state settled');
+  };
+  render(); click(button('3. 연습'));
+  const answer = GRAMMAR_LESSONS.find(item => item.id === 'desu')!.quiz.answer;
+  store.failNextHistoryWrite(); click(button(answer));
+  assert.equal(JSON.parse(store.getItem(GRAMMAR_PROGRESS_KEY)!)[0].correctCount, 1);
+  await waitFor(() => Boolean(notice().props.error));
+  assert.equal(store.getItem('dailyRoutineProgress'), null);
+  assert.equal(store.getItem('dailyLearningHistory'), null);
+  assert.equal(store.getItem('language-storage-transaction-v1'), null);
+  const errorView = Notice(notice().props);
+  assert.match(label(errorView), /답안(?:을|은) 다시 풀 필요는 없어요/);
+  const retry = nodes(errorView).find(node => node.type === 'button' && label(node.props.children as ReactNode) === '일일 학습 기록 다시 저장')!;
+  click(retry); click(retry);
+  await waitFor(() => Boolean(store.getItem('dailyLearningHistory')) && !notice().props.pending && !notice().props.error);
+  const daily = JSON.parse(store.getItem('dailyRoutineProgress')!);
+  const history = JSON.parse(store.getItem('dailyLearningHistory')!);
+  assert.deepEqual(daily.completedIds, ['grammar']);
+  assert.deepEqual(history[daily.date].completedIds, ['grammar']);
+  assert.equal(history[daily.date].completedCount, 1);
+  assert.equal(JSON.parse(store.getItem(GRAMMAR_PROGRESS_KEY)!)[0].correctCount, 1);
+  assert.equal(store.getItem('language-storage-transaction-v1'), null);
+});
+
 test('actual kana and word reference pages expose their real writing and glyph components while AI remains disabled', async () => {
-  const document = { addEventListener() {}, removeEventListener() {} };
+  const document = { documentElement: { dataset: {} }, addEventListener() {}, removeEventListener() {} };
   const requestAnimationFrame = (callback: () => void) => { callback(); return 1; };
   const window = { addEventListener() {}, removeEventListener() {}, requestAnimationFrame, cancelAnimationFrame() {} };
   for (const name of ['kana', 'words']) {

@@ -15,7 +15,8 @@ import {
   type GrammarLesson,
   type GrammarProgressItem,
 } from "@/data/grammar";
-import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
+import { useDailyRoutineCompletion } from "@/components/language/useDailyRoutineCompletion";
+import DailyRoutineSaveNotice from "@/components/language/DailyRoutineSaveNotice";
 import { persistGrammarQuizAnswer } from "@/utils/grammarQuizProgress";
 import { useLearningAudio } from "@/components/language/useLearningAudio";
 
@@ -29,6 +30,7 @@ function normalizeChoice(choice: string | { text: string; reading?: string; ruby
 }
 
 export default function GrammarPage() {
+  const routine = useDailyRoutineCompletion("grammar");
   const audio = useLearningAudio();
   const [pinnedLessonId, setPinnedLessonId] = useState<string | null>(null);
   const [lessonId, setLessonId] = useState("desu");
@@ -36,7 +38,6 @@ export default function GrammarPage() {
   const [reviewOnly, setReviewOnly] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [routineError, setRoutineError] = useState(false);
   const answeredLessons = useRef(new Set<string>());
   const [filter, setFilter] = useState<GrammarFilter>("전체");
   const [levelFilter, setLevelFilter] = useState<GrammarLesson["level"] | "all" | GuidedGrammarStage | "consolidation" | "travel-consolidation" | "work-writing">("foundation");
@@ -80,12 +81,11 @@ export default function GrammarPage() {
   };
 
   const handleSelectAnswer = (lesson: GrammarLesson, choice: string) => {
-    if (selectedAnswers[lesson.id] || answeredLessons.current.has(lesson.id)) return;
+    if (selectedAnswers[lesson.id] || answeredLessons.current.has(lesson.id) || !routine.ensureCurrent()) return;
     answeredLessons.current.add(lesson.id);
     const result = persistGrammarQuizAnswer({
       getStorage: () => localStorage, key: GRAMMAR_PROGRESS_KEY, progress: grammarProgress,
       lesson, choice, answeredAt: new Date().toISOString(),
-      completeRoutine: () => markTodayRoutineCompleted("grammar"),
     });
     if (!result.saved) {
       answeredLessons.current.delete(lesson.id);
@@ -94,15 +94,10 @@ export default function GrammarPage() {
     }
     setSaveError("");
     setGrammarProgress(result.progress);
-    setRoutineError(!result.routineSaved);
+    routine.complete();
     setLessonId(lesson.id);
     setPinnedLessonId(lesson.id);
     setSelectedAnswers(prev => ({ ...prev, [lesson.id]: choice }));
-  };
-
-  const retryRoutineSave = () => {
-    try { markTodayRoutineCompleted("grammar"); setRoutineError(false); }
-    catch { setRoutineError(true); }
   };
 
   const changeStage = (next: 0 | 1 | 2) => {
@@ -126,9 +121,9 @@ export default function GrammarPage() {
 
   return (
     <section style={{ maxWidth: 900, margin: "0 auto", padding: "16px 12px" }}>
+      <DailyRoutineSaveNotice {...routine} />
       {audio.playing && <button type="button" className="btn" style={actionStyle} onClick={audio.stop}>소리 멈추기</button>}
       {audio.audioError && <p role="status">{audio.audioError}</p>}
-      {routineError && <div role="alert"><p>문법 답안은 저장됐지만 오늘 학습 체크를 저장하지 못했어요. 답안을 다시 풀 필요는 없어요.</p><button type="button" style={actionStyle} onClick={retryRoutineSave}>오늘 학습 체크 다시 저장</button></div>}
       <div
         style={{
           marginBottom: "20px",

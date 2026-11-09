@@ -12,13 +12,13 @@ The existing protected Preview at `/api/qa/japanese` now includes a QA catalog f
 
 ## Reference pages
 
-The same fixture also mounts the real `/language/kana`, `/language/words` and `/language/grammar` page components. These are reference pages, not added curriculum lessons. Their writing canvases and grammar practice panels remain actual product components; AI handwriting feedback remains disabled.
+The same fixture also mounts the real `/language/kana`, `/language/words`, `/language/grammar`, `/language/sentences` and `/language/review` page components. These are reference pages, not added curriculum lessons. Their writing canvases and grammar practice panels remain actual product components; AI handwriting feedback remains disabled.
 
 - The original `KanaStrokeAnimation` reads only the build-time copy of `public/kana-strokes.json`. All four direct native request spellings are aliased to an exact-path, no-options, JSON-only port with no network fallback. Other requests fail explicitly.
 - The 160 public glyph entries are pinned to SHA256 `32ba7a804d8ba53958f18c7a9a00db59d24f14df16a5501683deffce152e211c`. A changed, missing, duplicate or renamed asset fails the build boundary until independently reviewed. The source manifest includes the JSON and every new adapter.
 - Hash-authorized QA stylesheet rules mirror only the original SVG shadows/strokes presentation values, because imported inline style attributes may be blocked by CSP. Product vector bytes and JS animation timing remain unchanged.
 - The auth-header port always throws, without reading sessions or credentials. Source guards now also reject the original auth-header and app Supabase modules.
-- Words' only required router operation is hash-only `push`. Unsupported sentence links do not navigate to the application. The QA JSX adapter also converts plain reference anchors to safe hashes and removes target/download/ping attributes, including external bibliography links. Other JSX props and component logic are preserved.
+- Words' only required router operation is hash-only `push`. Sentence links open the actual sentence page inside the same hash-only document. Product query readers receive only the validated hash query through the read-only QA port; external/application navigation remains blocked. The QA JSX adapter also converts plain reference anchors to safe hashes and removes target/download/ping attributes, including external bibliography links. Other JSX props and component logic are preserved.
 - The existing one-write-failure button can test actual grammar error/retry handling. VM tests verify failed writes preserve progress, do not mark today's routine, and can retry the same choice without duplicate counting. This is not a browser or persistence result.
 
 ## Separate local voice probe
@@ -40,3 +40,7 @@ The sole native bridge is `scripts/japanese-preview/native-local-audio.ts`, pinn
 Record the exact commit, unit IDs, question counts, completed flows, interrupted/error paths and viewport dimensions. Distinguish browser viewport emulation from a physical mobile device, and component tests from actual browser actions. Do not report a selector inventory as every lesson completed, a synthesis event as listening, or synthetic memory as cloud synchronization. Existing old-server A-B-A/delete/cascade/reinsert limitations remain unresolved.
 
 The preceding b91d0796 Preview was inspected in a real cloud browser for all 20 reading lessons (120 answer/save interactions and each comparison/completion flow). This expanded fixture must receive its own browser checks after the reviewed test-branch update. Production publication is outside this change.
+
+## Daily-record recovery observation
+
+A visible QA panel can fail only the next `dailyLearningHistory` write, then read the two fixed daily-record keys and journal presence from disposable memory. It does not read real accounts or claim to test the product home/calendar, persistent storage or cloud synchronization. A separate explicit seed clears this QA scenario, advances its synthetic epoch and supplies three fixed review words. Existing curriculum/chunk scenario seeds, CSP, native audio bridge and deployment gates remain unchanged.

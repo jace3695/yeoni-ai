@@ -3,17 +3,16 @@ import type { GrammarLesson, GrammarProgressItem } from '../data/grammar.ts';
 type ProgressStorage = Pick<Storage, 'setItem'>;
 type GrammarAnswerResult =
   | { saved: false }
-  | { saved: true; progress: GrammarProgressItem[]; routineSaved: boolean };
+  | { saved: true; progress: GrammarProgressItem[] };
 
 /** Publish progress to the UI only after the corresponding local write succeeds. */
-export function persistGrammarQuizAnswer({ getStorage, key, progress, lesson, choice, answeredAt, completeRoutine }: {
+export function persistGrammarQuizAnswer({ getStorage, key, progress, lesson, choice, answeredAt }: {
   getStorage: () => ProgressStorage;
   key: string;
   progress: GrammarProgressItem[];
   lesson: GrammarLesson;
   choice: string;
   answeredAt: string;
-  completeRoutine: () => void;
 }): GrammarAnswerResult {
   const existing = progress.find(item => item.lessonId === lesson.id);
   const isCorrect = choice === lesson.quiz.answer;
@@ -36,12 +35,5 @@ export function persistGrammarQuizAnswer({ getStorage, key, progress, lesson, ch
   } catch {
     return { saved: false };
   }
-  // The answer is already durable. A separate routine-check failure must not
-  // roll it back, hide it or make a retry count the same answer a second time.
-  try {
-    completeRoutine();
-    return { saved: true, progress: next, routineSaved: true };
-  } catch {
-    return { saved: true, progress: next, routineSaved: false };
-  }
+  return { saved: true, progress: next };
 }

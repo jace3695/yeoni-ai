@@ -72,9 +72,9 @@ test('all component hrefs remain hash-only including unsupported, hostile and ne
   assert.equal(previewHash('/language/learn?lesson=f01'), '#/language/learn?lesson=f01');
   assert.equal(previewHash('/language/qa-catalog'), '#/language/qa-catalog');
   assert.equal(previewHash('/language/qa-chunks?lesson=upper-mech-06'), '#/language/qa-chunks?lesson=upper-mech-06');
-  for (const name of ['kana', 'words', 'grammar']) assert.equal(previewHash(`/language/${name}`), `#/language/${name}`);
+  for (const name of ['kana', 'words', 'grammar', 'sentences', 'review']) assert.equal(previewHash(`/language/${name}`), `#/language/${name}`);
   for (const href of ['https://example.com', '//example.com', 'javascript:alert(1)', '/language/practice', '/language/conversation', '/language/writing', '/language/kana-writing',
-    '/language/sentences', '/language/settings', '/language/levels#outside', '/language/levels\\evil', '/language/levels\n']) {
+    '/language/settings', '/language/levels#outside', '/language/levels\\evil', '/language/levels\n']) {
     assert.equal(previewHash(href), '#/unsupported');
   }
   assert.equal(readPreviewLocation('').pathname, '/language/levels');
@@ -168,7 +168,7 @@ test('built artifact contains actual latest components but no actual services, s
   for (const name of ['FocusedLesson', 'LearningQuestion', 'LearningCompanion', 'LevelLearningWorkspace', 'UpperReadingLesson', 'JapaneseChunkPractice', 'ChunkReviewWorkspace', 'useLevelJourney', 'useChunkReview']) {
     assert.ok(built.inputs.some(path => path.endsWith(`/${name}.tsx`) || path.endsWith(`/${name}.ts`)), name);
   }
-  for (const path of ['app/data/languageStorageLock.ts', 'app/language/kana/page.tsx', 'app/language/words/page.tsx', 'app/language/grammar/page.tsx',
+  for (const path of ['app/data/languageStorageLock.ts', 'app/language/kana/page.tsx', 'app/language/words/page.tsx', 'app/language/grammar/page.tsx', 'app/language/sentences/page.tsx', 'app/language/review/page.tsx', 'scripts/japanese-preview/DailyRecordProbe.tsx', 'scripts/japanese-preview/daily-records.ts',
     'components/language/KanaStrokeAnimation.tsx', 'components/WritingPracticePad.tsx', 'public/kana-strokes.json',
     'scripts/japanese-preview/asset-request.ts', 'scripts/japanese-preview/authenticated-headers.ts', 'scripts/japanese-preview/jsx-runtime.ts']) assert.ok(built.inputs.includes(path), path);
   for (const name of ['scripts/japanese-preview/next-navigation.ts', 'scripts/japanese-preview/image.tsx', 'app/globals.css', 'app/language/language.css']) assert.ok(built.inputs.includes(name), name);

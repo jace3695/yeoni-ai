@@ -41,6 +41,7 @@ export function previewDefines() {
     for (const prefix of ['', 'window.', 'globalThis.', 'self.']) define[`${prefix}${name}`] = replacement;
   }
   for (const prefix of ['', 'window.', 'globalThis.', 'self.']) define[`${prefix}navigator.locks`] = 'qaLocks';
+  for (const prefix of ['', 'window.', 'globalThis.', 'self.']) define[`${prefix}location.search`] = 'qaLocationQuery.search';
   return define;
 }
 
@@ -52,7 +53,7 @@ export async function buildJapanesePreview(root = process.cwd()) {
     bundle: true, write: false, outdir: resolve(root, previewBuildDirectory), entryNames: 'fixture',
     platform: 'browser', format: 'iife', target: ['es2022'], jsx: 'automatic', jsxImportSource: 'qa-preview-jsx', charset: 'utf8',
     minifySyntax: true, minifyWhitespace: true, minifyIdentifiers: false, legalComments: 'inline',
-    sourcemap: false, metafile: true, define, inject: [own('runtime.ts'), own('asset-request.ts')],
+    sourcemap: false, metafile: true, define, inject: [own('runtime.ts'), own('asset-request.ts'), own('location-query.ts')],
     plugins: [{ name: 'japanese-preview-isolation', setup(builder) {
       // Use the exact product tokens without importing Tailwind directives or
       // unrelated global application chrome. The full file is source-hashed.

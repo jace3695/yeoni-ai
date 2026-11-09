@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
+import { useDailyRoutineCompletion } from "@/components/language/useDailyRoutineCompletion";
+import DailyRoutineSaveNotice from "@/components/language/DailyRoutineSaveNotice";
 import { WORDS, type WordItem as Word } from "@/data/words";
 import type { RubySegment } from "@/data/words";
 import { useLearningAudio } from "@/components/language/useLearningAudio";
@@ -145,6 +146,7 @@ function saveWrongWord(w: Word, quizType: QuizType) {
 }
 
 export default function WordsPage() {
+  const routine = useDailyRoutineCompletion("words");
   const audio = useLearningAudio();
   const stopAudio = audio.stop;
   const router = useRouter();
@@ -190,10 +192,7 @@ export default function WordsPage() {
     }
     setStorageFailures([...pendingStorageWrites.current.keys()]);
   };
-  const saveRoutineCheck = () => {
-    try { markTodayRoutineCompleted("words"); return true; }
-    catch { return false; }
-  };
+
 
   useEffect(() => {
     try {
@@ -302,7 +301,7 @@ export default function WordsPage() {
   }, [mode, categoryFilter, levelFilter, partOfSpeechFilter, practiceScope]);
 
   const handleAnswer = (choice: string) => {
-    if (answeredRef.current || selected !== null || !currentWord) return;
+    if (answeredRef.current || selected !== null || !currentWord || !routine.ensureCurrent()) return;
     answeredRef.current = true;
     setSelected(choice);
     const correctAnswer = quizType === "jp-to-kr" ? currentWord.meaning : currentWord.word;
@@ -311,7 +310,7 @@ export default function WordsPage() {
     scoreRef.current = next;
     setScore(next);
     if (!isCorrect) queueStorageWrite(`wrong:${getWordKey(currentWord)}:${quizType}`, () => saveWrongWord(currentWord, quizType));
-    if (next.total >= 5) queueStorageWrite("routine", saveRoutineCheck);
+    if (next.total >= 5) routine.complete();
   };
 
   const handleNext = () => {
@@ -366,13 +365,13 @@ export default function WordsPage() {
 
   return (
     <section className="mx-auto w-full max-w-6xl">
+      <DailyRoutineSaveNotice {...routine} />
       {audio.playing && <button type="button" className="btn" onClick={audio.stop}>소리 멈추기</button>}
       {audio.audioError && <p role="status">{audio.audioError}</p>}
       {savedLoadError && <div role="alert"><p>보관한 단어를 읽지 못했어요. 저장 공간과 브라우저 설정을 확인해 주세요.</p><button type="button" className="btn" onClick={loadSavedWords}>보관 목록 다시 읽기</button></div>}
       {storageFailures.length > 0 && <div role="alert">
         {storageFailures.some(key => key.startsWith("saved:")) && <p>단어 보관 변경을 저장하지 못했어요. 보관 표시는 기존 상태로 유지했어요.</p>}
         {storageFailures.some(key => key.startsWith("wrong:")) && <p>오답을 복습 목록에 저장하지 못했어요. 이번 답안과 점수는 처리됐으므로 다시 풀 필요는 없어요.</p>}
-        {storageFailures.includes("routine") && <p>오늘 학습 체크를 저장하지 못했어요. 이번 답안과 점수에는 영향이 없어요.</p>}
         <p>저장 공간과 브라우저 설정을 확인한 뒤 다시 저장해 주세요. 미저장 항목은 이 화면을 떠나거나 새로고침하면 사라져요.</p>
         <button type="button" className="btn" onClick={retryStorageWrites}>미저장 항목 다시 저장</button>
       </div>}

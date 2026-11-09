@@ -3,7 +3,8 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import KanaStrokeAnimation from "@/components/language/KanaStrokeAnimation";
 import { getKanaWritingClue } from "@/data/kanaWritingClues";
-import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
+import { useDailyRoutineCompletion } from "@/components/language/useDailyRoutineCompletion";
+import DailyRoutineSaveNotice from "@/components/language/DailyRoutineSaveNotice";
 import { FREE_MODE } from "@/lib/free-mode";
 import { useLearningAudio } from "@/components/language/useLearningAudio";
 import { authenticatedJsonHeaders } from "@/app/lib/authenticatedHeaders";
@@ -1278,6 +1279,7 @@ function uniqueKanaItems(items: KanaItem[]): KanaItem[] {
 }
 
 export default function KanaPage() {
+  const routine = useDailyRoutineCompletion("kana");
   const [tab, setTab] = useState<"hiragana" | "katakana">("hiragana");
   const [mode, setMode] = useState<"learn" | "quiz" | "confusing" | "writing" | "audit">("learn");
 
@@ -1383,10 +1385,7 @@ export default function KanaPage() {
     }
     setStorageFailures([...pendingStorageWrites.current.keys()]);
   };
-  const saveRoutineCheck = () => {
-    try { markTodayRoutineCompleted("kana"); return true; }
-    catch { return false; }
-  };
+
   const persistWrongKana = (item: { char: string; roman: string }, kind: "hiragana" | "katakana", quizMode: "quiz" | "confusing") => {
     queueStorageWrite(`wrong:${item.char}:${quizMode}`, () => {
       if (!saveWrongKana(item.char, item.roman, kind, quizMode)) return false;
@@ -1782,7 +1781,7 @@ export default function KanaPage() {
   }, [writingQuizQuestion]);
 
   const markWritingQuizResult = (result: "correct" | "wrong") => {
-    if (writingAnsweredRef.current || writingQuizAnswered) return;
+    if (writingAnsweredRef.current || writingQuizAnswered || !routine.ensureCurrent()) return;
     writingAnsweredRef.current = true;
     setWritingQuizAnswered(true);
     setWritingQuizScore((prev) => ({
@@ -1793,7 +1792,7 @@ export default function KanaPage() {
   };
 
   const handleChoice = (choice: string) => {
-    if (answeredRef.current || selected !== null) return;
+    if (answeredRef.current || selected !== null || !routine.ensureCurrent()) return;
     answeredRef.current = true;
     setSelected(choice);
     const isCorrect = choice === quiz.question.roman;
@@ -1801,11 +1800,11 @@ export default function KanaPage() {
     scoreRef.current = next;
     setScore(next);
     if (!isCorrect) persistWrongKana(quiz.question, tab, "quiz");
-    if (next.total >= 5) queueStorageWrite("routine", saveRoutineCheck);
+    if (next.total >= 5) routine.complete();
   };
 
   const handleConfusingChoice = (choice: string) => {
-    if (confusingAnsweredRef.current || confusingSelected !== null) return;
+    if (confusingAnsweredRef.current || confusingSelected !== null || !routine.ensureCurrent()) return;
     confusingAnsweredRef.current = true;
     setConfusingSelected(choice);
     const isCorrect = choice === confusingQuiz.question.roman;
@@ -1899,11 +1898,11 @@ export default function KanaPage() {
 
   return (
     <>
+      <DailyRoutineSaveNotice {...routine} />
     {audio.audioError && <p role="status" className="mb-3 text-sm text-amber-800">{audio.audioError}</p>}
     {audio.playing && <button type="button" className="btn" onClick={audio.stop}>소리 멈추기</button>}
     {storageFailures.length > 0 && <div role="alert">
       {storageFailures.some(key => key.startsWith("wrong:")) && <p>오답을 복습 목록에 저장하지 못했어요. 이번 답안과 점수는 처리됐으므로 다시 풀 필요는 없어요.</p>}
-      {storageFailures.includes("routine") && <p>오늘 학습 체크를 저장하지 못했어요. 이번 답안과 점수에는 영향이 없어요.</p>}
       <p>저장 공간과 브라우저 설정을 확인한 뒤 다시 저장해 주세요. 미저장 항목은 이 화면을 떠나거나 새로고침하면 사라져요.</p>
       <button type="button" className="btn" onClick={retryStorageWrites}>미저장 항목 다시 저장</button>
     </div>}

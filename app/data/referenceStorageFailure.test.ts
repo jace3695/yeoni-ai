@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
+import { createRoutineCompletionQueue } from "../../utils/routineCompletionQueue.ts";
 
 const words = "app/language/words/page.tsx";
 const kana = "app/language/kana/page.tsx";
@@ -48,14 +49,16 @@ function fixture(path: string) {
     const output = ts.transpileModule(`globalThis.${name} = ${declaration(path, name)};`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
     vm.runInContext(output, context);
   };
-  for (const name of ["queueStorageWrite", "retryStorageWrites", "saveRoutineCheck"]) attach(name);
-  // Execute the existing daily-check implementation with synthetic Storage and a fixed day.
-  const dailyModule = { exports: {} as Record<string, unknown> };
-  const daily = ts.transpileModule(readFileSync("utils/dailyRoutineProgress.ts", "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  vm.runInNewContext(daily, { exports: dailyModule.exports, module: dailyModule, window: { localStorage: storage }, require: () => ({ getLocalDateKey: () => "2026-11-09" }) });
-  sandbox.markTodayRoutineCompleted = dailyModule.exports.markTodayRoutineCompleted;
+  for (const name of ["queueStorageWrite", "retryStorageWrites"]) attach(name);
+  let routineError = '';
+  const routine = createRoutineCompletionQueue({ capture: date => ({ date, id: path === words ? 'words' : 'kana' }), isCurrent: () => true,
+    save: async intent => {
+      storage.getItem('dailyRoutineProgress');
+      storage.setItem('dailyRoutineProgress', JSON.stringify({ date: intent.date, completedIds: [intent.id] }));
+    }, publish: status => { routineError = status.error; } });
+  sandbox.routine = { complete: () => routine.complete('2026-11-09'), ensureCurrent: () => true };
   const call = (name: string, ...args: unknown[]) => (sandbox[name] as (...args: unknown[]) => unknown)(...args);
-  return { records, failed, writes, changes, sandbox, pending, attach, call };
+  return { records, failed, writes, changes, sandbox, pending, attach, call, routine, routineError: () => routineError };
 }
 
 test("word save/remove failure preserves UI and bytes; retry retains unrelated records and original intent", () => {
@@ -94,7 +97,7 @@ test("unreadable or malformed saved words are never overwritten by a toggle", ()
   assert.equal(f.writes.length, 0);
 });
 
-test("word wrong-answer and daily-check retries never regrade or increment the score", () => {
+test("word wrong-answer and daily-check retries never regrade or increment the score", async () => {
   const f = fixture(words);
   for (const name of ["getWordKey", "saveWrongWord", "handleAnswer"]) f.attach(name);
   f.failed.add("wrongWords"); f.failed.add("dailyRoutineProgress");
@@ -103,28 +106,40 @@ test("word wrong-answer and daily-check retries never regrade or increment the s
   assert.equal(f.changes.setScore.length, 1);
   assert.equal(typeof f.changes.setScore[0], "object", "no persistence side effect in a state updater");
   assert.deepEqual(JSON.parse(JSON.stringify(f.changes.setScore[0])), { correct: 2, total: 5 });
-  assert.equal(f.pending.size, 2);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(f.routineError());
+  assert.equal(f.pending.size, 1);
   f.failed.clear(); f.call("retryStorageWrites"); f.call("retryStorageWrites");
   assert.equal(f.pending.size, 0);
   assert.equal(f.changes.setScore.length, 1);
   assert.equal(JSON.parse(f.records.get("wrongWords")!).length, 1);
+  f.routine.retry(); f.routine.retry();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.routineError(), "");
+  assert.equal(f.changes.setScore.length, 1);
   assert.deepEqual(JSON.parse(f.records.get("dailyRoutineProgress")!).completedIds, ["words"]);
 });
 
-test("kana wrong-answer badge waits for storage and retries do not duplicate answers or checks", () => {
+test("kana wrong-answer badge waits for storage and retries do not duplicate answers or checks", async () => {
   const f = fixture(kana);
   for (const name of ["saveWrongKana", "persistWrongKana", "handleChoice"]) f.attach(name);
   f.failed.add("wrongKana"); f.failed.add("read:dailyRoutineProgress");
   f.call("handleChoice", "i"); f.call("handleChoice", "i");
   assert.equal(f.changes.setScore.length, 1);
   assert.equal(Object.hasOwn(f.changes, "setWrongKanaChars"), false);
-  assert.equal(f.pending.size, 2);
-  f.call("retryStorageWrites"); assert.equal(f.pending.size, 2);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(f.routineError());
+  assert.equal(f.pending.size, 1);
+  f.call("retryStorageWrites"); assert.equal(f.pending.size, 1);
   f.failed.clear(); f.call("retryStorageWrites"); f.call("retryStorageWrites");
   assert.equal(f.pending.size, 0);
   assert.equal(f.changes.setWrongKanaChars.length, 1);
   assert.equal(f.changes.setScore.length, 1);
   assert.equal(JSON.parse(f.records.get("wrongKana")!).length, 1);
+  f.routine.retry(); f.routine.retry();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.routineError(), "");
+  assert.equal(f.changes.setScore.length, 1);
   assert.deepEqual(JSON.parse(f.records.get("dailyRoutineProgress")!).completedIds, ["kana"]);
 });
 

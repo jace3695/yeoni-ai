@@ -42,3 +42,7 @@ button, input, select { font: inherit; }
  * The product component still owns geometry, colors and animation timing. */
 .language-app-shell svg > g[data-strokesvg="shadows"] { fill: var(--shadow, #ccc); }
 .language-app-shell svg > g[data-strokesvg="strokes"] { stroke: var(--stroke, #000); fill: none; stroke-width: 128; stroke-linecap: round; }
+
+/* Only disposable QA snapshots: long JSON labels must not widen the document. */
+.qa-daily-records { margin-top: 12px; }
+.qa-daily-records output { overflow-wrap: anywhere; white-space: pre-wrap; }
