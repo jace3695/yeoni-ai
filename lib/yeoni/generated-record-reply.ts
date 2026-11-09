@@ -9,11 +9,36 @@ export type Outcome = { status: 'ready'; answer: Analysis; reused: boolean } | {
 // Date ranges, UI route/selection, prompt versions and wall clock are deliberately
 // absent. Actual dates saved INSIDE records remain part of the content version.
 export function canonicalRecords(value: unknown): string {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
-  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
-  if (Array.isArray(value)) return '[' + value.map(canonicalRecords).join(',') + ']';
-  if (typeof value === 'object' && value) return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonicalRecords((value as Record<string, unknown>)[key])).join(',') + '}';
-  throw new Error('Unsupported record value');
+  // Only complete JSON data is a source. Never silently collapse Date/Map/Set,
+  // sparse arrays, accessors or hidden fields into another content version.
+  const active = new Set<object>();
+  function visit(input: unknown): string {
+    if (input === null || typeof input === 'string' || typeof input === 'boolean') return JSON.stringify(input);
+    if (typeof input === 'number' && Number.isFinite(input)) return JSON.stringify(input);
+    if (typeof input !== 'object' || !input || active.has(input)) throw new Error('Unsupported record value');
+    const array = Array.isArray(input);
+    const prototype = Object.getPrototypeOf(input);
+    if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) throw new Error('Unsupported record value');
+    active.add(input);
+    try {
+      const descriptors = Object.getOwnPropertyDescriptors(input);
+      const keys = Reflect.ownKeys(descriptors);
+      if (keys.some(key => typeof key !== 'string' || (!array || key !== 'length') && (!descriptors[key].enumerable || !('value' in descriptors[key])))) throw new Error('Unsupported record value');
+      if (array) {
+        const length = (input as unknown[]).length;
+        if (keys.length !== length + 1) throw new Error('Unsupported record value');
+        const values: string[] = [];
+        for (let index = 0; index < length; index++) {
+          const descriptor = descriptors[String(index)];
+          if (!descriptor || !('value' in descriptor)) throw new Error('Unsupported record value');
+          values.push(visit(descriptor.value));
+        }
+        return '[' + values.join(',') + ']';
+      }
+      return '{' + (keys as string[]).sort().map(key => JSON.stringify(key) + ':' + visit(descriptors[key].value)).join(',') + '}';
+    } finally { active.delete(input); }
+  }
+  return visit(value);
 }
 export async function recordVersion(records: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(canonicalRecords(records));
@@ -98,8 +123,14 @@ export class MockRecordReplyService {
     const cacheEpoch = this.ledger.cacheEpoch(scope);
     const ticket = this.ledger.observe(scope);
     // Freeze caller data before async work; caller cannot mutate an in-flight snapshot.
-    const records = JSON.parse(canonicalRecords(source.records));
-    const version = await recordVersion(records);
+    let records: unknown, version: string;
+    try {
+      records = JSON.parse(canonicalRecords(source.records));
+      version = await recordVersion(records);
+    } catch {
+      if (this.ledger.observed(scope, ticket)) this.ledger.select(scope, 'unavailable');
+      return { status: 'incomplete' };
+    }
     if (!this.ledger.observed(scope, ticket) || epoch !== this.ledger.epoch(source.owner) || cacheEpoch !== this.ledger.cacheEpoch(scope)) return { status: 'stale' };
     this.ledger.select(scope, version);
     const entry = this.ledger.reserve(source.owner, source.app, version, reservedCost);

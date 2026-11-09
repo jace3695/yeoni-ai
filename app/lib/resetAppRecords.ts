@@ -1,3 +1,5 @@
+import { compareChunkGenerations } from "../../utils/japaneseChunkReview";
+import { withLanguageRecordLock, recoverLanguageStorage, writeLanguageStorageBatch } from "../data/languageStorageLock";
 import { supabase } from "./supabase";
 import { APP_RECORD_KEYS, RECORD_RESET_STORAGE_EVENT, resetMarkerKey, type RecordResetApp } from "../data/appRecordReset";
 import { getGrowthRoutinesStorageKey, parseGrowthRoutines } from "../data/growthRoutines";
@@ -14,11 +16,13 @@ export function clearGrowthRecordBackup(userId: string, marker: string) {
 }
 
 export async function resetAppRecords(app: RecordResetApp, requestId: string, expectedUserId: string) {
+  if (app === "language") await withLanguageRecordLock(() => undefined);
   const run = () => performReset(app, requestId, expectedUserId);
-  return "locks" in navigator ? navigator.locks.request(app === "growth" ? "ai-yeoni-growth-sync" : "ai-yeoni-record-reset", { mode: "exclusive" }, run) : run();
+  return typeof navigator.locks?.request === "function" ? navigator.locks.request(app === "growth" ? "ai-yeoni-growth-sync" : "ai-yeoni-record-reset", { mode: "exclusive" }, run) : run();
 }
 
 async function performReset(app: RecordResetApp, requestId: string, expectedUserId: string) {
+  const languageSession = app === "language" ? JSON.stringify(['language-cloud-sync-user', 'language-cloud-sync-epoch', 'fitness-cloud-sync-user', 'fitness-cloud-sync-epoch'].map(key => window.localStorage.getItem(key))) : null;
   if (!supabase) throw new Error("클라우드 연결을 확인해 주세요.");
   if (!navigator.onLine) throw new Error("인터넷에 연결한 뒤 초기화해 주세요.");
   const { data: auth, error: authError } = await supabase.auth.getUser();
@@ -32,9 +36,29 @@ async function performReset(app: RecordResetApp, requestId: string, expectedUser
   const { data: current } = await supabase.auth.getUser();
   if (current.user?.id !== userId) throw new Error("계정이 바뀌었어요. 원래 계정에서 초기화 결과를 확인해 주세요.");
   if (app === "budget") window.localStorage.removeItem(pendingBudgetSaveKey(userId));
-  if (window.localStorage.getItem(resetMarkerKey(app)) !== data.marker) {
-    for (const key of APP_RECORD_KEYS[app]) window.localStorage.removeItem(key);
-    window.localStorage.setItem(resetMarkerKey(app), data.marker);
+  const clearLocal = () => {
+    if (app === "language") {
+      if (window.localStorage.getItem('language-cloud-sync-user') !== userId) throw new Error('계정이 바뀌었어요. 원래 계정에서 초기화 결과를 확인해 주세요.');
+      const currentSession = JSON.stringify(['language-cloud-sync-user', 'language-cloud-sync-epoch', 'fitness-cloud-sync-user', 'fitness-cloud-sync-epoch'].map(key => window.localStorage.getItem(key)));
+      if (currentSession !== languageSession) throw new Error('계정 세션이 바뀌었어요. 원래 계정에서 초기화 결과를 확인해 주세요.');
+      recoverLanguageStorage(window.localStorage);
+      if (compareChunkGenerations(window.localStorage.getItem(resetMarkerKey(app)), data.marker) > 0) {
+        throw new Error('더 최근의 일본어 초기화 기록이 있어요. 새 기록을 보존했으니 화면을 다시 확인해 주세요.');
+      }
+    }
+    if (window.localStorage.getItem(resetMarkerKey(app)) !== data.marker) {
+      if (app === "language") writeLanguageStorageBatch(window.localStorage, {
+        ...Object.fromEntries(APP_RECORD_KEYS[app].map(key => [key, null])), [resetMarkerKey(app)]: data.marker,
+      });
+      else {
+        for (const key of APP_RECORD_KEYS[app]) window.localStorage.removeItem(key);
+        window.localStorage.setItem(resetMarkerKey(app), data.marker);
+      }
+    }
+  };
+  if (app === "language") await withLanguageRecordLock(clearLocal); else clearLocal();
+  if (app === "language" && JSON.stringify(['language-cloud-sync-user', 'language-cloud-sync-epoch', 'fitness-cloud-sync-user', 'fitness-cloud-sync-epoch'].map(key => window.localStorage.getItem(key))) !== languageSession) {
+    throw new Error('계정 세션이 바뀌어 초기화 확인을 멈췄어요. 원래 계정에서 결과를 확인해 주세요.');
   }
   if (app === "growth" && window.localStorage.getItem(`${getGrowthRoutinesStorageKey(userId)}:record-reset`) !== data.marker) clearGrowthRecordBackup(userId, data.marker);
   window.localStorage.setItem(RECORD_RESET_STORAGE_EVENT, JSON.stringify({ userId, app, marker: data.marker }));

@@ -7,7 +7,7 @@ export default function GrammarConsolidation({ onListen, onStop }: { onListen: (
   const [task, setTask] = useState<'map' | 'travel'>('map');
   return <section aria-label="생활·여행 종합 연습" style={{ display: 'grid', gap: 16 }}>
     <h2>배운 표현을 연결해요 · 종합 연습 2개</h2>
-    <p>앞의 수업에서 배운 표현으로 짧은 글을 읽고 써요. 새 문법 수업이나 여행 일본어 전체의 완료 평가는 아니에요.</p>
+    <p>앞의 수업에서 배운 표현으로 짧은 글을 읽고 상황에 맞는 표현을 골라요. 새 문법 수업이나 여행 일본어 전체의 완료 평가는 아니에요.</p>
     <nav aria-label="종합 연습 선택" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <button type="button" style={actionStyle} aria-pressed={task === 'map'} onClick={() => { onStop(); setTask('map'); }}>1. 안내도 질문</button>
       <button type="button" style={actionStyle} aria-pressed={task === 'travel'} onClick={() => { onStop(); setTask('travel'); }}>2. 여행 기록 두 줄</button>

@@ -1,3 +1,5 @@
+import { syntheticIndexedDB } from "../../tests/fixtures/languageIndexedDB.ts";
+import { syntheticLocks } from "../../tests/fixtures/chunkReviewStorage.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CURRICULUM } from "../../data/curriculum.ts";
@@ -16,12 +18,17 @@ class MemoryStorage {
   key(index: number) { return [...this.values.keys()][index] ?? null; }
 }
 
-function withStorage(run: (storage: MemoryStorage) => void) {
+async function withStorage(run: (storage: MemoryStorage) => void | Promise<void>) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const previousIDB = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: syntheticIndexedDB().factory });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { locks: syntheticLocks() } });
   const localStorage = new MemoryStorage();
   Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage } });
-  try { run(localStorage); }
-  finally { if (previous) Object.defineProperty(globalThis, "window", previous); else Reflect.deleteProperty(globalThis, "window"); }
+  try { await run(localStorage); }
+  finally {
+    if (previousIDB) Object.defineProperty(globalThis, "indexedDB", previousIDB); else Reflect.deleteProperty(globalThis, "indexedDB"); if (previousNavigator) Object.defineProperty(globalThis, "navigator", previousNavigator); else Reflect.deleteProperty(globalThis, "navigator"); if (previous) Object.defineProperty(globalThis, "window", previous); else Reflect.deleteProperty(globalThis, "window"); }
 }
 
 test("기존 학습 기록과 설정을 새 화면에서 읽어도 기록을 초기화하지 않는다", () => withStorage((storage) => {
@@ -53,29 +60,29 @@ test("저장 공간 오류를 호출자에게 전달하며 기존 성공 기록�
   assert.equal(storage.getItem(CURRICULUM_PROGRESS_KEY), before);
 }));
 
-test("계정 준비 시 이전 계정의 새 수업 초안도 함께 격리한다", () => withStorage((storage) => {
-  prepareLanguageLocalState("test-account-a");
+test("계정 준비 시 이전 계정의 새 수업 초안도 함께 격리한다", () => withStorage(async (storage) => {
+  await prepareLanguageLocalState("test-account-a");
   saveCurriculumProgress(withLearningSessionDraft(loadCurriculumProgress(), createLearningSession("f01", 5, "starter")));
   storage.setItem("unrelated-test-key", "preserve");
-  prepareLanguageLocalState("test-account-b");
+  await prepareLanguageLocalState("test-account-b");
   assert.equal(loadCurriculumProgress().activeSession, undefined);
   assert.equal(storage.getItem("unrelated-test-key"), "preserve");
 }));
 
- test("문법 수업 내용 확장 후에도 기존 ID 기록과 계정별 동기화 상태를 보존한다", () => withStorage((storage) => {
- prepareLanguageLocalState('bridge-account-a');
+ test("문법 수업 내용 확장 후에도 기존 ID 기록과 계정별 동기화 상태를 보존한다", () => withStorage(async (storage) => {
+ await prepareLanguageLocalState('bridge-account-a');
  const records = [{lessonId:'desu',correctCount:2,wrongCount:1,lastResult:'correct'}, {lessonId:'masen',correctCount:1,wrongCount:3,lastResult:'wrong'}];
  const serialized = JSON.stringify(records);
  storage.setItem('grammarProgress', serialized);
  const snapshotA = readLanguageState();
- prepareLanguageLocalState('bridge-account-a');
+ await prepareLanguageLocalState('bridge-account-a');
  assert.equal(storage.getItem('grammarProgress'),serialized);
- prepareLanguageLocalState('bridge-account-b');
+ await prepareLanguageLocalState('bridge-account-b');
  assert.equal(storage.getItem('grammarProgress'),null);
  storage.setItem('grammarProgress',JSON.stringify([{lessonId:'masen',correctCount:0,wrongCount:1}]));
  const snapshotB=readLanguageState();
- prepareLanguageLocalState('bridge-account-a');
- applyLanguageState(snapshotA);
+ await prepareLanguageLocalState('bridge-account-a');
+ await applyLanguageState(snapshotA);
  assert.equal(storage.getItem('grammarProgress'),serialized);
  assert.notEqual(snapshotB.grammarProgress,snapshotA.grammarProgress);
  }));

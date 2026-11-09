@@ -109,7 +109,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       if (event === "SIGNED_OUT") {
         // The root CloudSyncPanel cancels requests and clears cloud records and
         // their baseline together, including routes without this page gate.
-        clearLanguageLocalState();
+        void clearLanguageLocalState().catch(error => {
+          if (active && version === authVersion && !signal.aborted) {
+            setMessage(`로그아웃은 완료됐지만 이 기기의 일본어 기록 정리는 끝내지 못했어요. ${error instanceof Error ? error.message : "기존 기록은 보존합니다."}`);
+          }
+        });
         setRecoveryMode(false);
       }
       if (session?.user) prepareLocalCloudState(session.user.id);

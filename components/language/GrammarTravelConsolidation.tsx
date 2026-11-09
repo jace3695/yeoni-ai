@@ -7,7 +7,7 @@ export default function GrammarTravelConsolidation({ onListen, onStop }: { onLis
   const [task, setTask] = useState<'shop' | 'room'>('shop');
   const fields = task === 'shop' ? ['shopPrice', 'shopQuantity'] : ['roomObject', 'roomAnimal'];
   return <section aria-label="생활·여행 적용 연습" style={{ display: 'grid', gap: 16 }}>
-    <h2>배운 표현으로 메모 두 줄 · 적용 연습 2개</h2>
+    <h2>메모 두 줄에 맞는 표현 고르기 · 적용 연습 2개</h2>
     <p>생활·여행 기초 6수업에서 배운 말을 조합해요. 실제 주문·전송이나 여행 회화 전체의 완료 평가가 아니에요.</p>
     <nav aria-label="적용 연습 선택" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
       <button type="button" style={actionStyle} aria-pressed={task === 'shop'} onClick={() => { onStop(); setTask('shop'); }}>1. 가상 가게 메모</button>

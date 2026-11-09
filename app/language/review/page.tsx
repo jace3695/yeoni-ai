@@ -414,6 +414,7 @@ export default function ReviewPage() {
       </div>
 
       <div className="card" style={{ marginBottom: "14px", padding: "14px", borderColor: "#dbeafe", boxShadow: "0 6px 16px rgba(15,23,42,.06)" }}>
+        <p><Link href="/language/chunk-review">표현 조각 보충복습은 별도 목록에서 다시 풀어요 →</Link></p>
         <div className="label" style={{ marginBottom: "10px", color: "#1d4ed8" }}>복습 요약</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: "10px" }}>
           {[

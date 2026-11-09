@@ -50,7 +50,13 @@ export function normalizeLearningSession(value: unknown, lesson: CurriculumLesso
   clean.firstAnswers = answerMap(draft.firstAnswers);
   clean.responses = draft.responses && typeof draft.responses === "object" ? Object.fromEntries(Object.entries(draft.responses).filter(([key, result]) => /^\d+$/.test(key) && Number(key) < lesson.quiz.length && typeof result === "string" && result.length < 500)) : {};
   clean.speakingChecks = Array.from({ length: 3 }, (_, index) => draft.speakingChecks?.[index] === true);
-  if (draft.observations && typeof draft.observations === 'object') clean.observations = Object.fromEntries(Object.entries(draft.observations).filter(([key, item]) => /^\d+$/.test(key) && Number(key) < lesson.quiz.length && item && typeof item === 'object').map(([key, item]) => [key, { responseMs: cleanResponseMs(item.responseMs), neededHelp: item.neededHelp === true, modality: reviewModality(lesson.quiz[Number(key)].kind, clean.mode) }]));
+  if (draft.observations && typeof draft.observations === 'object') clean.observations = Object.fromEntries(Object.entries(draft.observations).filter(([key, item]) => /^\d+$/.test(key) && Number(key) < lesson.quiz.length && item && typeof item === 'object').map(([key, item]) => [key, {
+    responseMs: cleanResponseMs(item.responseMs), neededHelp: item.neededHelp === true,
+    // The saved observation describes the actual answer method. Reader mode
+    // used to allow typing; it now uses choices without changing older records.
+    modality: item.modality === 'meaning' || item.modality === 'listening' || item.modality === 'typing'
+      ? item.modality : reviewModality(lesson.quiz[Number(key)].kind, clean.mode),
+  }]));
   return clean;
 }
 
@@ -90,11 +96,13 @@ export function getSessionResult(lesson: CurriculumLesson, session: LearningSess
   return { total: indices.length, answered, correct, firstCorrect, score: Math.round(firstCorrect / indices.length * 100), complete: answered === indices.length, needsPractice: correct < indices.length };
 }
 
-export function getQuestionChoices(lesson: CurriculumLesson, index: number, mode: LearnerMode) {
+export function getQuestionChoices(lesson: CurriculumLesson, index: number, _mode: LearnerMode) {
   const quiz = lesson.quiz[index];
   const expected = quiz.choices[quiz.answer];
-  const choices = quiz.kind === "input" && mode === "starter"
-    ? [expected, ...lesson.words.map((word) => word.japanese).filter((word) => word !== expected)].slice(0, 3)
+  // Keep the old question indices and kinds for stored sessions/reviews, but
+  // offer the same meaningful distractors in both learner modes.
+  const choices = quiz.kind === "input"
+    ? [...new Set([expected, ...quiz.choices, ...lesson.words.map((word) => word.japanese)])].slice(0, 3)
     : quiz.choices;
   const unique = [...new Set(choices)];
   const offset = (index + lesson.order) % unique.length;

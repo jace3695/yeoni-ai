@@ -19,10 +19,14 @@ export function useLearningAudio() {
     controller.current = request;
     setPlaying(true);
     setAudioError("");
+    let ended = false;
     try {
-      await speakJapaneseWithPreferredTts(text, { rate, repeatCount, repeatDelayMs, signal: request.signal });
+      await speakJapaneseWithPreferredTts(text, { rate, repeatCount, repeatDelayMs, signal: request.signal, onEnd: () => { ended = true; } });
+      // A normal Promise resolution can also mean cancellation or losing ownership.
+      return ended && !request.signal.aborted && controller.current === request;
     } catch (error) {
       if (!request.signal.aborted) setAudioError(japaneseAudioErrorMessage(error));
+      return false;
     } finally {
       if (controller.current === request) { controller.current = null; setPlaying(false); }
     }

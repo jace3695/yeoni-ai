@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { CURRICULUM, TRACKS, getTrackLessons, type CourseTrack } from "@/data/curriculum";
 import { DEFAULT_CURRICULUM_PROGRESS, loadCurriculumProgress, saveCurriculumProgress } from "@/utils/curriculumProgress";
 import { DEFAULT_INTEGRATED_LEARNING_SETTINGS, loadIntegratedLearningSettings } from "@/utils/integratedLearningSettings";
+import { getLessonStudyLevel, isJapaneseLevel } from "@/data/japaneseLevels";
 import FocusedLesson from "@/components/language/FocusedLesson";
 
 const trackOrder: CourseTrack[] = ["foundation", "work", "travel"];
@@ -35,12 +36,13 @@ function CurriculumContent() {
   if (!loaded) return <div className="learn-loading" role="status">학습 기록을 불러오는 중이에요.</div>;
   return <section className="curriculum-page">
     <header className="curriculum-hero">
-      <span>나만의 작은 일본어 교실</span>
+      <span>나만의 작은 일본어 교실</span><p><Link href="/language/levels">초급·중급·고급 단계별 학습으로</Link></p>
       <h1>한 번에 하나씩, 내 속도로</h1>
       <p>지금은 약 {settings.dailyMinutes}분 분량이에요. 정해진 시간 안에 끝내지 않아도 괜찮아요.</p>
       <div className="curriculum-summary"><strong>{progress.completedLessonIds.filter((id) => CURRICULUM.some((lesson) => lesson.id === id)).length}/{CURRICULUM.length}</strong><span>해본 수업 · 숙달 평가는 아니에요</span></div>
     </header>
     {error && <p role="alert">{error}</p>}
+    <p><Link href="/language/chunk-review">표현 조각 보충복습 · 본수업과 별도로 다시 풀기</Link></p>
     <nav className="track-tabs" aria-label="학습 과정 선택">
       {trackOrder.map((track) => <Link key={track} href={`/language/learn?track=${track}`} onClick={() => chooseTrack(track)} aria-current={selectedTrack === track ? "page" : undefined} className={selectedTrack === track ? "is-active" : ""}>{TRACKS[track].title}</Link>)}
     </nav>
@@ -71,7 +73,9 @@ function LearningRoute() {
   if (!lessonId) return <CurriculumContent />;
   const lesson = CURRICULUM.find((item) => item.id === lessonId);
   if (!lesson) return <section className="curriculum-page"><h1>수업을 찾지 못했어요</h1><p>링크가 잘못되었거나 바뀌었어요. 학습 기록은 그대로 있어요.</p><Link href="/language/learn">전체 수업에서 고르기</Link></section>;
-  return <FocusedLesson key={lesson.id} lesson={lesson} />;
+  const requestedLevel = params.get("level");
+  const studyLevel = isJapaneseLevel(requestedLevel) && getLessonStudyLevel(lesson.id) === requestedLevel ? requestedLevel : undefined;
+  return <FocusedLesson key={`${lesson.id}:${studyLevel ?? "legacy"}`} lesson={lesson} studyLevel={studyLevel} />;
 }
 
 export default function LearnPage() {

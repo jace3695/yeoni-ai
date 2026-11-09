@@ -3,6 +3,7 @@
 
 import { growthSessionTimeLabel } from "@/lib/assistant-growth-command";
 import { useDialogFocus } from "@/components/useDialogFocus";
+import { readOwnedLanguageCache } from "../data/languageStorageLock";
 import { RECORDS_CHANGED_EVENT } from "../data/storageTransaction";
 import Link from "next/link";
 import { useEffect, useRef, useMemo, useState } from "react";
@@ -49,16 +50,17 @@ function UnifiedCalendar() {
       const stores = readRecordStores();
       Object.entries(stores.workouts).forEach(([date, value]) => { if (date.startsWith(monthKey) && isWorkoutPerformed(value)) next[date] = { ...next[date], workout: getWorkoutRecord(value), note: stores.notes[date] }; });
       Object.entries(stores.diet).forEach(([date, value]) => { if (date.startsWith(monthKey) && Object.keys(value).length) next[date] = { ...next[date], diet: value, water: stores.water[date] }; });
-      Object.entries(parse(localStorage.getItem("dailyLearningHistory"))).forEach(([date, value]) => {
-        if (!date.startsWith(monthKey) || !value || typeof value !== "object") return;
-        const row = value as Record<string, unknown>;
-        const ids = Array.isArray(row.completedIds) ? row.completedIds.filter((id): id is string => typeof id === "string") : [];
-        const count = Number(row.completedCount || ids.length);
-        if (count) next[date] = { ...next[date], language: { count, ids } };
-      });
+
       if (supabase) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+          Object.entries(parse(readOwnedLanguageCache(localStorage, "dailyLearningHistory", user.id))).forEach(([date, value]) => {
+            if (!date.startsWith(monthKey) || !value || typeof value !== "object") return;
+            const row = value as Record<string, unknown>;
+            const ids = Array.isArray(row.completedIds) ? row.completedIds.filter((id): id is string => typeof id === "string") : [];
+            const count = Number(row.completedCount || ids.length);
+            if (count) next[date] = { ...next[date], language: { count, ids } };
+          });
           const end = `${monthKey}-${new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()}`;
           const [tasks, budget, growth] = await Promise.all([
             supabase.from("assistant_items").select("id,title,due_at,status").eq("user_id", user.id).gte("due_at", `${monthKey}-01T00:00:00+09:00`).lte("due_at", `${end}T23:59:59+09:00`).neq("status", "cancelled"),

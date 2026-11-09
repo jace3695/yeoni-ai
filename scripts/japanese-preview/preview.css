@@ -1,0 +1,9 @@
+/* Same source component CSS modules are bundled unchanged. Only the fixture shell is styled here. */
+* { box-sizing: border-box; }
+body { margin: 0; color: #263349; background: #f5f4fa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+button, input, select { font: inherit; }
+.qa-banner { max-width: 920px; margin: 0 auto; padding: 16px; background: #fff3cc; line-height: 1.6; overflow-wrap: anywhere; }
+.qa-banner p { margin: 8px 0; }
+.qa-banner nav, .qa-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+.qa-banner a, .qa-banner button { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; color: #263349; background: #fff; border: 1px solid #9c8752; border-radius: 8px; cursor: pointer; }
+.qa-unsupported { max-width: 920px; margin: 0 auto; padding: 24px 16px; }

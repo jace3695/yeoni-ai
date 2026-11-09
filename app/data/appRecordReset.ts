@@ -18,7 +18,7 @@ export const APP_RECORD_KEYS: Record<RecordResetApp, readonly string[]> = {
   language: [
     "dailyRoutineProgress", "dailyLearningHistory", "japaneseCurriculumProgressV1", "japaneseCurriculumReviewV1",
     "savedWords", "savedSentences", "wrongKana", "wrongKanaChars", "wrongWords", "wrongSentences",
-    "grammarProgress", "reviewCompletedItemsByDate",
+    "grammarProgress", "reviewCompletedItemsByDate", "japaneseLevelJourneyV1", "japaneseChunkReviewV1",
   ],
   growth: [], assistant: [], budget: [],
 };
@@ -51,7 +51,11 @@ export function respectRecordResets(remote: Record<string, unknown>, local: Reco
     const remoteTime = markerTime(remote[key]);
     const localTime = markerTime(local[key]);
     if (!remoteTime && !localTime) continue;
-    const source = remoteTime >= localTime ? remote : local;
+    // Concurrent language resets are generations, not a device-side preference.
+    // Keep the existing tie behavior of all other apps unchanged.
+    const remoteWins = remoteTime > localTime || remoteTime === localTime && (app !== "language"
+      || String(remote[key] ?? "") >= String(local[key] ?? ""));
+    const source = remoteWins ? remote : local;
     for (const ownedKey of [...APP_RECORD_KEYS[app], key]) {
       if (ownedKey in source) result[ownedKey] = source[ownedKey];
       else delete result[ownedKey];

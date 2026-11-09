@@ -10,6 +10,7 @@ export class LocalDurableReplyClient {
   private owner: string;
   private epoch: number | null = null;
   private sessionGeneration = 0;
+  private sourceGenerations = new Map<RecordApp, number>();
   constructor(db: LocalReplyDatabase, identity: { mode: 'synthetic'; owner: string }) {
     if (identity.mode !== 'synthetic' || !identity.owner) throw new Error('Synthetic identity required');
     this.db = db; this.owner = identity.owner;
@@ -31,6 +32,9 @@ export class LocalDurableReplyClient {
    * Production must publish source atomically with authoritative record writes.
    */
   async publish(app: RecordApp, revision: number, records: unknown, deleted = false) {
+    // Invalidate same-client in-flight delivery immediately, including failed or
+    // uncertain publication. This is not cross-process external-send fencing.
+    this.sourceGenerations.set(app, (this.sourceGenerations.get(app) ?? 0) + 1);
     if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('Invalid source revision');
     const version = await recordVersion(records);
     const { rows } = await this.db.query<{ ok: boolean }>('select reply_local.publish_source($1,$2,$3,$4,$5) ok', [this.owner, app, revision, version, deleted]);
@@ -42,10 +46,10 @@ export class LocalDurableReplyClient {
     // All-in integer micro-KRW estimate (1 KRW = 1,000,000) (FX, tax and uncertainty margin supplied upstream).
     // Invalid estimates still allow exact cache reads, never new reservations.
     const quote = conservativeQuote !== null && Number.isSafeInteger(conservativeQuote) && conservativeQuote > 0 ? conservativeQuote : null;
-    const epoch = this.epoch, generation = this.sessionGeneration;
+    const epoch = this.epoch, generation = this.sessionGeneration, sourceGeneration = this.sourceGenerations.get(app);
     try {
       const { rows } = await this.db.query<{ result: LocalReplyResult }>('select reply_local.reserve($1,$2,$3,$4,$5,$6,$7) result', [this.owner, app, revision, version, pool, quote, epoch]);
-      if (this.epoch !== epoch || this.sessionGeneration !== generation) return { status: 'stale' };
+      if (this.epoch !== epoch || this.sessionGeneration !== generation || this.sourceGenerations.get(app) !== sourceGeneration) return { status: 'stale' };
       return rows[0].result;
     } catch { return { status: 'unavailable' }; }
   }
@@ -54,9 +58,9 @@ export class LocalDurableReplyClient {
    */
   async claim(app: RecordApp, revision: number, version: string, pool: 'analysis' | 'voice', invocation: string) {
     if (this.epoch === null) return false;
-    const generation = this.sessionGeneration, epoch = this.epoch;
+    const generation = this.sessionGeneration, epoch = this.epoch, sourceGeneration = this.sourceGenerations.get(app);
     const { rows } = await this.db.query<{ ok: boolean }>('select reply_local.claim($1,$2,$3,$4,$5,$6,$7) ok', [this.owner, app, revision, version, pool, epoch, invocation]);
-    return this.sessionGeneration === generation && this.epoch === epoch && rows[0].ok;
+    return this.sessionGeneration === generation && this.epoch === epoch && this.sourceGenerations.get(app) === sourceGeneration && rows[0].ok;
   }
   /** Call only for an existing reservation. Failure leaves funds reserved.
    * Result delivery must re-check source revision + session via reserve after this.
