@@ -24,7 +24,7 @@ test('inline hashes cover exact response bytes and the opaque sandbox has no esc
   assert.ok(csp.includes(`script-src 'sha256-${hash(payload.script)}'`));
   assert.ok(csp.includes(`style-src 'sha256-${hash(payload.styles)}'`));
   assert.ok(csp.includes('sandbox allow-scripts'));
-  assert.doesNotMatch(csp, /allow-same-origin|allow-popups|allow-top-navigation|unsafe-inline|unsafe-eval/);
+  assert.doesNotMatch(csp, /allow-forms|allow-same-origin|allow-popups|allow-top-navigation|unsafe-inline|unsafe-eval/);
   for (const directive of ['default-src', 'connect-src', 'img-src', 'font-src', 'media-src', 'worker-src', 'frame-src', 'object-src', 'base-uri', 'form-action', 'frame-ancestors']) {
     assert.ok(csp.includes(`${directive} 'none'`), directive);
   }
@@ -61,5 +61,6 @@ test('growth preview bundles actual page, hook and recovery with no real storage
  assert.doesNotMatch(result.script,/\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|XMLHttpRequest|WebSocket|sendBeacon|serviceWorker|document\.cookie|speechSynthesis|\bfetch\(/);
  assert.doesNotMatch(result.styles,/@import\b|url\s*\(/i);
  assert.match(result.script,/새로고침하면 가상 자료와 재시도 정보가 초기화/);
+ assert.ok(manifest.inputs.some((item:{path:string})=>item.path==='scripts/growth-preview/form-bridge.tsx'));
  const response=await growthPreviewResponse(allowed,async()=>result);assert.equal(response.status,200);
 });
