@@ -1,6 +1,6 @@
 # Full synthetic Japanese UI inspection
 
-The existing protected Preview at `/api/qa/japanese` now includes a QA catalog for the actual 62 curriculum lessons, 20 reading lessons and 82 optional chunk lessons. These are 164 inspection entry points, not 164 independent courses. Product components/data and real account storage/sync remain unchanged.
+The existing protected Preview at `/api/qa/japanese` now includes a QA catalog for the actual 62 curriculum lessons, 20 reading lessons and 82 optional chunk lessons. These are 164 inspection entry points, not 164 independent courses. The fixture uses product components/data without replacing their learning logic. Real account storage/sync is never connected.
 
 ## Lesson scope
 
@@ -9,6 +9,17 @@ The existing protected Preview at `/api/qa/japanese` now includes a QA catalog f
 - Existing drafts keep their original duration, mode and answers. Changing QA defaults does not erase drafts, reviews, scores or the selected learning level.
 - All records use this page's memory-only Storage/IDB adapters. Component re-entry is not persistent-storage verification. Refresh discards this synthetic session.
 - The actual scoped language CSS and root tokens are reused, but the full application layout and decorative image resources are not loaded. This is not full application or character visual certification.
+
+## Reference pages
+
+The same fixture also mounts the real `/language/kana`, `/language/words` and `/language/grammar` page components. These are reference pages, not added curriculum lessons. Their writing canvases and grammar practice panels remain actual product components; AI handwriting feedback remains disabled.
+
+- The original `KanaStrokeAnimation` reads only the build-time copy of `public/kana-strokes.json`. All four direct native request spellings are aliased to an exact-path, no-options, JSON-only port with no network fallback. Other requests fail explicitly.
+- The 160 public glyph entries are pinned to SHA256 `32ba7a804d8ba53958f18c7a9a00db59d24f14df16a5501683deffce152e211c`. A changed, missing, duplicate or renamed asset fails the build boundary until independently reviewed. The source manifest includes the JSON and every new adapter.
+- Hash-authorized QA stylesheet rules mirror only the original SVG shadows/strokes presentation values, because imported inline style attributes may be blocked by CSP. Product vector bytes and JS animation timing remain unchanged.
+- The auth-header port always throws, without reading sessions or credentials. Source guards now also reject the original auth-header and app Supabase modules.
+- Words' only required router operation is hash-only `push`. Unsupported sentence links do not navigate to the application. The QA JSX adapter also converts plain reference anchors to safe hashes and removes target/download/ping attributes, including external bibliography links. Other JSX props and component logic are preserved.
+- The existing one-write-failure button can test actual grammar error/retry handling. VM tests verify failed writes preserve progress, do not mark today's routine, and can retry the same choice without duplicate counting. This is not a browser or persistence result.
 
 ## Separate local voice probe
 

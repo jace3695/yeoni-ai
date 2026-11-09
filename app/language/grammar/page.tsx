@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import WorkWritingPractice from "@/components/language/WorkWritingPractice";
 import GrammarTravelConsolidation from "@/components/language/GrammarTravelConsolidation";
@@ -16,6 +16,7 @@ import {
   type GrammarProgressItem,
 } from "@/data/grammar";
 import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
+import { persistGrammarQuizAnswer } from "@/utils/grammarQuizProgress";
 import { useLearningAudio } from "@/components/language/useLearningAudio";
 
 const actionStyle = { minHeight: 44, padding: "10px 16px", border: "1px solid #93c5fd", borderRadius: 10, background: "#eff6ff", color: "#1e3a8a", cursor: "pointer", fontWeight: 700 } as const;
@@ -35,6 +36,8 @@ export default function GrammarPage() {
   const [reviewOnly, setReviewOnly] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [routineError, setRoutineError] = useState(false);
+  const answeredLessons = useRef(new Set<string>());
   const [filter, setFilter] = useState<GrammarFilter>("전체");
   const [levelFilter, setLevelFilter] = useState<GrammarLesson["level"] | "all" | GuidedGrammarStage | "consolidation" | "travel-consolidation" | "work-writing">("foundation");
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
@@ -60,16 +63,6 @@ export default function GrammarPage() {
     }
   }, []);
 
-  const saveGrammarProgress = (next: GrammarProgressItem[]) => {
-    setGrammarProgress(next);
-    try {
-      setSaveError("");
-      localStorage.setItem(GRAMMAR_PROGRESS_KEY, JSON.stringify(next));
-    } catch {
-      setSaveError("학습 기록을 이 기기에 저장하지 못했어요. 저장 공간과 브라우저 설정을 확인해 주세요.");
-    }
-  };
-
   const visibleLessons = useMemo(
     () => GRAMMAR_LESSONS.filter(lesson => (filter === "전체" || lesson.category === filter) && (levelFilter === "all" || (isGuidedGrammarStage(levelFilter) ? GRAMMAR_STAGE_ORDER[levelFilter].includes(lesson.id) : lesson.level === levelFilter && !GUIDED_GRAMMAR_ORDER.includes(lesson.id))) && (!reviewOnly || grammarProgress.some(item => item.lessonId === lesson.id && item.lastResult === 'wrong')))
       .sort((a, b) => (GUIDED_GRAMMAR_ORDER.indexOf(a.id) < 0 ? 100 : GUIDED_GRAMMAR_ORDER.indexOf(a.id)) - (GUIDED_GRAMMAR_ORDER.indexOf(b.id) < 0 ? 100 : GUIDED_GRAMMAR_ORDER.indexOf(b.id))),
@@ -77,57 +70,50 @@ export default function GrammarPage() {
   );
   // Keep the answered lesson visible long enough to read feedback in review mode.
   const activeLesson = visibleLessons.find(lesson => lesson.id === lessonId) ?? (pinnedLessonId ? GRAMMAR_LESSONS.find(lesson => lesson.id === pinnedLessonId) : undefined) ?? visibleLessons[0];
-  const openLesson = (id: string) => { setLessonId(id); setPinnedLessonId(null); setStage(0); setShowHint(false); audio.stop(); };
-  const changeFilter = () => { audio.stop(); setPinnedLessonId(null); setSelectedAnswers({}); setStage(0); setShowHint(false); };
+  const openLesson = (id: string) => { setSaveError(""); setLessonId(id); setPinnedLessonId(null); setStage(0); setShowHint(false); audio.stop(); };
+  const changeFilter = () => { answeredLessons.current.clear(); setSaveError(""); audio.stop(); setPinnedLessonId(null); setSelectedAnswers({}); setStage(0); setShowHint(false); };
 
   const openStage = (next: GuidedGrammarStage) => {
+    answeredLessons.current.clear();
     setLevelFilter(next); setFilter("전체"); setReviewOnly(false); setSelectedAnswers({});
     openLesson(GRAMMAR_STAGE_ORDER[next][0]);
   };
 
   const handleSelectAnswer = (lesson: GrammarLesson, choice: string) => {
-    if (selectedAnswers[lesson.id]) {
+    if (selectedAnswers[lesson.id] || answeredLessons.current.has(lesson.id)) return;
+    answeredLessons.current.add(lesson.id);
+    const result = persistGrammarQuizAnswer({
+      getStorage: () => localStorage, key: GRAMMAR_PROGRESS_KEY, progress: grammarProgress,
+      lesson, choice, answeredAt: new Date().toISOString(),
+      completeRoutine: () => markTodayRoutineCompleted("grammar"),
+    });
+    if (!result.saved) {
+      answeredLessons.current.delete(lesson.id);
+      setSaveError("답안과 학습 기록을 이 기기에 저장하지 못했어요. 기존 기록은 그대로예요. 저장 공간과 브라우저 설정을 확인한 뒤 같은 답을 다시 눌러 주세요.");
       return;
     }
-
+    setSaveError("");
+    setGrammarProgress(result.progress);
+    setRoutineError(!result.routineSaved);
     setLessonId(lesson.id);
     setPinnedLessonId(lesson.id);
-    setSelectedAnswers((prev) => ({ ...prev, [lesson.id]: choice }));
+    setSelectedAnswers(prev => ({ ...prev, [lesson.id]: choice }));
+  };
 
-    const isCorrect = choice === lesson.quiz.answer;
-    const now = new Date().toISOString();
-    const existing = grammarProgress.find((item) => item.lessonId === lesson.id);
-    const nextItem: GrammarProgressItem = existing
-      ? {
-          ...existing,
-          title: lesson.title,
-          category: lesson.category,
-          pattern: lesson.pattern,
-          correctCount: existing.correctCount + (isCorrect ? 1 : 0),
-          wrongCount: existing.wrongCount + (isCorrect ? 0 : 1),
-          lastAnsweredAt: now,
-          lastResult: isCorrect ? "correct" : "wrong",
-        }
-      : {
-          lessonId: lesson.id,
-          title: lesson.title,
-          category: lesson.category,
-          pattern: lesson.pattern,
-          correctCount: isCorrect ? 1 : 0,
-          wrongCount: isCorrect ? 0 : 1,
-          lastAnsweredAt: now,
-          lastResult: isCorrect ? "correct" : "wrong",
-        };
+  const retryRoutineSave = () => {
+    try { markTodayRoutineCompleted("grammar"); setRoutineError(false); }
+    catch { setRoutineError(true); }
+  };
 
-    const nextProgress = existing
-      ? grammarProgress.map((item) => (item.lessonId === lesson.id ? nextItem : item))
-      : [...grammarProgress, nextItem];
-
-    saveGrammarProgress(nextProgress);
-    markTodayRoutineCompleted("grammar");
+  const changeStage = (next: 0 | 1 | 2) => {
+    audio.stop();
+    setStage(next);
   };
 
   const resetLessonQuiz = (lessonId: string) => {
+    audio.stop();
+    answeredLessons.current.delete(lessonId);
+    setSaveError("");
     setShowHint(false);
     setSelectedAnswers((prev) => {
       const next = { ...prev };
@@ -142,6 +128,7 @@ export default function GrammarPage() {
     <section style={{ maxWidth: 900, margin: "0 auto", padding: "16px 12px" }}>
       {audio.playing && <button type="button" className="btn" style={actionStyle} onClick={audio.stop}>소리 멈추기</button>}
       {audio.audioError && <p role="status">{audio.audioError}</p>}
+      {routineError && <div role="alert"><p>문법 답안은 저장됐지만 오늘 학습 체크를 저장하지 못했어요. 답안을 다시 풀 필요는 없어요.</p><button type="button" style={actionStyle} onClick={retryRoutineSave}>오늘 학습 체크 다시 저장</button></div>}
       <div
         style={{
           marginBottom: "20px",
@@ -236,7 +223,7 @@ export default function GrammarPage() {
               </div>
               <p className="muted" style={{ margin: 0 }}>{guide?.goal ?? lesson.summary}</p>
               {visibleLessons.findIndex(item => item.id === lesson.id) > 0 && <button type="button" className="btn" style={actionStyle} onClick={() => openLesson(visibleLessons[visibleLessons.findIndex(item => item.id === lesson.id) - 1].id)}>이전 문법 보기</button>}
-              <nav aria-label="문법 학습 단계" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{(['1. 설명', '2. 예문', '3. 연습'] as const).map((label, index) => <button type="button" className="btn" aria-current={stage === index ? 'step' : undefined} style={{ ...actionStyle, background: stage === index ? '#dbeafe' : '#fff' }} key={label} onClick={() => setStage(index as 0 | 1 | 2)}>{label}</button>)}</nav>
+              <nav aria-label="문법 학습 단계" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{(['1. 설명', '2. 예문', '3. 연습'] as const).map((label, index) => <button type="button" className="btn" aria-current={stage === index ? 'step' : undefined} style={{ ...actionStyle, background: stage === index ? '#dbeafe' : '#fff' }} key={label} onClick={() => changeStage(index as 0 | 1 | 2)}>{label}</button>)}</nav>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", fontSize: "12px" }}>
                 <span style={{ border: "1px solid #dbeafe", borderRadius: "999px", padding: "4px 8px", background: "#f8fbff" }}>{progressText}</span>
                 <span style={{ border: "1px solid #dbeafe", borderRadius: "999px", padding: "4px 8px", background: "#f8fbff" }}>{recentText}</span>
@@ -247,7 +234,7 @@ export default function GrammarPage() {
               <p className="muted" style={{ margin: 0, fontSize: "14px", lineHeight: 1.5 }}>{lesson.explanation}</p>
 
               {guide && <ol style={{ paddingLeft: 24, lineHeight: 1.9 }}>{guide.steps.map(step => <li key={step}>{step}</li>)}</ol>}
-              <button type="button" className="btn" style={actionStyle} onClick={() => setStage(1)}>예문으로 확인하기</button></>}
+              <button type="button" className="btn" style={actionStyle} onClick={() => changeStage(1)}>예문으로 확인하기</button></>}
               {stage === 1 && <>
               {guide && <div style={{ padding: 16, background: '#eff6ff', borderRadius: 12, lineHeight: 1.9 }}><strong>함께 문장 만들기</strong><p>{guide.worked}</p><p>단어 → 조사 → 끝맺음 순서로 뜻을 연결해 보세요.</p></div>}
               <div style={{ display: "grid", gap: "8px", borderRadius: "14px", border: "1px solid #e2e8f0", background: "#fcfdff", padding: "10px" }}>
@@ -284,7 +271,7 @@ export default function GrammarPage() {
                 </div>
               )}
 
-              <button type="button" className="btn" style={actionStyle} onClick={() => setStage(2)}>이제 직접 풀기</button></>}
+              <button type="button" className="btn" style={actionStyle} onClick={() => changeStage(2)}>이제 직접 풀기</button></>}
               {stage === 2 && <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "12px", display: "grid", gap: "10px" }}>
                 <div style={{ fontSize: "14px", fontWeight: 700, color: "#1e3a8a" }}>연습 문제</div>
                 <p style={{ margin: 0, fontSize: "14px", lineHeight: 1.55 }}>{lesson.quiz.question}</p>
@@ -378,7 +365,7 @@ export default function GrammarPage() {
                   </button>
                 )}
               </div>}
-              {selectedAnswer && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}><button type="button" className="btn" style={actionStyle} onClick={() => setStage(0)}>설명 다시 보기</button>{visibleLessons.findIndex(item => item.id === lesson.id) >= 0 && visibleLessons.findIndex(item => item.id === lesson.id) < visibleLessons.length - 1 && <button type="button" className="btn" style={actionStyle} onClick={() => openLesson(visibleLessons[visibleLessons.findIndex(item => item.id === lesson.id) + 1].id)}>다음 문법 배우기</button>}
+              {selectedAnswer && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}><button type="button" className="btn" style={actionStyle} onClick={() => changeStage(0)}>설명 다시 보기</button>{visibleLessons.findIndex(item => item.id === lesson.id) >= 0 && visibleLessons.findIndex(item => item.id === lesson.id) < visibleLessons.length - 1 && <button type="button" className="btn" style={actionStyle} onClick={() => openLesson(visibleLessons[visibleLessons.findIndex(item => item.id === lesson.id) + 1].id)}>다음 문법 배우기</button>}
               {reviewOnly && !visibleLessons.some(item => item.id === lesson.id) && visibleLessons.length > 0 && <button type="button" className="btn" style={actionStyle} onClick={() => openLesson(visibleLessons[0].id)}>다음 복습 문제</button>}
               {levelFilter === 'foundation' && lesson.id === BEGINNER_ORDER.at(-1) && <button type="button" className="btn" style={actionStyle} onClick={() => openStage('bridge')}>다음 걸음 시작하기</button>}
               {levelFilter === 'bridge' && lesson.id === BRIDGE_ORDER.at(-1) && <button type="button" className="btn" style={actionStyle} onClick={() => { changeFilter(); setLevelFilter('consolidation'); }}>다음 걸음 복습하기</button>}

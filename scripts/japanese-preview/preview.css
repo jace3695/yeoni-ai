@@ -1,4 +1,4 @@
-/* Same source component CSS modules are bundled unchanged. Only the fixture shell is styled here. */
+/* Product CSS remains unchanged. Fixture shell and pinned SVG presentation ports only. */
 * { box-sizing: border-box; }
 body { margin: 0; color: #263349; background: #f5f4fa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 button, input, select { font: inherit; }
@@ -36,3 +36,9 @@ button, input, select { font: inherit; }
 .qa-audio-probe summary { cursor: pointer; font-weight: 700; }
 .qa-audio-probe select { max-width: 100%; min-width: 0; }
 .qa-audio-probe p { overflow-wrap: anywhere; }
+
+/* Imported SVG style attributes may be blocked by the opaque document’s CSP.
+ * Mirror only the reviewed glyph groups in the hash-authorized stylesheet.
+ * The product component still owns geometry, colors and animation timing. */
+.language-app-shell svg > g[data-strokesvg="shadows"] { fill: var(--shadow, #ccc); }
+.language-app-shell svg > g[data-strokesvg="strokes"] { stroke: var(--stroke, #000); fill: none; stroke-width: 128; stroke-linecap: round; }

@@ -72,8 +72,9 @@ test('all component hrefs remain hash-only including unsupported, hostile and ne
   assert.equal(previewHash('/language/learn?lesson=f01'), '#/language/learn?lesson=f01');
   assert.equal(previewHash('/language/qa-catalog'), '#/language/qa-catalog');
   assert.equal(previewHash('/language/qa-chunks?lesson=upper-mech-06'), '#/language/qa-chunks?lesson=upper-mech-06');
+  for (const name of ['kana', 'words', 'grammar']) assert.equal(previewHash(`/language/${name}`), `#/language/${name}`);
   for (const href of ['https://example.com', '//example.com', 'javascript:alert(1)', '/language/practice', '/language/conversation', '/language/writing', '/language/kana-writing',
-    '/language/kana', '/language/settings', '/language/levels#outside', '/language/levels\\evil', '/language/levels\n']) {
+    '/language/sentences', '/language/settings', '/language/levels#outside', '/language/levels\\evil', '/language/levels\n']) {
     assert.equal(previewHash(href), '#/unsupported');
   }
   assert.equal(readPreviewLocation('').pathname, '/language/levels');
@@ -167,7 +168,9 @@ test('built artifact contains actual latest components but no actual services, s
   for (const name of ['FocusedLesson', 'LearningQuestion', 'LearningCompanion', 'LevelLearningWorkspace', 'UpperReadingLesson', 'JapaneseChunkPractice', 'ChunkReviewWorkspace', 'useLevelJourney', 'useChunkReview']) {
     assert.ok(built.inputs.some(path => path.endsWith(`/${name}.tsx`) || path.endsWith(`/${name}.ts`)), name);
   }
-  assert.ok(built.inputs.includes('app/data/languageStorageLock.ts'));
+  for (const path of ['app/data/languageStorageLock.ts', 'app/language/kana/page.tsx', 'app/language/words/page.tsx', 'app/language/grammar/page.tsx',
+    'components/language/KanaStrokeAnimation.tsx', 'components/WritingPracticePad.tsx', 'public/kana-strokes.json',
+    'scripts/japanese-preview/asset-request.ts', 'scripts/japanese-preview/authenticated-headers.ts', 'scripts/japanese-preview/jsx-runtime.ts']) assert.ok(built.inputs.includes(path), path);
   for (const name of ['scripts/japanese-preview/next-navigation.ts', 'scripts/japanese-preview/image.tsx', 'app/globals.css', 'app/language/language.css']) assert.ok(built.inputs.includes(name), name);
   assert.ok(built.inputs.every(path => !/(?:^|\/)node_modules\/next\//.test(path)));
   assert.doesNotMatch(built.payload.script, /createElement\("img"|jsx\)\("img"|jsx\("img"/);
@@ -176,7 +179,7 @@ test('built artifact contains actual latest components but no actual services, s
   assert.ok(built.inputs.some(path => path.startsWith('node_modules/fake-indexeddb/')));
   assert.ok(built.inputs.every(path => !forbiddenPreviewInput.test(path)));
   for (const forbidden of ['lib/supabase.ts', 'app/layout.tsx', 'app/language/layout.tsx', 'app/data/languageCloudSync.ts',
-    'app/components/AuthGate.tsx', 'app/components/CloudSyncPanel.tsx', 'components/LanguageCloudSync.tsx', 'utils/speakJapanese.ts', 'utils/japaneseTts.ts']) {
+    'app/lib/supabase.ts', 'app/lib/authenticatedHeaders.ts', 'app/components/AuthGate.tsx', 'app/components/CloudSyncPanel.tsx', 'components/LanguageCloudSync.tsx', 'utils/speakJapanese.ts', 'utils/japaneseTts.ts']) {
     assert.equal(forbiddenPreviewInput.test(forbidden), true, forbidden);
   }
   // Deliberately strict: new native-storage aliases or service code must fail

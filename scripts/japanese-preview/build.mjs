@@ -6,7 +6,7 @@ import { resolve, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const previewBuildDirectory = '.generated/japanese-preview';
-export const forbiddenPreviewInput = /(?:^|\/)(?:lib\/supabase(?:\.ts)?|app\/(?:layout|language\/layout)|app\/components\/(?:AuthGate|CloudSyncPanel|RecordResetListener|AiBudgetNotifier|PwaManager)|components\/(?:language\/)?LanguageCloudSync|app\/data\/languageCloudSync|utils\/(?:speakJapanese|japaneseTts)|lib\/yeoni\/speech-participant|scripts\/scope-qa\/synthetic-client)(?:\.|\/|$)/i;
+export const forbiddenPreviewInput = /(?:^|\/)(?:lib\/supabase(?:\.ts)?|app\/(?:layout|language\/layout|lib\/(?:supabase|authenticatedHeaders))|app\/components\/(?:AuthGate|CloudSyncPanel|RecordResetListener|AiBudgetNotifier|PwaManager)|components\/(?:language\/)?LanguageCloudSync|app\/data\/languageCloudSync|utils\/(?:speakJapanese|japaneseTts)|lib\/yeoni\/speech-participant|scripts\/scope-qa\/synthetic-client)(?:\.|\/|$)/i;
 
 export const nativeAudioBridgePath = 'scripts/japanese-preview/native-local-audio.ts';
 export const reviewedNativeAudioBridgeHash = '26349084056f12dc53c84b1259fcd5203d57ad077ac45079ec1fba9fe60c25fe';
@@ -25,19 +25,34 @@ export function assertPreviewNativeAudioSources(entries) {
   }
 }
 
-export async function buildJapanesePreview(root = process.cwd()) {
-  const own = (name) => resolve(root, 'scripts/japanese-preview', name);
+export const kanaStrokeAssetPath = 'public/kana-strokes.json';
+export const reviewedKanaStrokeAssetHash = '32ba7a804d8ba53958f18c7a9a00db59d24f14df16a5501683deffce152e211c';
+
+export function assertPreviewKanaAsset(entries) {
+  const assets = entries.filter(entry => entry.path === kanaStrokeAssetPath);
+  if (assets.length !== 1 || createHash('sha256').update(assets[0].source).digest('hex') !== reviewedKanaStrokeAssetHash) {
+    throw new Error('Public kana stroke asset changed or missing: independent review required');
+  }
+}
+
+export function previewDefines() {
   const define = { 'process.env.NODE_ENV': '"production"', 'process.env': '{}' };
-  for (const [name, replacement] of Object.entries({ localStorage: 'qaLocalStorage', sessionStorage: 'qaSessionStorage', indexedDB: 'qaIndexedDB' })) {
+  for (const [name, replacement] of Object.entries({ localStorage: 'qaLocalStorage', sessionStorage: 'qaSessionStorage', indexedDB: 'qaIndexedDB', fetch: 'qaAssetRequest' })) {
     for (const prefix of ['', 'window.', 'globalThis.', 'self.']) define[`${prefix}${name}`] = replacement;
   }
   for (const prefix of ['', 'window.', 'globalThis.', 'self.']) define[`${prefix}navigator.locks`] = 'qaLocks';
+  return define;
+}
+
+export async function buildJapanesePreview(root = process.cwd()) {
+  const own = (name) => resolve(root, 'scripts/japanese-preview', name);
+  const define = previewDefines();
   const result = await build({
     absWorkingDir: root, entryPoints: ['scripts/japanese-preview/entry.tsx'],
     bundle: true, write: false, outdir: resolve(root, previewBuildDirectory), entryNames: 'fixture',
-    platform: 'browser', format: 'iife', target: ['es2022'], jsx: 'automatic', charset: 'utf8',
+    platform: 'browser', format: 'iife', target: ['es2022'], jsx: 'automatic', jsxImportSource: 'qa-preview-jsx', charset: 'utf8',
     minifySyntax: true, minifyWhitespace: true, minifyIdentifiers: false, legalComments: 'inline',
-    sourcemap: false, metafile: true, define, inject: [own('runtime.ts')],
+    sourcemap: false, metafile: true, define, inject: [own('runtime.ts'), own('asset-request.ts')],
     plugins: [{ name: 'japanese-preview-isolation', setup(builder) {
       // Use the exact product tokens without importing Tailwind directives or
       // unrelated global application chrome. The full file is source-hashed.
@@ -47,6 +62,8 @@ export async function buildJapanesePreview(root = process.cwd()) {
         if (themes.length !== 1) throw new Error('Expected exactly one product theme root');
         return { contents: themes[0].toString(), loader: 'css' };
       });
+      builder.onResolve({ filter: /^qa-preview-jsx\/jsx-runtime$/ }, () => ({ path: own('jsx-runtime.ts') }));
+      builder.onResolve({ filter: /^@\/app\/lib\/authenticatedHeaders$/ }, () => ({ path: own('authenticated-headers.ts') }));
       builder.onResolve({ filter: /^next\/link$/ }, () => ({ path: own('link.tsx') }));
       builder.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: own('next-navigation.ts') }));
       builder.onResolve({ filter: /^next\/image$/ }, () => ({ path: own('image.tsx') }));
@@ -81,6 +98,7 @@ export async function buildJapanesePreview(root = process.cwd()) {
     sourceHashes.push({ path: name, sha256: createHash('sha256').update(source).digest('hex') });
   }
   assertPreviewNativeAudioSources(sourceEntries);
+  assertPreviewKanaAsset(sourceEntries);
   for (const name of ['scripts/japanese-preview/build.mjs', 'package-lock.json']) sourceHashes.push({ path: name, sha256: createHash('sha256').update(await readFile(resolve(root, name))).digest('hex') });
   const sourceDigest = createHash('sha256').update(JSON.stringify(sourceHashes)).digest('hex');
   const payload = { version: 1, script, styles, sourceDigest };

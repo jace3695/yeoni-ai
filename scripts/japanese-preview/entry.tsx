@@ -8,6 +8,9 @@ import JapaneseChunkPractice from '../../components/language/JapaneseChunkPracti
 import { CURRICULUM } from '../../data/curriculum';
 import { getLessonStudyLevel, isJapaneseLevel } from '../../data/japaneseLevels';
 import PreviewCatalog from './PreviewCatalog';
+import KanaPage from '../../app/language/kana/page';
+import WordsPage from '../../app/language/words/page';
+import GrammarPage from '../../app/language/grammar/page';
 import SessionOptions from './SessionOptions';
 import LocalAudioProbe from './LocalAudioProbe';
 import { PREVIEW_CURRICULUM_CATALOG, PREVIEW_READING_CATALOG, PREVIEW_CHUNK_CATALOG } from './catalog';
@@ -57,11 +60,11 @@ function Preview() {
     <aside className="qa-banner" aria-label="가상 검사 범위">
       <strong>연이 일본어 · 실제 컴포넌트의 가상 화면 검사</strong>
       <p>실제 계정·클라우드·외부 AI는 연결하지 않아요. 일반 수업 음성은 차단하며, 아래 별도 검사에서만 명시 선택한 로컬 일본어 음성을 요청할 수 있어요. 기록은 이 화면의 메모리에만 남고 새로고침하면 사라져요. 실제 영속 저장·기기간 동기화 검증은 아니에요.</p>
-      <p>기존 본수업 {PREVIEW_CURRICULUM_CATALOG.length}개, 읽기 {PREVIEW_READING_CATALOG.length}개, 표현 조각 {PREVIEW_CHUNK_CATALOG.length}개를 실제 학습 화면으로 열어요. 가나 별도 화면·문법 자료실·타자·녹음·발음평가·음성대화·그림 기능은 연결하지 않아요. 장식 이미지는 요청하지 않아요.</p>
-      <nav aria-label="가상 검사 이동"><a href="#/language/qa-catalog">전체 단원 목차</a><a href="#/language/levels">단계 화면</a><a href="#/language/chunk-review">보충복습</a></nav>
+      <p>기존 본수업 {PREVIEW_CURRICULUM_CATALOG.length}개, 읽기 {PREVIEW_READING_CATALOG.length}개, 표현 조각 {PREVIEW_CHUNK_CATALOG.length}개를 실제 학습 화면으로 열어요. 가나·단어·문법 자료실과 손글씨 캔버스·포함된 획순 자료도 확인해요. AI 필기 평가·타자·녹음·발음평가·음성대화·그림 생성은 연결하지 않아요. 장식 이미지는 요청하지 않아요.</p>
+      <nav aria-label="가상 검사 이동"><a href="#/language/qa-catalog">전체 단원 목차</a><a href="#/language/levels">단계 화면</a><a href="#/language/chunk-review">보충복습</a><a href="#/language/kana">가나 자료실</a><a href="#/language/words">단어 자료실</a><a href="#/language/grammar">문법 자료실</a></nav>
       <div className="qa-actions">
         <button type="button" onClick={seedReview}>가상 오답 예시 열기</button>
-        <button type="button" onClick={() => { qaLocalStorage.failNextWrite(); setNotice('다음 가상 저장 1회가 실패하도록 준비했어요. 답이나 단계를 선택한 뒤 오류와 재시도를 확인하세요.'); }}>다음 가상 저장 실패시키기</button>
+        <button type="button" onClick={() => { qaLocalStorage.failNextWrite(); setNotice('다음 가상 저장 1회가 실패하도록 준비했어요. 수업·문법 답이나 단계를 선택한 뒤 오류와 같은 선택 재시도를 확인하세요.'); }}>다음 가상 저장 실패시키기</button>
         <button type="button" onClick={() => { remount(); setNotice('같은 화면의 메모리 기록으로 컴포넌트를 다시 열었어요. 새로고침 후 영속 복구 검증은 아닙니다.'); }}>화면 다시 열어 기록 확인</button>
       </div>
       <SessionOptions key={revision} />
@@ -69,7 +72,10 @@ function Preview() {
     </aside>
     <details className="qa-audio-probe" open={audioPanelOpen} onToggle={event => setAudioPanelOpen(event.currentTarget.open)}><summary>기기 내 일본어 음성 검사 · 접으면 검사 취소</summary><LocalAudioProbe isOpen={audioPanelOpen} /></details>
     <div className="language-app-shell"><main className="app-main" key={`${hash}:${revision}`}>
-      {route.pathname === '/language/levels' ? <LevelLearningWorkspace requestedLevel={route.query.get('level')} lessonId={route.query.get('lesson')} reviewOnly={route.query.get('review') === '1'} />
+      {route.pathname === '/language/kana' ? <KanaPage />
+        : route.pathname === '/language/words' ? <WordsPage />
+          : route.pathname === '/language/grammar' ? <GrammarPage />
+            : route.pathname === '/language/levels' ? <LevelLearningWorkspace requestedLevel={route.query.get('level')} lessonId={route.query.get('lesson')} reviewOnly={route.query.get('review') === '1'} />
         : route.pathname === '/language/chunk-review' ? <ChunkReviewWorkspace />
           : route.pathname === '/language/qa-catalog' || (route.pathname === '/language/learn' && !route.query.has('lesson')) ? <PreviewCatalog track={route.query.get('track')} />
             : route.pathname === '/language/learn' && lesson ? <FocusedLesson lesson={lesson} studyLevel={studyLevel} />

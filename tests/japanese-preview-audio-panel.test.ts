@@ -85,7 +85,7 @@ function panel() {
     '../../utils/japaneseLevelJourney': {}, '../../utils/japaneseChunkReview': {}, './navigation': navigation,
     './runtime': { assertOpaquePreviewOrigin: (origin: string) => assert.equal(origin, 'null'), seedSyntheticOwner() {} },
   };
-  for (const name of ['../../components/language/LevelLearningWorkspace', '../../components/language/FocusedLesson', '../../components/language/JapaneseChunkPractice', '../../components/language/ChunkReviewWorkspace', './PreviewCatalog', './SessionOptions']) imports[name] = () => null;
+  for (const name of ['../../components/language/LevelLearningWorkspace', '../../components/language/FocusedLesson', '../../components/language/JapaneseChunkPractice', '../../components/language/ChunkReviewWorkspace', './PreviewCatalog', './SessionOptions', '../../app/language/kana/page', '../../app/language/words/page', '../../app/language/grammar/page']) imports[name] = () => null;
   compile('../scripts/japanese-preview/entry.tsx', imports, { window, location: { hash: '#/language/qa-catalog' }, document: { getElementById: () => ({}) } });
   assert.ok(root);
   const Parent = root.type as () => Element;

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { readPreviewLocation } from './navigation';
+import { previewHash, readPreviewLocation } from './navigation';
 
 function subscribe(listener: () => void) {
   window.addEventListener('hashchange', listener);
@@ -8,8 +8,12 @@ function subscribe(listener: () => void) {
 const getSnapshot = () => location.hash;
 const getServerSnapshot = () => '';
 
-/** Only the read-only pathname hook is needed by the real appearance settings.
- * No Next router, network prefetch, history rewriting or external navigation. */
+/** No Next router, network prefetch or external navigation. */
 export function usePathname() {
   return readPreviewLocation(useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)).pathname;
+}
+
+/** Words reference links can only change this opaque document’s hash. */
+export function useRouter() {
+  return { push(href: string) { location.hash = previewHash(href); } };
 }
