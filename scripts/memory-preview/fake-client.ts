@@ -40,6 +40,7 @@ export const supabase = {
   },
   from: (table: string) => {
     let op = 'read', payload: Row | null = null, single = false;
+    let columns: string[] | null = null;
     const values: Record<string, unknown> = {};
     const filtered = () => records.filter(row => Object.entries(values).every(([key, value]) => row[key] === value));
     const commit = (): Result => {
@@ -69,10 +70,12 @@ export const supabase = {
       }
       reads++; changed();
       if (single && failRead > 0) { failRead--; return { data: null, error: new Error('Synthetic lookup failure') }; }
-      const rows = filtered().map(row => ({ ...row }));
+      const rows = filtered().map(row => columns
+        ? Object.fromEntries(columns.map(key => [key, row[key]]))
+        : ({ ...row }));
       return { data: single ? rows[0] ?? null : rows, error: null };
     };
-    const query = { select: () => query, eq: (key: string, value: unknown) => { values[key] = value; return query; },
+    const query = { select: (fields = '*') => { columns = fields === '*' ? null : fields.split(',').map(key => key.trim()); return query; }, eq: (key: string, value: unknown) => { values[key] = value; return query; },
       order: () => query, abortSignal: () => query,
       insert: (value: Row) => { op = 'insert'; payload = value; return query; },
       update: (value: Row) => { op = 'update'; payload = value; return query; },
