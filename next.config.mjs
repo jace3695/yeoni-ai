@@ -11,6 +11,7 @@ const nextConfig = {
   // Vercel에서 자동 최적화
   reactStrictMode: true,
   outputFileTracingIncludes: {
+    "/api/qa/growth": ["./.generated/growth-preview/payload.json"],
     "/api/qa/japanese": ["./.generated/japanese-preview/payload.json"],
   },
   // 이미지 최적화 (필요시 도메인 추가)

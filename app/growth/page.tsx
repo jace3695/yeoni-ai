@@ -64,13 +64,13 @@ export default function GrowthPage() {
     inFlight.current = true;
     setBusy(true); setMessage(""); growth.setNotice("");
     try { await action(() => epoch === viewEpoch.current); if (epoch === viewEpoch.current) setMessage(success); }
-    catch { if (epoch === viewEpoch.current) setMessage("저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요."); }
+    catch (error) { if (epoch === viewEpoch.current) setMessage(error instanceof Error ? error.message : "저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요."); }
     finally { if (epoch === viewEpoch.current) { inFlight.current = false; setBusy(false); } }
   };
   const resetEditor = () => { setEditing(null); setCategory("custom"); setTitle(""); setDays([...ALL_GROWTH_WEEKDAYS]); };
   const save = (event: FormEvent) => {
     event.preventDefault();
-    if (!title.trim() || !days.length || (!editing && routines.length >= GROWTH_ROUTINE_LIMIT)) return;
+    if (!title.trim() || !days.length || (!editing && (routines.length >= GROWTH_ROUTINE_LIMIT || growth.pendingRoutineCreate || growth.routineCreateBlocked))) return;
     if (isRetiredGrowthRoutine({ title })) { setMessage("종료된 기본 과정 이름이에요. 다른 활동 이름을 입력해 주세요."); return; }
     void run(async (isCurrent) => {
       const result = editing
@@ -110,12 +110,27 @@ export default function GrowthPage() {
     </section>
     <form className={styles.panel} onSubmit={save}>
       <h2>{editing ? "활동 수정" : category === "handwriting" ? "손글씨 요일 일정 추가" : "직접 정하는 활동"}</h2>
-      <fieldset disabled={!ready}><label className={styles.name}>활동 이름<input ref={editor} value={title} maxLength={60} required placeholder="예: 책 10쪽 읽기" onChange={event => setTitle(event.target.value)} /></label>
+      <fieldset disabled={!ready || (!editing && (!!growth.pendingRoutineCreate || growth.routineCreateBlocked))}><label className={styles.name}>활동 이름<input ref={editor} value={title} maxLength={60} required placeholder="예: 책 10쪽 읽기" onChange={event => setTitle(event.target.value)} /></label>
       <fieldset className={styles.days}><legend>진행할 요일 · 하나 이상 선택</legend>{GROWTH_WEEKDAYS.map(day => <label key={day.id}><input type="checkbox" checked={days.includes(day.id)} onChange={event => setDays(previous => event.target.checked ? [...new Set([...previous, day.id])] : previous.filter(value => value !== day.id))} /><span>{day.label}</span></label>)}</fieldset>
       {!days.length && <p role="status">진행할 요일을 하나 이상 선택해 주세요.</p>}
       <div className={styles.actions}><button className={styles.primary} disabled={!title.trim() || !days.length || (!editing && routines.length >= GROWTH_ROUTINE_LIMIT)}>{editing ? "수정 저장" : "활동 추가"}</button>{(editing || category === "handwriting") && <button type="button" onClick={resetEditor}>취소</button>}</div>
       {!editing && routines.length >= GROWTH_ROUTINE_LIMIT && <p>활동은 보관한 항목을 포함해 {GROWTH_ROUTINE_LIMIT}개까지 등록할 수 있어요. 기존 활동을 수정해 주세요.</p>}</fieldset>
     </form>
+    {growth.pendingRoutineCreate && <section className={styles.panel} aria-label="미확인 활동 저장">
+      <h2>활동 저장 결과 확인</h2>
+      <p>“{growth.pendingRoutineCreate.row.title}” 활동의 저장 결과를 아직 확인하지 못했어요. 새 활동을 만들기 전에 같은 요청으로 확인해요.</p>
+      <p className={styles.hint}>이미 저장됐다면 현재 이름·요일·보관 상태를 불러오고, 아직 없다면 같은 번호로 다시 저장해요. 새로고침해도 이 탭에서 이어서 확인할 수 있어요.</p>
+      <button disabled={!ready} onClick={() => void run(async (isCurrent) => {
+        const result = await growth.recoverRoutineCreate();
+        if (result.error) throw result.error;
+        if (isCurrent() && !editing) resetEditor();
+      }, "활동의 저장 결과를 확인했어요. 현재 활동 목록을 확인해 주세요.")}>같은 활동 저장 다시 확인</button>
+      {growth.routineCreateReset && <><p>기록 초기화 뒤에도 “{growth.pendingRoutineCreate.row.title}” 활동을 {formatGrowthPreferredDays(growth.pendingRoutineCreate.row.preferred_days)} 일정으로 추가할까요? 이미 저장돼 있으면 현재 내용을 유지해요.</p><button disabled={!ready} onClick={() => void run(async (isCurrent) => {
+        const result = await growth.recoverRoutineCreate(true);
+        if (result.error) throw result.error;
+        if (isCurrent() && !editing) resetEditor();
+      }, "같은 요청 번호로 활동 저장을 확인했어요.")}>초기화 후에도 이 활동 추가</button></>}
+    </section>}
     {(message || growth.notice) && <p role="status" className={styles.notice}>{growth.notice || message}</p>}
     {growth.loading && <p role="status">기록을 불러오고 있어요.</p>}
     {!growth.loading && !growth.dataReady && <button onClick={() => void growth.refresh()}>다시 불러오기</button>}

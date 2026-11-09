@@ -21,6 +21,7 @@ import {
   type GrowthCategoryId,
   type GrowthRoutine,
 } from "../data/growthRoutines";
+import { createGrowthRoutineSafely, GrowthRoutineResetConfirmation, readPendingGrowthRoutine, type NewGrowthRoutine, type PendingGrowthRoutine } from "@/lib/growth-routine-create";
 import { setChecklistCompletion } from "@/lib/growth-checklist";
 import { getLocalDateKey } from "@/utils/dateKey";
 import { normalizeGrowthPreferredDays, normalizeGrowthWeeklyTarget } from "../data/growthSchedule";
@@ -131,6 +132,9 @@ export function useGrowthData(historyDays = 90) {
   const [workoutRecords, setWorkoutRecords] = useState<unknown>(undefined);
   const [notice, setNotice] = useState("");
   const [legacyBackupAvailable, setLegacyBackupAvailable] = useState(false);
+  const [pendingRoutineCreate, setPendingRoutineCreate] = useState<PendingGrowthRoutine | null>(null);
+  const [routineCreateBlocked, setRoutineCreateBlocked] = useState(false);
+  const [routineCreateReset, setRoutineCreateReset] = useState(false);
 
   const lifetime = useRef({ active: false, epoch: 0, owner: null as string | null });
   const loadSequence = useRef(0);
@@ -179,6 +183,13 @@ export function useGrowthData(historyDays = 90) {
     if (lifetime.current.owner && lifetime.current.owner !== auth.user.id) return;
     lifetime.current.owner = auth.user.id;
     setUser(auth.user);
+    try {
+      setPendingRoutineCreate(readPendingGrowthRoutine(window.sessionStorage, auth.user.id));
+      setRoutineCreateBlocked(false);
+    } catch {
+      setRoutineCreateBlocked(true);
+      setNotice("이 탭의 저장 복구 정보를 확인하지 못해 새 활동 추가를 잠시 막았어요. 기존 활동은 확인할 수 있어요.");
+    }
     const userId = auth.user.id;
     await wait(withGrowthSyncLock(userId, async () => {
     check();
@@ -410,6 +421,7 @@ export function useGrowthData(historyDays = 90) {
       loadSequence.current += 1;
       setUser(null); setRoutines([]); setSessions([]); setWorkoutRecords(undefined);
       setDataReady(false); setLoading(true); setLegacyBackupAvailable(false); setNotice("");
+      setPendingRoutineCreate(null); setRoutineCreateBlocked(false); setRoutineCreateReset(false);
       clearTimeout(timer);
       // Leave the auth callback before asking the SDK to verify the new owner.
       timer = setTimeout(() => { void load(); }, 0);
@@ -465,26 +477,33 @@ export function useGrowthData(historyDays = 90) {
     return { error: null };
   }, [load, user, beginScope]);
 
-  const addRoutine = useCallback(async (input: { id?: string; title: string; category: GrowthCategoryId; targetMinutes: number; preferredDays: number[]; targetSessionsPerWeek: number }) => {
+  const createRoutine = useCallback(async (input: NewGrowthRoutine | null, confirmAfterReset = false) => {
     const { check, wait } = beginScope(user?.id);
     check();
-    if (!supabase || !user) return { error: new Error("로그인이 필요합니다.") };
-    const now = new Date().toISOString();
-    const result = await wait(supabase.from("growth_routines").insert({
-      ...(input.id ? { id: input.id } : {}),
-      user_id: user.id,
-      title: input.title.trim().slice(0, 60),
-      category: input.category,
-      target_minutes: Math.min(240, Math.max(5, Math.round(input.targetMinutes))),
-      preferred_days: normalizeGrowthPreferredDays(input.preferredDays),
-      target_sessions_per_week: normalizeGrowthWeeklyTarget(input.targetSessionsPerWeek, input.preferredDays),
-      enabled: true,
-      sort_order: routines.length,
-      updated_at: now,
-    }).select("*").single());
-    if (!result.error) setRoutines((current) => [...current, result.data as GrowthRoutineRow]);
-    return result;
-  }, [routines.length, user, beginScope]);
+    if (!supabase || !user || !dataReady) return { error: new Error("로그인과 활동 목록을 먼저 확인해 주세요.") };
+    const client = supabase;
+    try {
+      const row = await wait(withGrowthSyncLock(user.id, () => createGrowthRoutineSafely(client, user.id, window.sessionStorage, input, routines.length, check, confirmAfterReset)));
+      setRoutines(current => [...current.filter(routine => routine.id !== row.id), row].sort((a, b) => a.sort_order - b.sort_order));
+      setRoutineCreateReset(false);
+      return { data: row, error: null };
+    } catch (error) {
+      check();
+      setRoutineCreateReset(error instanceof GrowthRoutineResetConfirmation);
+      return { error: error instanceof Error ? error : new Error("활동 저장 결과를 확인하지 못했어요.") };
+    } finally {
+      // A departing view/account must not expose another owner's recovery title.
+      try {
+        check();
+        setPendingRoutineCreate(readPendingGrowthRoutine(window.sessionStorage, user.id));
+        setRoutineCreateBlocked(false);
+      } catch {
+        try { check(); setRoutineCreateBlocked(true); } catch { /* Stale view. */ }
+      }
+    }
+  }, [routines.length, user, dataReady, beginScope]);
+  const addRoutine = useCallback((input: NewGrowthRoutine) => createRoutine(input), [createRoutine]);
+  const recoverRoutineCreate = useCallback((confirmAfterReset = false) => createRoutine(null, confirmAfterReset), [createRoutine]);
 
   const updateRoutine = useCallback(async (routineId: string, updates: Partial<Pick<GrowthRoutineRow, "title" | "category" | "target_minutes" | "preferred_days" | "target_sessions_per_week" | "enabled" | "sort_order">>) => {
     const { check, wait } = beginScope(user?.id);
@@ -554,5 +573,5 @@ export function useGrowthData(historyDays = 90) {
     await wait(load());
   }, [user, dataReady, load, beginScope]);
 
-  return { setCompleted, user, routines, sessions, dataReady, workoutRecords, loading, notice, setNotice, legacyBackupAvailable, importLegacyBackup, refresh: load, addRoutine, updateRoutine, removeRoutine, saveSession, deleteSession };
+  return { pendingRoutineCreate, routineCreateBlocked, routineCreateReset, recoverRoutineCreate, setCompleted, user, routines, sessions, dataReady, workoutRecords, loading, notice, setNotice, legacyBackupAvailable, importLegacyBackup, refresh: load, addRoutine, updateRoutine, removeRoutine, saveSession, deleteSession };
 }
