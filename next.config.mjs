@@ -11,6 +11,7 @@ const nextConfig = {
   // Vercel에서 자동 최적화
   reactStrictMode: true,
   outputFileTracingIncludes: {
+    "/api/qa/memory": ["./.generated/memory-preview/payload.json"],
     "/api/qa/growth": ["./.generated/growth-preview/payload.json"],
     "/api/qa/japanese": ["./.generated/japanese-preview/payload.json"],
   },
