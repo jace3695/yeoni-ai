@@ -198,3 +198,70 @@ test('transient scope reads expose a visible action error while the render predi
   assert.match(notice, /새로고침하면 사라질 수/);
   assert.match(notice, /이미 저장된 답안을 다시 풀거나 기록을 지우지 마세요/);
 });
+
+test('explicit saved state requires all captured dates done, never pending, failed or stale success', async () => {
+  let finish!: () => void;
+  let fail = false;
+  let current = true;
+  const states: { pending: boolean; error: string; saved: boolean }[] = [];
+  const queue = createRoutineCompletionQueue({ capture: date => ({ date }), isCurrent: () => current,
+    save: async () => { if (fail) throw new Error('failed'); await new Promise<void>(resolve => { finish = resolve; }); },
+    publish: state => states.push(state) });
+  assert.equal(states.length, 0);
+  queue.complete('2026-11-09'); assert.equal(states.at(-1)?.saved, false);
+  finish(); await flush(); assert.equal(states.at(-1)?.saved, true);
+  fail = true; queue.complete('2026-11-10'); await flush();
+  assert.equal(states.at(-1)?.saved, false); assert.equal(states.at(-1)?.error, 'failed');
+  fail = false; queue.retry(); assert.equal(states.at(-1)?.saved, false);
+  const count = states.length; current = false; finish(); await flush();
+  assert.equal(states.length, count, 'stale successful save cannot publish saved');
+});
+
+test('fast completion still publishes pending then explicit saved; failure recovery restores saved', async () => {
+  let fail = false;
+  const states: { pending: boolean; error: string; saved: boolean }[] = [];
+  const queue = createRoutineCompletionQueue({ capture: date => date, isCurrent: () => true,
+    save: async () => { if (fail) throw new Error('failed'); }, publish: state => states.push(state) });
+  queue.complete('2026-11-09'); assert.deepEqual(states.at(-1), { saved: false, pending: true, error: '' });
+  await flush(); assert.deepEqual(states.at(-1), { saved: true, pending: false, error: '' });
+  fail = true; queue.complete('2026-11-10'); await flush(); assert.equal(states.at(-1)?.saved, false);
+  fail = false; queue.retry(); await flush(); assert.equal(states.at(-1)?.saved, true);
+});
+
+test('rendered notice keeps the same static prefix and native button before every dynamic status', async () => {
+  const React = await import('react');
+  const jsxRuntime = await import('react/jsx-runtime');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const exports: Record<string, unknown> = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync('components/language/DailyRoutineSaveNotice.tsx', 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText, { exports, require: () => jsxRuntime });
+  type Props = { pending: boolean; saved: boolean; error: string; retry: () => void };
+  const Notice = exports.default as (props: Props) => React.ReactElement | null;
+  let retries = 0;
+  const retry = () => { retries++; };
+  assert.equal(Notice({ pending: false, saved: false, error: '', retry }), null);
+  const cases = [
+    { pending: false, saved: false, error: '긴 오류 '.repeat(100) },
+    { pending: true, saved: false, error: '' },
+    { pending: false, saved: false, error: '다시 실패' },
+    { pending: false, saved: true, error: '' },
+  ];
+  let prefix = '';
+  for (const state of cases) {
+    const tree = Notice({ ...state, retry })!;
+    const children = (tree.props as { children: React.ReactElement[] }).children;
+    assert.deepEqual(Array.from(children, child => child.type), ['p', 'p', 'button', 'p']);
+    const button = children[2].props as { disabled: boolean; onClick: () => void };
+    assert.equal(button.disabled, state.pending || state.saved);
+    const before = retries; button.onClick(); assert.equal(retries, before + (button.disabled ? 0 : 1));
+    const html = renderToStaticMarkup(tree);
+    const currentPrefix = html.split('<p role="status"')[0].replace(' disabled=""', '');
+    if (prefix) assert.equal(currentPrefix, prefix); else prefix = currentPrefix;
+    assert.match(html, /aria-live="polite"/);
+  }
+  const source = readFileSync('components/language/DailyRoutineSaveNotice.tsx', 'utf8');
+  assert.doesNotMatch(source, /pointerEvents|pointer-events|setTimeout|onDoubleClick/);
+  const hook = readFileSync('components/language/useDailyRoutineCompletion.ts', 'utf8');
+  for (const line of hook.split('\n').filter(line => line.includes('pending: false'))) assert.match(line, /saved: false/);
+});

@@ -3,13 +3,13 @@ export function createRoutineCompletionQueue<Intent>(options: {
   capture: (date: string) => Intent;
   save: (intent: Intent) => Promise<void>;
   isCurrent: () => boolean;
-  publish: (state: { pending: boolean; error: string }) => void;
+  publish: (state: { pending: boolean; error: string; saved: boolean }) => void;
 }) {
   type Entry = { date: string; captured?: { intent: Intent }; state: 'waiting' | 'pending' | 'done'; error: string };
   const entries = new Map<string, Entry>();
   const message = (error: unknown) => error instanceof Error ? error.message : '일일 학습 기록을 저장하지 못했어요.';
   const publish = () => {
-    if (options.isCurrent()) options.publish({ pending: [...entries.values()].some(entry => entry.state === 'pending'), error: [...entries.values()].find(entry => entry.error)?.error || '' });
+    if (options.isCurrent()) options.publish({ saved: entries.size > 0 && [...entries.values()].every(entry => entry.state === 'done'), pending: [...entries.values()].some(entry => entry.state === 'pending'), error: [...entries.values()].find(entry => entry.error)?.error || '' });
   };
   const run = async (entry: Entry) => {
     if (!options.isCurrent() || entry.state !== 'waiting') return;
