@@ -18,7 +18,7 @@ const require = createRequire(import.meta.url);
 const own = (file: string) => resolve('scripts/japanese-preview', file);
 async function compile(source: string, globals: Record<string, unknown> = {}, react: unknown = React) {
   const built = await build({ stdin: { contents: source, resolveDir: process.cwd(), loader: 'tsx' },
-    bundle: true, write: false, platform: 'browser', format: 'cjs', target: 'es2022', jsx: 'automatic',
+    bundle: true, write: false, loader: { '.css': 'empty', '.module.css': 'empty' }, platform: 'browser', format: 'cjs', target: 'es2022', jsx: 'automatic',
     jsxImportSource: 'qa-preview-jsx', define: previewDefines(), inject: [own('runtime.ts'), own('asset-request.ts'), own('location-query.ts')],
     external: ['react', 'react/jsx-runtime'], plugins: [{ name: 'reference-test-ports', setup(builder) {
       builder.onResolve({ filter: /^qa-preview-jsx\/jsx-runtime$/ }, () => ({ path: own('jsx-runtime.ts') }));
@@ -50,6 +50,7 @@ function hooks() {
     useRef(initial: unknown) { const state = slot(); state.value ??= { current: initial }; return state.value; },
     useMemo(factory: () => unknown) { slot(); return factory(); },
     useCallback(callback: unknown) { slot(); return callback; },
+    useSyncExternalStore(_subscribe: unknown, snapshot: () => unknown) { slot(); return snapshot(); },
     useEffect(effect: () => void | (() => void), deps: unknown[]) {
       const state = slot();
       if (!state.initialized || deps.some((value, index) => !Object.is(value, state.deps?.[index]))) {
@@ -58,7 +59,12 @@ function hooks() {
       }
     },
   };
-  return { api, render(component: () => Element) { cursor = 0; const tree = component(); while (effects.length) effects.shift()!(); return tree; } };
+  return { api, render(component: () => Element) { cursor = 0; let tree = component();
+    // Resolve the actual Suspense/query wrappers before exercising page controls.
+    while (tree.type === React.Suspense || typeof tree.type === 'function') {
+      tree = tree.type === React.Suspense ? tree.props.children as Element : (tree.type as (props: Record<string, unknown>) => Element)(tree.props);
+    }
+    while (effects.length) effects.shift()!(); return tree; } };
 }
 function nodes(node: ReactNode): Element[] {
   if (Array.isArray(node)) return node.flatMap(nodes);
@@ -176,7 +182,7 @@ test('actual grammar component can fail one memory write, show an error, retry t
   const window = { addEventListener() {}, removeEventListener() {} };
   const document = { documentElement: { dataset: {} }, addEventListener() {}, removeEventListener() {} };
   const compiled = await compile(`export { default as Component } from './app/language/grammar/page';
-    export { qaLocalStorage as store, seedSyntheticOwner } from './scripts/japanese-preview/runtime';`, { window, document }, state.api);
+    export { qaLocalStorage as store, seedSyntheticOwner } from './scripts/japanese-preview/runtime';`, { window, document, location: { hash: '#/language/grammar' } }, state.api);
   const Component = compiled.Component as () => Element;
   const store = compiled.store as PreviewMemoryStorage;
   (compiled.seedSyntheticOwner as () => void)();
@@ -212,7 +218,7 @@ test('actual grammar answer survives history-only failure while both daily keys 
   const document = { documentElement: { dataset: {} }, addEventListener() {}, removeEventListener() {} };
   const compiled = await compile(`export { default as Component } from './app/language/grammar/page';
     export { default as Notice } from './components/language/DailyRoutineSaveNotice';
-    export { qaLocalStorage as store, seedSyntheticOwner } from './scripts/japanese-preview/runtime';`, { window, document }, state.api);
+    export { qaLocalStorage as store, seedSyntheticOwner } from './scripts/japanese-preview/runtime';`, { window, document, location: { hash: '#/language/grammar' } }, state.api);
   const Component = compiled.Component as () => Element;
   const Notice = compiled.Notice as (props: Record<string, unknown>) => Element;
   const store = compiled.store as PreviewMemoryStorage;

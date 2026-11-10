@@ -17,3 +17,8 @@ export function usePathname() {
 export function useRouter() {
   return { push(href: string) { location.hash = previewHash(href); } };
 }
+
+/** Query updates follow the validated, opaque preview hash only. */
+export function useSearchParams() {
+  return readPreviewLocation(useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)).query;
+}

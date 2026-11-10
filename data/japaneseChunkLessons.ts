@@ -1,3 +1,5 @@
+import { JAPANESE_GRAMMAR_FOUNDATION_CHUNKS } from './japaneseGrammarFoundationChunks.ts';
+import { JAPANESE_GRAMMAR_EXPANSION_CHUNKS } from './japaneseGrammarExpansionChunks.ts';
 import { JAPANESE_CORE_CHUNK_LESSONS } from './japaneseCoreChunkLessons.ts';
 import { JAPANESE_READING_CHUNK_LESSONS } from './japaneseReadingChunkLessons.ts';
 import { JAPANESE_WORK_CHUNK_LESSONS } from './japaneseWorkChunkLessons.ts';
@@ -21,6 +23,12 @@ export const JAPANESE_CHUNK_LESSONS: JapaneseChunkLesson[] = [
   ...JAPANESE_TRAVEL_CHUNK_LESSONS,
 ];
 
+/** Grammar reference practice has its own stable IDs; existing 82 lesson IDs remain unchanged. */
+export const JAPANESE_GRAMMAR_CHUNK_LESSONS: JapaneseChunkLesson[] = [
+  ...JAPANESE_GRAMMAR_FOUNDATION_CHUNKS, ...JAPANESE_GRAMMAR_EXPANSION_CHUNKS,
+];
+export const ALL_JAPANESE_CHUNK_LESSONS = [...JAPANESE_CHUNK_LESSONS, ...JAPANESE_GRAMMAR_CHUNK_LESSONS];
+
 export function getChunkLesson(id: string): JapaneseChunkLesson | undefined {
-  return JAPANESE_CHUNK_LESSONS.find(lesson => lesson.lessonId === id);
+  return ALL_JAPANESE_CHUNK_LESSONS.find(lesson => lesson.lessonId === id);
 }

@@ -1,6 +1,9 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import JapaneseChunkPractice from "@/components/language/JapaneseChunkPractice";
+import { getChunkLesson } from "@/data/japaneseChunkLessons";
 import WorkWritingPractice from "@/components/language/WorkWritingPractice";
 import GrammarTravelConsolidation from "@/components/language/GrammarTravelConsolidation";
 import GrammarConsolidation from "@/components/language/GrammarConsolidation";
@@ -30,8 +33,19 @@ function normalizeChoice(choice: string | { text: string; reading?: string; ruby
 }
 
 export default function GrammarPage() {
+  return <Suspense fallback={<p role="status">문법 학습을 준비하고 있어요.</p>}><GrammarRoute /></Suspense>;
+}
+
+function GrammarRoute() {
+  const requestedLessonId = useSearchParams().get("lesson");
+  // A new deep link (including Back/Forward) owns a fresh practice session.
+  return <GrammarPageContent key={requestedLessonId ?? "default"} requestedLessonId={requestedLessonId} />;
+}
+
+function GrammarPageContent({ requestedLessonId }: { requestedLessonId: string | null }) {
   const routine = useDailyRoutineCompletion("grammar");
   const audio = useLearningAudio();
+  const [chunkLessonId, setChunkLessonId] = useState<string | null>(null);
   const [pinnedLessonId, setPinnedLessonId] = useState<string | null>(null);
   const [lessonId, setLessonId] = useState("desu");
   const [stage, setStage] = useState<0 | 1 | 2>(0);
@@ -45,6 +59,14 @@ export default function GrammarPage() {
   const [grammarProgress, setGrammarProgress] = useState<GrammarProgressItem[]>([]);
 
 
+
+  useEffect(() => {
+    const requested = requestedLessonId;
+    if (requested && GRAMMAR_LESSONS.some(lesson => lesson.id === requested)) {
+      setLevelFilter("all");
+      setLessonId(requested);
+    }
+  }, [requestedLessonId]);
 
   useEffect(() => {
     try {
@@ -118,6 +140,13 @@ export default function GrammarPage() {
   };
 
   const handleSpeak = (text: string) => { void audio.play(text); };
+
+  const chunkLesson = chunkLessonId ? getChunkLesson(`grammar:${chunkLessonId}`) : undefined;
+  if (chunkLesson) return <section style={{ maxWidth: 900, margin: "0 auto", padding: "16px 12px" }}>
+    <h1>{GRAMMAR_LESSONS.find(lesson => lesson.id === chunkLessonId)?.title} · 표현 조각 학습</h1>
+    <p>문법 참고 문제의 점수와 별도로 연습해요. 틀리거나 도움받은 문제는 표현 조각 보충복습에 모여요.</p>
+    <JapaneseChunkPractice key={chunkLesson.lessonId} lesson={chunkLesson} closeLabel="닫고 문법으로 돌아가기" onClose={() => setChunkLessonId(null)} />
+  </section>;
 
   return (
     <section style={{ maxWidth: 900, margin: "0 auto", padding: "16px 12px" }}>
@@ -223,6 +252,8 @@ export default function GrammarPage() {
                 <span style={{ border: "1px solid #dbeafe", borderRadius: "999px", padding: "4px 8px", background: "#f8fbff" }}>{progressText}</span>
                 <span style={{ border: "1px solid #dbeafe", borderRadius: "999px", padding: "4px 8px", background: "#f8fbff" }}>{recentText}</span>
               </div>
+              <button type="button" className="btn" style={actionStyle} onClick={() => { audio.stop(); setChunkLessonId(lesson.id); }}>짧은 표현부터 조각으로 배우기</button>
+              <p className="muted">짧은 표현 → 조각별 뜻 → 바꾼 예문 → 듣기·선택 문제 → 나중 복습</p>
               {stage === 0 && <>
               {GRAMMAR_WRITING_PRACTICE[lesson.id] && <div style={{padding:12,background:'#f8fafc',borderRadius:10}}><strong>이런 상황에 써요</strong><p>{GRAMMAR_WRITING_PRACTICE[lesson.id].context}</p><p>먼저 익힐 말: {GRAMMAR_WRITING_PRACTICE[lesson.id].words}</p></div>}
               <div style={{ fontSize: "14px", fontWeight: 700, color: "#1e3a8a" }}>핵심 패턴: {lesson.pattern}</div>

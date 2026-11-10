@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { JAPANESE_CHUNK_LESSONS, getChunkLesson } from '@/data/japaneseChunkLessons';
+import { ALL_JAPANESE_CHUNK_LESSONS as JAPANESE_CHUNK_LESSONS, getChunkLesson } from '@/data/japaneseChunkLessons';
 import { chunkReviewItems, type ChunkReviewState } from '@/utils/japaneseChunkReview';
 import { CHUNK_TRACK_LABELS, chunkLessonInfo, type ChunkTrack } from '@/utils/japaneseChunkCatalog';
 import { useChunkReview } from './useChunkReview';

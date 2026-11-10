@@ -2,7 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "git": {
     "deploymentEnabled": {
-      "agent/yeoni-cloud-browser-qa-20261027": false
+      "agent/yeoni-cloud-browser-qa-20261027": false,
+      "agent/yeoni-japanese-ci-20261110": false
     }
   }
 }

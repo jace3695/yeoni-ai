@@ -163,7 +163,7 @@ function workspace(initial = review.emptyChunkReview()) {
 }
 
 test('workspace has separate due/all/free views, current lesson titles and purposes, empty states and non-destructive unknown content', () => {
-  const empty = workspace(); assert.match(empty.html(), /아직 저장된 보충복습 문제가 없어요/); empty.click('자유 재연습'); assert.match(empty.html(), new RegExp(`선택한 범위 ${data.JAPANESE_CHUNK_LESSONS.length}단원`));
+  const empty = workspace(); assert.match(empty.html(), /아직 저장된 보충복습 문제가 없어요/); empty.click('자유 재연습'); assert.match(empty.html(), new RegExp(`선택한 범위 ${data.ALL_JAPANESE_CHUNK_LESSONS.length}단원`));
   for (const lesson of data.JAPANESE_CHUNK_LESSONS) assert.ok(catalog.chunkLessonInfo(lesson.lessonId).track);
   empty.click('여행 표현'); assert.match(empty.html(), /여행/);
   const unknown = review.rememberChunkAnswer(seed(), { lessonId: 'removed-unit', questionId: 'removed-question', attemptId: 'gone', correct: false, neededHelp: false, mode: 'choice' }, new Date('2020-01-01T00:00:00Z'));
