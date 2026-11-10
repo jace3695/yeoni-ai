@@ -2,11 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-test('automatic Vercel deployment suppression is limited to the exact unpublished QA branch', () => {
+test('automatic Vercel deployment suppression is limited to the two exact unpublished QA branches', () => {
   const config = JSON.parse(readFileSync('vercel.json', 'utf8'));
   assert.deepEqual(config, {
     $schema: 'https://openapi.vercel.sh/vercel.json',
-    git: { deploymentEnabled: { 'agent/yeoni-cloud-browser-qa-20261027': false } },
+    git: { deploymentEnabled: {
+      'agent/yeoni-cloud-browser-qa-20261027': false,
+      'agent/yeoni-japanese-ci-20261110': false,
+    } },
   });
   // Official contract: unspecified branches retain their existing/default enabled behavior.
   for (const other of ['main', 'agent/fitness-record-priority', 'agent/yeoni-cat-animation-poc', 'agent/drawing-simple']) {
