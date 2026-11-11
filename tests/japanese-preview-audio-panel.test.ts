@@ -9,6 +9,7 @@ import ts from 'typescript';
 import * as audio from '../scripts/japanese-preview/local-audio-probe.ts';
 import type { LocalSpeechPort, ProbeUtterance, ProbeVoice } from '../scripts/japanese-preview/local-audio-probe.ts';
 import * as navigation from '../scripts/japanese-preview/navigation.ts';
+import { ALL_JAPANESE_CHUNK_LESSONS } from '../data/japaneseChunkLessons.ts';
 
 type Element = ReactElement<Record<string, unknown>>;
 const require = createRequire(import.meta.url);
@@ -59,7 +60,7 @@ function label(node: ReactNode): string {
 
 /** Real entry + panel TSX handlers and effects; native synthesis is replaced by
  * an explicit fake port. This is silent VM evidence, not browser/audio QA. */
-function panel() {
+function panel(hash = '#/language/qa-catalog') {
   const parentHooks = hooks(), childHooks = hooks();
   const local: ProbeVoice = { name: 'Synthetic Japanese', voiceURI: 'urn:qa:ja', lang: 'ja-JP', localService: true, default: true };
   const submitted: ProbeUtterance[] = [], voiceListeners = new Set<() => void>();
@@ -85,12 +86,12 @@ function panel() {
     react: parentHooks.api, 'react-dom/client': { createRoot: () => ({ render: (element: Element) => { root = element; } }) },
     '../../data/curriculum': { CURRICULUM: [] }, '../../data/japaneseLevels': { isJapaneseLevel: () => false },
     './LocalAudioProbe': ProbeMarker, './catalog': { PREVIEW_CURRICULUM_CATALOG: [], PREVIEW_READING_CATALOG: [], PREVIEW_CHUNK_CATALOG: [] },
-    '../../data/japaneseReadingLessons': {}, '../../data/japaneseChunkLessons': { JAPANESE_CHUNK_LESSONS: [] },
+    '../../data/japaneseReadingLessons': {}, '../../data/japaneseChunkLessons': { ALL_JAPANESE_CHUNK_LESSONS },
     '../../utils/japaneseLevelJourney': {}, '../../utils/japaneseChunkReview': {}, './navigation': navigation,
     './runtime': { assertOpaquePreviewOrigin: (origin: string) => assert.equal(origin, 'null'), seedSyntheticOwner() {} },
   };
   for (const name of ['../../components/language/LanguageShell', '../../app/components/HubBottomNav', '../../app/language/page', '../../app/language/learn/page', '../../app/language/progress/page', '../../app/language/start/page', '../../app/language/calendar/page', '../../components/language/LevelLearningWorkspace', '../../components/language/FocusedLesson', '../../components/language/JapaneseChunkPractice', '../../components/language/ChunkReviewWorkspace', './PreviewCatalog', './SessionOptions', '../../app/language/kana/page', '../../app/language/words/page', '../../app/language/grammar/page', '../../app/language/sentences/page', '../../app/language/review/page', './DailyRecordProbe']) imports[name] = () => null;
-  compile('../scripts/japanese-preview/entry.tsx', imports, { window, location: { hash: '#/language/qa-catalog' }, document: { getElementById: () => ({}) } });
+  compile('../scripts/japanese-preview/entry.tsx', imports, { window, location: { hash }, document: { getElementById: () => ({}) } });
   assert.ok(root);
   const Parent = root.type as () => Element;
   const Child = compile('../scripts/japanese-preview/LocalAudioProbe.tsx', {
@@ -181,5 +182,23 @@ test('hidden document cancels pending or started probe, visible does not, and un
     assert.match(flow.html(), /ended/); assert.equal(flow.submitted.length, 2);
     flow.unmount(); assert.equal(flow.visibilityListeners, 0);
     flow.visibility(true); assert.equal(flow.cancels, 1);
+  }
+});
+
+
+test('entry adapter binds the real original and expanded chunk lessons without starting audio', () => {
+  for (const lessonId of ['f01', 'middle-core-01', 'middle-core-02', 'middle-core-03', 'upper-core-01', 'upper-core-02', 'upper-core-03']) {
+    const lesson = ALL_JAPANESE_CHUNK_LESSONS.find(item => item.lessonId === lessonId);
+    assert.ok(lesson, lessonId);
+    const flow = panel(`#/language/qa-chunks?lesson=${lessonId}`);
+    try {
+      const practices = nodes(flow.render().parent).filter(node => node.props.lesson === lesson);
+      assert.equal(practices.length, 1, lessonId);
+      assert.equal(practices[0].props.closeLabel, '닫고 전체 단원 목차로');
+      assert.equal(flow.submitted.length, 0);
+      assert.equal(flow.button().props.disabled, true);
+    } finally {
+      flow.unmount();
+    }
   }
 });
