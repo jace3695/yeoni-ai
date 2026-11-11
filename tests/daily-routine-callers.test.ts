@@ -228,7 +228,7 @@ test('fast completion still publishes pending then explicit saved; failure recov
   fail = false; queue.retry(); await flush(); assert.equal(states.at(-1)?.saved, true);
 });
 
-test('rendered notice keeps the same static prefix and native button before every dynamic status', async () => {
+test('rendered notice preserves retry geometry and hides only the obsolete successful-save warning', async () => {
   const React = await import('react');
   const jsxRuntime = await import('react/jsx-runtime');
   const { renderToStaticMarkup } = await import('react-dom/server');
@@ -246,19 +246,28 @@ test('rendered notice keeps the same static prefix and native button before ever
     { pending: true, saved: false, error: '' },
     { pending: false, saved: false, error: '다시 실패' },
     { pending: false, saved: true, error: '' },
+    { pending: true, saved: true, error: '' },
+    { pending: false, saved: true, error: 'new failure takes priority' },
   ];
   let prefix = '';
   for (const state of cases) {
     const tree = Notice({ ...state, retry })!;
     const children = (tree.props as { children: React.ReactElement[] }).children;
     assert.deepEqual(Array.from(children, child => child.type), ['p', 'p', 'button', 'p']);
+    const completed = state.saved && !state.pending && !state.error;
+    const warning = children[0].props as { 'aria-hidden'?: boolean; style: React.CSSProperties; hidden?: boolean };
+    assert.equal(warning['aria-hidden'], completed || undefined);
+    assert.equal(warning.style.visibility, completed ? 'hidden' : 'visible');
+    assert.equal(warning.hidden, undefined, 'warning keeps its layout space so the retry button does not jump');
     const button = children[2].props as { disabled: boolean; onClick: () => void };
     assert.equal(button.disabled, state.pending || state.saved);
     const before = retries; button.onClick(); assert.equal(retries, before + (button.disabled ? 0 : 1));
     const html = renderToStaticMarkup(tree);
-    const currentPrefix = html.split('<p role="status"')[0].replace(' disabled=""', '');
+    const currentPrefix = html.split('<p role="status"')[0].replace(' disabled=""', '').replace(' aria-hidden="true"', '').replace('visibility:hidden', 'visibility:visible');
     if (prefix) assert.equal(currentPrefix, prefix); else prefix = currentPrefix;
     assert.match(html, /aria-live="polite"/);
+    if (completed) assert.match(html, /이 기기에 저장됐어요\. 서버 동기화 완료를 뜻하지는 않아요/);
+    if (state.error) assert.ok(html.includes(state.error));
   }
   const source = readFileSync('components/language/DailyRoutineSaveNotice.tsx', 'utf8');
   assert.doesNotMatch(source, /pointerEvents|pointer-events|setTimeout|onDoubleClick/);

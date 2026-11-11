@@ -11,7 +11,7 @@ test('all 51 grammar references have distinct practice and review destinations w
   assert.equal(JAPANESE_CHUNK_LESSONS.length, 82);
   assert.equal(JAPANESE_GRAMMAR_CHUNK_LESSONS.length, 51);
   assert.deepEqual(JAPANESE_GRAMMAR_CHUNK_LESSONS.map(x => x.lessonId).sort(), GRAMMAR_LESSONS.map(x => `grammar:${x.id}`).sort());
-  assert.equal(new Set(ALL_JAPANESE_CHUNK_LESSONS.map(x => x.lessonId)).size, 133);
+  assert.equal(new Set(ALL_JAPANESE_CHUNK_LESSONS.map(x => x.lessonId)).size, 139);
   const questions = ALL_JAPANESE_CHUNK_LESSONS.flatMap(x => x.questions);
   assert.equal(new Set(questions.map(x => x.id)).size, questions.length);
   for (const lesson of JAPANESE_GRAMMAR_CHUNK_LESSONS) {

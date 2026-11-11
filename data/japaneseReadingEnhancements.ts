@@ -1,3 +1,4 @@
+import { JAPANESE_COURSE_GAP_ENHANCEMENTS } from './japaneseCourseGapEnhancements.ts';
 import type { UpperLesson } from './japaneseUpperLessons.ts';
 import { JAPANESE_INTERMEDIATE_ENHANCEMENTS } from './japaneseIntermediateEnhancements.ts';
 import { JAPANESE_MECHANICAL_ENHANCEMENTS } from './japaneseMechanicalEnhancements.ts';
@@ -34,6 +35,7 @@ export const JAPANESE_READING_ENHANCEMENTS: ReadingEnhancement[] = [
   ...JAPANESE_INTERMEDIATE_ENHANCEMENTS,
   ...JAPANESE_MECHANICAL_ENHANCEMENTS,
   ...JAPANESE_UPPER_ENHANCEMENTS,
+  ...JAPANESE_COURSE_GAP_ENHANCEMENTS,
 ];
 
 export function getReadingEnhancement(lesson: Pick<UpperLesson, 'id'>): ReadingEnhancement | undefined {

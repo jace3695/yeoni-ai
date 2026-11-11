@@ -245,12 +245,13 @@ test('supervisor timeout cannot become success or expose raw output', async () =
 test('workflow differs only by two default-only private steps and dependency pin remains unchanged', async () => {
   const workflow = await readFile(new URL('../../.github/workflows/japanese-candidate-ci.yml', import.meta.url), 'utf8');
   const addition = "      - name: Verify disposable Auth and API persistence privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-auth-api/supervisor.mjs\n";
-  const browserAddition = "      - name: Verify four authenticated app flows in Chromium privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
+  const browserAddition = "      - name: Verify six authenticated app flows in Chromium privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
   assert.equal(workflow.split(browserAddition).length, 2);
   assert.ok(workflow.indexOf(addition) < workflow.indexOf(browserAddition));
   assert.ok(workflow.indexOf(browserAddition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
-  assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace(browserAddition, '')).digest('hex'), '241904839f93becc07d89ce3be920659f26f22be1840be4ac81abb2bbb914970');
+  assert.equal(workflow.split('len(tests) == 344').length, 2);
+  assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace(browserAddition, '').replace('len(tests) == 344', 'len(tests) == 343')).digest('hex'), '241904839f93becc07d89ce3be920659f26f22be1840be4ac81abb2bbb914970');
   assert.ok(workflow.indexOf('node scripts/japanese-preview/http-check.mjs') < workflow.indexOf(addition));
   assert.ok(workflow.indexOf(addition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
   const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));

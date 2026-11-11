@@ -1,16 +1,17 @@
+import { JAPANESE_COURSE_GAP_LESSONS } from './japaneseCourseGapLessons.ts';
 import { JAPANESE_READING_EXPANSION } from './japaneseContentExpansion.ts';
 import { JAPANESE_UPPER_LESSONS, type UpperLesson } from './japaneseUpperLessons.ts';
 import type { JapaneseLevel } from './japaneseLevels.ts';
 
 /** Shared catalogue for navigation and review; original lesson objects stay intact. */
-export const JAPANESE_READING_LESSONS: UpperLesson[] = [...JAPANESE_UPPER_LESSONS, ...JAPANESE_READING_EXPANSION];
+export const JAPANESE_READING_LESSONS: UpperLesson[] = [...JAPANESE_UPPER_LESSONS, ...JAPANESE_READING_EXPANSION, ...JAPANESE_COURSE_GAP_LESSONS];
 
 export function getJapaneseReadingLesson(id: string): UpperLesson | undefined {
   return JAPANESE_READING_LESSONS.find(lesson => lesson.id === id);
 }
 
 export function getReadingLessonLevel(id: string): JapaneseLevel | undefined {
-  const expansion = JAPANESE_READING_EXPANSION.find(lesson => lesson.id === id);
+  const expansion = [...JAPANESE_READING_EXPANSION, ...JAPANESE_COURSE_GAP_LESSONS].find(lesson => lesson.id === id);
   return expansion?.level ?? (JAPANESE_UPPER_LESSONS.some(lesson => lesson.id === id) ? 'advanced' : undefined);
 }
 

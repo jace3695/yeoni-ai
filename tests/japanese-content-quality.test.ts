@@ -109,5 +109,5 @@ test('reviewed wording keeps historical help records, retired answers and manual
   assert.deepEqual(advanced.answers, before);
   assert.ok(advanced.answers['retired-q1']);
   assert.equal(dueUpperAnswers(advanced, now.getTime() + 2 * 86400000).length, 4);
-  assert.equal(JAPANESE_READING_LESSONS.length, 20);
+  assert.equal(JAPANESE_READING_LESSONS.length, 26);
 });

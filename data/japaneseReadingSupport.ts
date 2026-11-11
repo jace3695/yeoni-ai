@@ -1,3 +1,4 @@
+import { JAPANESE_COURSE_GAP_SUPPORT } from './japaneseCourseGapSupport.ts';
 import type { UpperLesson } from './japaneseUpperLessons.ts';
 
 /** Original learning scaffolds, not copied exercises or an official syllabus.
@@ -11,6 +12,7 @@ export type ReadingSupport = {
 };
 
 export const JAPANESE_READING_SUPPORT: Record<string, ReadingSupport> = {
+  ...JAPANESE_COURSE_GAP_SUPPORT,
   "upper-01": {
     "purpose": "안내의 편의 개선과 그대로인 이용 조건을 구분해요.",
     "beforeReading": "이용 방법이 편해졌다면 기한과 처리 기준도 반드시 함께 바뀔까요?",

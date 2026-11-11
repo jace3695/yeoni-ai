@@ -1,3 +1,4 @@
+import { JAPANESE_COURSE_GAP_CHUNKS } from './japaneseCourseGapChunks.ts';
 import { JAPANESE_GRAMMAR_FOUNDATION_CHUNKS } from './japaneseGrammarFoundationChunks.ts';
 import { JAPANESE_GRAMMAR_EXPANSION_CHUNKS } from './japaneseGrammarExpansionChunks.ts';
 import { JAPANESE_CORE_CHUNK_LESSONS } from './japaneseCoreChunkLessons.ts';
@@ -27,7 +28,7 @@ export const JAPANESE_CHUNK_LESSONS: JapaneseChunkLesson[] = [
 export const JAPANESE_GRAMMAR_CHUNK_LESSONS: JapaneseChunkLesson[] = [
   ...JAPANESE_GRAMMAR_FOUNDATION_CHUNKS, ...JAPANESE_GRAMMAR_EXPANSION_CHUNKS,
 ];
-export const ALL_JAPANESE_CHUNK_LESSONS = [...JAPANESE_CHUNK_LESSONS, ...JAPANESE_GRAMMAR_CHUNK_LESSONS];
+export const ALL_JAPANESE_CHUNK_LESSONS = [...JAPANESE_CHUNK_LESSONS, ...JAPANESE_GRAMMAR_CHUNK_LESSONS, ...JAPANESE_COURSE_GAP_CHUNKS];
 
 export function getChunkLesson(id: string): JapaneseChunkLesson | undefined {
   return ALL_JAPANESE_CHUNK_LESSONS.find(lesson => lesson.lessonId === id);

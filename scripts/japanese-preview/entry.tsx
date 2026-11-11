@@ -23,7 +23,7 @@ import LocalAudioProbe from './LocalAudioProbe';
 import { PREVIEW_CURRICULUM_CATALOG, PREVIEW_READING_CATALOG, PREVIEW_CHUNK_CATALOG } from './catalog';
 import ChunkReviewWorkspace from '../../components/language/ChunkReviewWorkspace';
 import { getLevelReadingLessons } from '../../data/japaneseReadingLessons';
-import { JAPANESE_CHUNK_LESSONS } from '../../data/japaneseChunkLessons';
+import { ALL_JAPANESE_CHUNK_LESSONS as JAPANESE_CHUNK_LESSONS } from '../../data/japaneseChunkLessons';
 import { LEVEL_JOURNEY_KEY, emptyLevelJourney, rememberUpperAnswer } from '../../utils/japaneseLevelJourney';
 import { CHUNK_REVIEW_KEY, emptyChunkReview, rememberChunkAnswer } from '../../utils/japaneseChunkReview';
 import { assertOpaquePreviewOrigin, qaLocalStorage, seedSyntheticOwner } from './runtime';

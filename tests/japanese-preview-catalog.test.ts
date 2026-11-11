@@ -1,3 +1,4 @@
+import { JAPANESE_COURSE_GAP_CHUNKS } from '../data/japaneseCourseGapChunks.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
@@ -15,15 +16,15 @@ import { previewHash, readPreviewLocation } from '../scripts/japanese-preview/na
 
 const numbered = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => `${prefix}${String(index + 1).padStart(2, '0')}`);
 
-test('preview catalog is an exact one-to-one view of all 62 curriculum, 20 reading and 82 chunk IDs', () => {
+test('preview catalog is an exact one-to-one view of all 62 curriculum, 26 reading and 88 non-grammar chunk IDs', () => {
   const curriculumIds = [...numbered('f', 20), ...numbered('w', 22), ...numbered('t', 20)];
-  const readingIds = [...numbered('middle-', 8), ...numbered('upper-', 6), ...numbered('upper-mech-', 6)];
+  const readingIds = [...numbered('middle-', 8), ...numbered('middle-core-', 3), ...numbered('upper-', 6), ...numbered('upper-mech-', 6), ...numbered('upper-core-', 3)];
   assert.deepEqual(PREVIEW_CURRICULUM_CATALOG.map(item => item.id), curriculumIds);
   assert.deepEqual(PREVIEW_READING_CATALOG.map(item => item.id), readingIds);
-  assert.equal(PREVIEW_CHUNK_CATALOG.length, 82);
+  assert.equal(PREVIEW_CHUNK_CATALOG.length, 88);
   assert.deepEqual(new Set(PREVIEW_CURRICULUM_CATALOG.map(item => item.id)), new Set(CURRICULUM.map(item => item.id)));
   assert.deepEqual(new Set(PREVIEW_CHUNK_CATALOG.map(item => item.id)), new Set([...curriculumIds, ...readingIds]));
-  assert.deepEqual(PREVIEW_CHUNK_CATALOG.map(item => item.id), JAPANESE_CHUNK_LESSONS.map(item => item.lessonId));
+  assert.deepEqual(PREVIEW_CHUNK_CATALOG.map(item => item.id), [...JAPANESE_CHUNK_LESSONS, ...JAPANESE_COURSE_GAP_CHUNKS].map(item => item.lessonId));
   for (const entries of [PREVIEW_CURRICULUM_CATALOG, PREVIEW_READING_CATALOG, PREVIEW_CHUNK_CATALOG]) assert.equal(new Set(entries.map(item => item.id)).size, entries.length);
 });
 
@@ -41,7 +42,7 @@ test('every catalog link resolves to its exact existing component data without g
   for (const item of PREVIEW_CHUNK_CATALOG) {
     const route = readPreviewLocation(item.href);
     assert.equal(route.pathname, '/language/qa-chunks'); assert.equal(route.query.get('lesson'), item.id);
-    assert.equal(JAPANESE_CHUNK_LESSONS.find(lesson => lesson.lessonId === item.id)?.expression, item.expression);
+    assert.equal([...JAPANESE_CHUNK_LESSONS, ...JAPANESE_COURSE_GAP_CHUNKS].find(lesson => lesson.lessonId === item.id)?.expression, item.expression);
   }
   for (const item of [...PREVIEW_CURRICULUM_CATALOG, ...PREVIEW_READING_CATALOG, ...PREVIEW_CHUNK_CATALOG]) assert.equal(previewHash(item.href.slice(1)), item.href);
   assert.equal(previewTrack('work'), 'work'); assert.equal(previewTrack('travel'), 'travel');
@@ -59,7 +60,7 @@ test('the real compiled catalog provides every ID in both native selectors and s
     assert.ok(html.includes(`value="${item.href}"`), item.href);
   }
   assert.equal((html.match(/<select/g) ?? []).length, 3);
-  assert.equal((html.match(/<option value="#/g) ?? []).length, 164);
+  assert.equal((html.match(/<option value="#/g) ?? []).length, 176);
   assert.doesNotMatch(html, /href="(?!#)|<form|<input|<textarea|<img|<iframe/);
   const workOnly = renderToStaticMarkup(createElement(cjsModule.exports.default, { track: 'work' }));
   assert.ok(workOnly.includes('href="#/language/learn?lesson=w22"'));

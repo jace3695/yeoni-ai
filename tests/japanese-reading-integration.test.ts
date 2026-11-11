@@ -9,19 +9,19 @@ import { JAPANESE_READING_SUPPORT, getReadingSupport, readingEvidenceStrategy } 
 import { splitReadingHighlights } from '../utils/japaneseReadingHighlight.ts';
 import { dueUpperAnswers, emptyLevelJourney, rememberUpperAnswer } from '../utils/japaneseLevelJourney.ts';
 
-test('20 reviewed lessons preserve all 120 question IDs and answer positions', () => {
-  assert.equal(JAPANESE_READING_LESSONS.length, 20);
-  assert.equal(JAPANESE_READING_LESSONS.flatMap(lesson => lesson.questions).length, 120);
+test('26 lessons include unchanged original 20 lessons and 120 question IDs', () => {
+  assert.equal(JAPANESE_READING_LESSONS.length, 26);
+  assert.equal(JAPANESE_READING_LESSONS.flatMap(lesson => lesson.questions).length, 156);
   // Reviewed 2026-11-09 content: middle-06/07 clarity, mechanical-02 deadline,
   // and mechanical-03 sample corrections. IDs and answer positions retain the base contract.
-  assert.equal(createHash('sha256').update(JSON.stringify(JAPANESE_READING_LESSONS)).digest('hex'), '490da50998f6c6eb191bcef874d76e92a930ad7d8280f6b5c0388bc53c0343d2');
-  assert.equal(createHash('sha256').update(JSON.stringify(JAPANESE_READING_LESSONS.map(lesson => ({ id: lesson.id, questions: lesson.questions.map(q => ({ id: q.id, answer: q.answer })) })))).digest('hex'), 'd0fdb8cf435b2d9552aa8e5393872a6d1e3a39b0438ebef037e594e4dbabd51b');
+  assert.equal(createHash('sha256').update(JSON.stringify([...JAPANESE_UPPER_LESSONS, ...JAPANESE_READING_EXPANSION])).digest('hex'), '490da50998f6c6eb191bcef874d76e92a930ad7d8280f6b5c0388bc53c0343d2');
+  assert.equal(createHash('sha256').update(JSON.stringify([...JAPANESE_UPPER_LESSONS, ...JAPANESE_READING_EXPANSION].map(lesson => ({ id: lesson.id, questions: lesson.questions.map(q => ({ id: q.id, answer: q.answer })) })))).digest('hex'), 'd0fdb8cf435b2d9552aa8e5393872a6d1e3a39b0438ebef037e594e4dbabd51b');
   for (const lesson of [...JAPANESE_UPPER_LESSONS, ...JAPANESE_READING_EXPANSION]) assert.strictEqual(getJapaneseReadingLesson(lesson.id), lesson);
   assert.equal(getLevelReadingLessons('beginner').length, 0);
-  assert.equal(getLevelReadingLessons('intermediate').length, 8);
-  assert.equal(getLevelReadingLessons('advanced').length, 12);
-  assert.equal(getLevelLegacyLessons('intermediate').length + getLevelReadingLessons('intermediate').length, 16);
-  assert.match(JAPANESE_LEVELS.intermediate.coverage, /8수업.*8단원/);
+  assert.equal(getLevelReadingLessons('intermediate').length, 11);
+  assert.equal(getLevelReadingLessons('advanced').length, 15);
+  assert.equal(getLevelLegacyLessons('intermediate').length + getLevelReadingLessons('intermediate').length, 19);
+  assert.match(JAPANESE_LEVELS.intermediate.coverage, /8수업.*11단원/);
   assert.match(JAPANESE_LEVELS.advanced.coverage, /6단원.*6단원/);
   assert.doesNotMatch(JAPANESE_LEVELS.beginner.outcomes.join(' '), /바꿔 쓰기/);
   for (const lesson of JAPANESE_READING_EXPANSION) assert.equal(getReadingLessonLevel(lesson.id), lesson.level);
@@ -31,7 +31,7 @@ test('20 reviewed lessons preserve all 120 question IDs and answer positions', (
   }
 });
 
-test('20 support sets have exactly 40 target expressions present in the passage', () => {
+test('26 support sets have exactly 52 target expressions present in the passage', () => {
   assert.deepEqual(Object.keys(JAPANESE_READING_SUPPORT).sort(), JAPANESE_READING_LESSONS.map(lesson => lesson.id).sort());
   for (const lesson of JAPANESE_READING_LESSONS) {
     const support = getReadingSupport(lesson)!;

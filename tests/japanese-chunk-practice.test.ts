@@ -1,3 +1,5 @@
+import { JAPANESE_UPPER_LESSONS } from '../data/japaneseUpperLessons.ts';
+import { JAPANESE_READING_EXPANSION } from '../data/japaneseContentExpansion.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequire } from 'node:module';
@@ -38,7 +40,7 @@ test('82 optional chunk lessons preserve 20 core and 20 reading IDs and cover 22
   assert.deepEqual(JAPANESE_WORK_CHUNK_LESSONS.map(l => l.lessonId).sort(), curriculum.CURRICULUM.filter(l => l.track === 'work').map(l => l.id).sort());
   assert.deepEqual(JAPANESE_TRAVEL_CHUNK_LESSONS.map(l => l.lessonId).sort(), curriculum.CURRICULUM.filter(l => l.track === 'travel').map(l => l.id).sort());
   assert.deepEqual(JAPANESE_CORE_CHUNK_LESSONS.map(l => l.lessonId).sort(), Array.from({ length: 20 }, (_, i) => `f${String(i + 1).padStart(2, '0')}`));
-  assert.deepEqual(JAPANESE_READING_CHUNK_LESSONS.map(l => l.lessonId).sort(), JAPANESE_READING_LESSONS.map(l => l.id).sort());
+  assert.deepEqual(JAPANESE_READING_CHUNK_LESSONS.map(l => l.lessonId).sort(), [...JAPANESE_UPPER_LESSONS, ...JAPANESE_READING_EXPANSION].map(l => l.id).sort());
   assert.equal(new Set(lessons.map(l => l.lessonId)).size, 82);
   assert.equal(new Set(lessons.flatMap(l => l.questions.map(q => q.id))).size, 246);
   for (const lesson of lessons) assert.strictEqual(getChunkLesson(lesson.lessonId), lesson);

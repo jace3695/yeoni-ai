@@ -18,8 +18,8 @@ import type { UpperLesson } from '../data/japaneseUpperLessons.ts';
 
 const require = createRequire(import.meta.url);
 
-test('20 optional comparisons and 80 scoped evidence entries preserve the lesson question contract', () => {
-  assert.equal(enhancements.JAPANESE_READING_ENHANCEMENTS.length, 20);
+test('26 optional comparisons and 104 scoped evidence entries preserve the lesson question contract', () => {
+  assert.equal(enhancements.JAPANESE_READING_ENHANCEMENTS.length, 26);
   assert.deepEqual(enhancements.JAPANESE_READING_ENHANCEMENTS.map(item => item.lessonId).sort(), JAPANESE_READING_LESSONS.map(item => item.id).sort());
   const newExamples: string[] = [];
   for (const lesson of JAPANESE_READING_LESSONS) {
@@ -45,7 +45,7 @@ test('20 optional comparisons and 80 scoped evidence entries preserve the lesson
     newExamples.push(pair.parallelSentence);
     assert.doesNotMatch(JSON.stringify(value), /TODO|TBD|녹음하세요|입력하세요|작성하세요|JLPT|합격 보장/);
   }
-  assert.equal(new Set(newExamples).size, 20);
+  assert.equal(new Set(newExamples).size, 26);
   for (const id of ['', '__proto__', 'missing', 'upper-99']) assert.equal(enhancements.getReadingEnhancement({ id }), undefined);
 });
 

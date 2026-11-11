@@ -29,7 +29,7 @@ jobs:
         run: |
           import pathlib, subprocess
           tests = sorted(str(p) for d in ['app', 'lib', 'tests'] for p in pathlib.Path(d).rglob('*.test.ts'))
-          assert len(tests) == 343, f'Unexpected test-file inventory: {len(tests)}'
+          assert len(tests) == 344, f'Unexpected test-file inventory: {len(tests)}'
           for index, target in enumerate(tests, 1):
               print(f'FILE {index}/{len(tests)} {target}', flush=True)
               subprocess.run(['node', '--experimental-strip-types', '--test', '--test-concurrency=1', '--test-reporter=tap', target], check=True, timeout=180)
@@ -77,7 +77,7 @@ jobs:
       - name: Verify disposable Auth and API persistence privately
         if: matrix.compiler == 'default'
         run: node scripts/isolated-auth-api/supervisor.mjs
-      - name: Verify four authenticated app flows in Chromium privately
+      - name: Verify six authenticated app flows in Chromium privately
         if: matrix.compiler == 'default'
         run: node scripts/isolated-chromium-smoke/supervisor.mjs
       - name: Remove disposable fixture
