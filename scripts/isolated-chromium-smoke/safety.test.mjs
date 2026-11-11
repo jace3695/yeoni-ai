@@ -1,3 +1,4 @@
+import '../qa-private-lifecycle.test.mjs';
 // Synthetic processes, reports and collection only. No browser, Auth or DB starts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -76,6 +77,8 @@ test('exact command, fixed project/source inventory, installer and ceilings stay
   assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts']);
   assert.equal(stages[0].command, 'node --test scripts/isolated-chromium-smoke/safety.test.mjs');
   assert.equal(stages[1].command, 'node node_modules/@playwright/test/cli.js install --with-deps --only-shell chromium');
+  assert.equal(stages[1].lifecycleDiagnostics, true);
+  assert.ok(stages.filter(stage => stage.lifecycleDiagnostics).every(stage => stage.id === 'stage-02'));
   assert.equal(stages[2].command, browserCommand); assert.equal(stages[2].diagnosticInventory, inventory);
   assert.deepEqual(stages.map(stage => stage.timeoutMs), [60000, 240000, 465000]);
   assert.equal(totalTimeoutMs, 775000); assert.ok(totalTimeoutMs + 5000 <= 13 * 60000);

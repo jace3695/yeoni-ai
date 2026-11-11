@@ -103,9 +103,16 @@ override, forced reinstall, extra browser or custom cache. The unmodified instal
 may use its built-in recovery across official download URLs within the same
 four-minute deadline. Playwright test retries remain zero.
 
-Safety, install and browser stages have 60, 240 and 465 second ceilings. A total
-775-second abort deadline reserves five seconds for process-group termination
-within 13 minutes. The existing 45-minute build job limit is unchanged. One worker,
+Safety, install and browser stages retain 60, 240 and 465 second budgets. Private
+preparation and finalization now share each stage budget. The first interruption
+attempts process-group TERM, then KILL after the existing five-second grace;
+the runner releases its owned capture pipes and settles failure even if a
+descendant holds them open. Repeated aborts do not renew that grace. The total
+775-second abort deadline also has an independent five-second failure fence,
+within the existing 13-minute allowance. These are runner settlement bounds,
+not proof that escaped or privileged descendants have stopped. An unresponsive
+event loop or underlying operating system is not controlled by a JavaScript timer.
+The existing 45-minute build job limit is unchanged. One worker,
 zero retries, 90-second tests, 15-second assertions/actions and 30-second navigation
 limits remain explicit. Next starts on loopback port 3000 with a 120-second ready
 limit and cannot reuse an existing server. Traces, screenshots and video are off.
@@ -125,6 +132,18 @@ partial, duplicate, malformed or oversized reports fail closed, even with exit 0
 Existing project IDs are unchanged. Public output contains fixed labels and
 validated numeric diagnostics only. A success names Chromium and fixture teardown;
 a failure leaves real-browser completion and fixture cleanup unverified.
+
+Only installer stage-02 opts into a separate `lifecycle` line. Legacy
+`stage-NN passed/failed/not-run` lines and the browser diagnostic journal schema
+are unchanged. The new line contains an allowlisted reason, bounded leader exit
+code/signal, monotonic elapsed/exit/close milliseconds, a duration-cap flag,
+leader observation, capture status, and finite TERM/KILL attempt outcomes.
+Unknown code/time is -1 and unknown signal is 0. Time fields cap at 780000 with
+`durationCapped=1` when needed. Actual leader exit and pipe closure are separate.
+It always states `processCleanup=unverified`; forced pipe release states
+`capture=abandoned`. A successful signal syscall never certifies descendant
+cleanup. No installer output, messages, stacks, paths, URLs, environment, or
+credentials are included. Missing observations are not reconstructed.
 
 The existing fixture blocks external browser origins. This is not a universal
 server-side network sandbox. No paid generation or TTS is requested by these tests.

@@ -2,6 +2,7 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runStages } from '../qa-private-orchestrator.mjs';
+import { terminationGraceMs } from '../qa-private-lifecycle.mjs';
 import { loadContext, childEnvironment } from '../isolated-auth-api/boundary.mjs';
 import { stages, totalTimeoutMs } from './plan.mjs';
 
@@ -21,18 +22,30 @@ export async function supervise({ cwd, runnerTemp, env, signal, emit = line => c
   signal?.addEventListener('abort', abort, { once: true });
   if (signal?.aborted) abort();
   const timer = setTimeout(abort, deadlineMs);
-  let failed = false;
+  let failed = false, finished = false, graceTimer;
+  let resolveFence;
+  const fence = new Promise(resolve => { resolveFence = resolve; });
+  const boundAbort = () => { graceTimer ??= setTimeout(() => resolveFence(1), terminationGraceMs); };
+  controller.signal.addEventListener('abort', boundAbort, { once: true });
+  if (controller.signal.aborted) boundAbort();
   try {
     for (const stage of stages) {
       if (failed || controller.signal.aborted) { failed = true; emit(`${stage.id} not-run`); continue; }
-      const code = await run([stage], { cwd, runnerTemp, env, emit, signal: controller.signal, timeoutMs: stage.timeoutMs });
+      const code = await Promise.race([Promise.resolve().then(() => run([stage], {
+        cwd, runnerTemp, env, emit: line => { if (!finished) emit(line); },
+        signal: controller.signal, timeoutMs: stage.timeoutMs,
+      })), fence]);
       if (code !== 0 || controller.signal.aborted) failed = true;
     }
     if (failed || controller.signal.aborted) { emit(failedLine); return 1; }
     emit('chromium-app-smoke passed tests=11 browser=chromium realBrowser=true fixtureCleanup=passed');
     return 0;
   } catch { emit(failedLine); return 1; }
-  finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
+  finally {
+    finished = true; clearTimeout(timer); clearTimeout(graceTimer);
+    controller.signal.removeEventListener('abort', boundAbort);
+    signal?.removeEventListener('abort', abort);
+  }
 }
 
 async function main() {
