@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { Script } from 'node:vm';
+import { resolve } from 'node:path';
+import ts from 'typescript';
 import { build } from 'esbuild';
 import { buildJapanesePreview, forbiddenPreviewInput, decodePreviewLanguageIcon, languageIconPath, reviewedLanguageIconHash } from '../scripts/japanese-preview/build.mjs';
 import { japanesePreviewEnabled, japanesePreviewResponse } from '../lib/japanese-preview-response.ts';
@@ -243,4 +245,34 @@ test('only reviewed original language icon pixels are embedded, without resampli
   const original = await (await import('sharp')).default(source).ensureAlpha().raw().toBuffer();
   assert.deepEqual(Buffer.from(icon.pixels, 'base64'), original);
   await assert.rejects(decodePreviewLanguageIcon(Buffer.from('other')), /review required/);
+});
+
+test('standalone preview image keeps real PNG types before Next generates next-env', async () => {
+  const imagePath = resolve('scripts/japanese-preview/image.tsx');
+  const source = await readFile(imagePath, 'utf8');
+  const probePath = resolve('scripts/japanese-preview/__image_type_probe__.ts');
+  const config = ts.readConfigFile('tsconfig.json', ts.sys.readFile);
+  assert.equal(config.error, undefined);
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, process.cwd());
+  assert.deepEqual(parsed.errors, []);
+  const options = { ...parsed.options, incremental: false, types: [] };
+  function diagnostics(imageSource: string, probe: string) {
+    const host = ts.createCompilerHost(options);
+    const originalRead = host.readFile;
+    host.readFile = path => path === imagePath ? imageSource : path === probePath ? probe : originalRead(path);
+    const program = ts.createProgram([imagePath, probePath], options, host);
+    assert.ok(!program.getSourceFiles().some(file => /(?:next-env\.d\.ts|[\\/]\.next[\\/])/.test(file.fileName)));
+    return ts.getPreEmitDiagnostics(program).map(diagnostic => ({
+      code: diagnostic.code,
+      file: diagnostic.file?.fileName,
+      message: ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+    }));
+  }
+  const valid = "import icon from '../../public/app-icons/language.png'; const width: number = icon.width; void width;";
+  assert.deepEqual(diagnostics(source, valid), []);
+  const before = source.replace(/^\/\/\/ <reference types="next\/image-types\/global" \/>\r?\n/m, '');
+  const missingTypes = diagnostics(before, valid);
+  assert.ok(missingTypes.some(diagnostic => diagnostic.code === 2307 && diagnostic.file === imagePath), JSON.stringify(missingTypes));
+  const invalid = diagnostics(source, valid.replace('width: number', 'width: string'));
+  assert.deepEqual(invalid.map(diagnostic => diagnostic.code), [2322]);
 });

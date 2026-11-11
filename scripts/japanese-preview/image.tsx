@@ -1,3 +1,5 @@
+/// <reference types="next/image-types/global" />
+// This standalone build is type-checked before Next generates next-env.d.ts.
 import { useEffect, useRef } from 'react';
 import languageIcon from '../../public/app-icons/language.png';
 
