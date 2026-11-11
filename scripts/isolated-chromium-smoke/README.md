@@ -123,6 +123,19 @@ supervisor handoff is labeled supervisor/unexpected instead of admission failure
 These categories do not include raw environment, paths, messages or exceptions,
 and do not invent a stage result, browser version or successful launch.
 
+A metadata rejection adds one numeric diagnostic line after the lifecycle line:
+`stage-02 metadata path=N check=N`. Fixed path indices 0 through 7 identify, in
+order, `/`, `/opt`, `/opt/google`, `/opt/google/chrome`, the fixed Chrome binary,
+`/usr`, `/usr/lib` and `/usr/lib/os-release`; 8 is the unknown sentinel.
+Check IDs are 1 metadata read, 2 root owner, 3 root group, 4 no group/world write,
+5 not a symlink, 6 canonical-path read, 7 canonical-path equality, 8 expected file
+or directory kind, 9 executable bits and 10 bounded file size; 0 is unknown.
+Only these closed identities are emitted, never metadata values, paths or errors.
+The line appears only for a metadata preparation failure, not success, timeout
+or cancellation. Every existing acceptance predicate and failure summary remains
+unchanged. Diagnostics do not authorize writable paths, permission repair or a
+browser launch, and official image inventory is not executable-integrity proof.
+
 Read-only metadata checks require real root-owned, non-group/world-writable parent
 folders, the regular executable and OS-release file. A direct fixed `--version`
 child uses only fixed locale/PATH values, NODE_ENV=production and the unchanged a0 lifecycle helper.

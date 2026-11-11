@@ -337,3 +337,74 @@ test('actual main and fixture entry source distinguishes safe defaults and every
   assert.equal(report.passed, true); assert.ok(report.cases >= 30);
   assert.equal(report.actualIo, false); assert.equal(report.actualChildOrBrowser, false);
 });
+
+test('metadata failures expose only the fixed path and check identities without changing any gate', async t => {
+  const paths = ['/', '/opt', '/opt/google', '/opt/google/chrome', chromePath, '/usr', '/usr/lib', '/usr/lib/os-release'];
+  const faults = [
+    { check: 1, fault: 'read' }, { check: 2, field: 'uid', value: 1 },
+    { check: 3, field: 'gid', value: 1 }, { check: 4, field: 'mode', value: 0o777 },
+    { check: 5, field: 'isSymbolicLink', value: () => true },
+    { check: 6, fault: 'canonical-read' }, { check: 7, fault: 'canonical-match' },
+    { check: 8, fault: 'kind' },
+  ];
+  for (const [index, target] of paths.entries()) {
+    const applicable = [...faults];
+    if (index === 4) applicable.push({ check: 9, field: 'mode', value: 0o100644 });
+    if (index === 4 || index === 7) applicable.push({ check: 10, field: 'size', value: 0 });
+    if (index === 7) applicable.push({ check: 10, field: 'size', value: 4097 });
+    for (const fault of applicable) {
+      const state = fixture(); const baseMetadata = state.options.metadata;
+      state.options.metadata = async path => {
+        const info = { ...await baseMetadata(path) };
+        if (path !== target) return info;
+        if (fault.fault === 'read') throw new Error(canary);
+        if (fault.fault === 'kind') { info.isFile = () => false; info.isDirectory = () => false; }
+        if (fault.field) info[fault.field] = fault.value;
+        return info;
+      };
+      state.options.canonical = async path => {
+        if (path === target && fault.fault === 'canonical-read') throw new Error(canary);
+        return path === target && fault.fault === 'canonical-match' ? canary : path;
+      };
+      state.options.openFile = async () => { assert.fail('OS file must not open after metadata rejection'); };
+      assert.equal(await checkSystemChrome(state.options), 1);
+      assert.equal(state.launches.length, 0);
+      assert.deepEqual(state.reads, paths.slice(0, index + 1));
+      assert.equal(state.output.length, 4);
+      assert.equal(state.output[1], `stage-02 metadata path=${index} check=${fault.check}`);
+      assert.equal(state.output[2], 'stage-02 readiness browser=system-google-chrome status=failed reason=metadata');
+      assert.equal(state.output[3], 'stage-02 failed'); safeOutput(state.output);
+    }
+  }
+  // Exceptions from hostile metadata properties also disclose only the fixed check.
+  for (const [field, check] of [['uid', 2], ['gid', 3], ['mode', 4], ['isSymbolicLink', 5]]) {
+    const state = fixture(); const baseMetadata = state.options.metadata;
+    state.options.metadata = async path => {
+      const info = { ...await baseMetadata(path) };
+      Object.defineProperty(info, field, { get: () => { throw new Error(canary); } }); return info;
+    };
+    assert.equal(await checkSystemChrome(state.options), 1);
+    assert.equal(state.output[1], `stage-02 metadata path=0 check=${check}`);
+    assert.equal(state.launches.length, 0); safeOutput(state.output);
+  }
+  const accepted = fixture(); assert.equal(await checkSystemChrome(accepted.options), 0);
+  assert.ok(!accepted.output.some(line => line.startsWith('stage-02 metadata ')));
+  const cancelled = new AbortController(); cancelled.abort();
+  const state = fixture({ signal: cancelled.signal });
+  assert.equal(await checkSystemChrome(state.options), 1);
+  assert.ok(!state.output.some(line => line.startsWith('stage-02 metadata ')));
+  assert.equal(state.launches.length, 0); safeOutput(state.output);
+  const pending = fixture({ timeoutMs: 10, metadata: () => new Promise(() => {}) });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const timed = checkSystemChrome(pending.options);
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(10); t.mock.timers.tick(5000);
+  assert.equal(await timed, 1); t.mock.timers.reset();
+  assert.ok(!pending.output.some(line => line.startsWith('stage-02 metadata ')));
+  assert.equal(pending.launches.length, 0); safeOutput(pending.output);
+  for (const override of [{ env: {} }, { openFile: async () => { throw new Error(canary); } },
+    { launch: versionChild(Buffer.from(canary)) }]) {
+    const other = fixture(override); assert.equal(await checkSystemChrome(other.options), 1);
+    assert.ok(!other.output.some(line => line.startsWith('stage-02 metadata '))); safeOutput(other.output);
+  }
+});

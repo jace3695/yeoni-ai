@@ -63,6 +63,8 @@ export async function checkSystemChrome({ env, signal, timeoutMs = 240_000,
   emit = line => console.log(line), platform = process.platform, arch = process.arch,
   metadata = lstat, canonical = realpath, openFile = open, launch = spawn }) {
   let category = 'context', versionVerified = false;
+  // Diagnostic identities only; never emit filesystem values or error content.
+  let metadataIndex = 8, metadataCheck = 0;
   // Only the unchanged lifecycle control methods used by this probe.
   /** @typedef {{ readonly finished: boolean, check: () => void,
    * watch: (child: import('node:child_process').ChildProcess) => Promise<number>,
@@ -72,13 +74,24 @@ export async function checkSystemChrome({ env, signal, timeoutMs = 240_000,
     requireTrue(platform === 'linux' && arch === 'x64');
     requireTrue(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 240_000);
     category = 'metadata';
-    for (const path of metadataPaths) {
+    for (const [index, path] of metadataPaths.entries()) {
+      metadataIndex = index; metadataCheck = 1;
       const info = await metadata(path); control.check();
-      requireTrue(info.uid === 0 && info.gid === 0 && (info.mode & 0o022) === 0 && !info.isSymbolicLink());
-      requireTrue(await canonical(path) === path); control.check();
-      if (path === chromePath) requireTrue(info.isFile() && (info.mode & 0o111) === 0o111 && info.size > 0);
-      else if (path === '/usr/lib/os-release') requireTrue(info.isFile() && info.size > 0 && info.size <= 4096);
-      else requireTrue(info.isDirectory());
+      metadataCheck = 2; requireTrue(info.uid === 0);
+      metadataCheck = 3; requireTrue(info.gid === 0);
+      metadataCheck = 4; requireTrue((info.mode & 0o022) === 0);
+      metadataCheck = 5; requireTrue(!info.isSymbolicLink());
+      metadataCheck = 6; const canonicalPath = await canonical(path);
+      metadataCheck = 7; requireTrue(canonicalPath === path); control.check();
+      metadataCheck = 8;
+      if (path === chromePath) {
+        requireTrue(info.isFile());
+        metadataCheck = 9; requireTrue((info.mode & 0o111) === 0o111);
+        metadataCheck = 10; requireTrue(info.size > 0);
+      } else if (path === '/usr/lib/os-release') {
+        requireTrue(info.isFile());
+        metadataCheck = 10; requireTrue(info.size > 0 && info.size <= 4096);
+      } else requireTrue(info.isDirectory());
     }
     category = 'os';
     const file = await openFile('/usr/lib/os-release', constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -120,6 +133,11 @@ export async function checkSystemChrome({ env, signal, timeoutMs = 240_000,
     && result.observation.capture === 'drained';
   if (result.observation.reason === 'timeout' || result.observation.reason === 'cancelled') category = result.observation.reason;
   emit(lifecycleLine('stage-02', result.observation));
+  if (!passed && category === 'metadata' && result.observation.reason === 'prepare-error') {
+    const pathCode = [0, 1, 2, 3, 4, 5, 6, 7].includes(metadataIndex) ? metadataIndex : 8;
+    const checkCode = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(metadataCheck) ? metadataCheck : 0;
+    emit(`stage-02 metadata path=${pathCode} check=${checkCode}`);
+  }
   // Fixed categories/numbers only. No raw output, paths, environment or exceptions.
   emit(passed
     ? 'stage-02 readiness browser=system-google-chrome image=ubuntu24 imageVersion=20261101-360-1 major=156 minor=0 build=8078 patch=79 status=passed'
