@@ -93,7 +93,7 @@ test('CI preserves private manual lanes and the exact full suite commands withou
     // command change requires renewed review, not silently relaxed substring checks.
     const expected = {
       'focused-components': '403299fa2f8a5dcb23e81b94f338c7f1bb540e53a3852f8c707e0ee1db994868',
-      browser: '123bd17406219596241748193897dfc5f1cb5bf6569aa5086b9cba7fd9bc8119',
+      browser: '08b187c8d5cd05591c62b612629dd15780e511fa33ece3d9ea35a2c2814ba31b',
     };
     for (const [lane, digest] of Object.entries(expected)) {
       require(createHash('sha256').update(JSON.stringify(lanes[lane])).digest('hex') === digest, 'Reviewed command order, content and cleanup flags are preserved');

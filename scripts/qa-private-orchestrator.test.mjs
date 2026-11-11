@@ -1,3 +1,4 @@
+import './qa-private-diagnostics.test.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, mkdir, writeFile } from 'node:fs/promises';

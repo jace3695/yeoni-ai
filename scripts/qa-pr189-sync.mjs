@@ -152,8 +152,10 @@ function createDevice(server, seed = {}) {
   } } };
   const context = vm.createContext({ window, document, navigator, Event, CustomEvent, AbortController, queueMicrotask, Date: FixtureDate });
   const cache = new Map();
-  const allowed = new Set(['app/data/cloudSync.ts', 'app/data/appRecordReset.ts', 'app/data/storageTransaction.ts', 'app/data/storageOwnership.ts', 'app/data/recordStorage.ts', 'app/data/dietPlans.ts', 'app/data/workoutCompletion.ts', 'lib/diet-time.ts']);
+  const allowed = new Set(['app/data/cloudSync.ts', 'app/data/bodyRecordSave.ts', 'app/data/appRecordReset.ts', 'app/data/storageTransaction.ts', 'app/data/storageOwnership.ts', 'app/data/recordStorage.ts', 'app/data/dietPlans.ts', 'app/data/workoutCompletion.ts', 'lib/diet-time.ts']);
   function load(path) {
+    // Normalize extensionless source imports before the exact allowlist/cache check.
+    if (!path.endsWith('.ts')) path += '.ts';
     if (cache.has(path)) return cache.get(path);
     assert.ok(allowed.has(path), `Unexpected module ${path}`);
     const exports = {};
@@ -174,6 +176,7 @@ function createDevice(server, seed = {}) {
   const reset = load('app/data/appRecordReset.ts');
   const events = load('app/data/storageTransaction.ts');
   const ownership = load('app/data/storageOwnership.ts');
+  const body = load('app/data/bodyRecordSave.ts');
   ownership.beginStorageAccess();
   assert.equal(ownership.getStorageAccessStatus(), 'ready');
   const panelPath = 'app/components/CloudSyncPanel.tsx';
@@ -252,6 +255,7 @@ function createDevice(server, seed = {}) {
       // simulated. Each draft pins the real owner/epoch at opening, not saving.
       const calendar = vm.createContext({
         window, queueMicrotask, ...events, ...ownership,
+        readBodySaveSnapshot: body.readBodySaveSnapshot,
         recordsLive: { current: true }, workoutWriteLocked: { current: false },
         stores: { workouts: copy(workouts) }, selected: '2030-02-02', todayKey: '2030-02-09',
         calendarScope: { current: null }, calendarInvalidated: { current: false },

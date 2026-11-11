@@ -1,3 +1,4 @@
+import { PrivateDiagnostics } from '../../scripts/qa-private-diagnostics.mjs';
 import { appendFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
@@ -8,22 +9,26 @@ const redact = (message: string) => message.replace(/eyJ[A-Za-z0-9_.-]+/g, '[red
   .replace(/Qa-[0-9a-f-]+!/g, '[redacted-fixture-password]');
 
 export default class SafeReporter implements Reporter {
+  private diagnostics = new PrivateDiagnostics();
+  onTestBegin(test: TestCase) { this.diagnostics.onTestBegin(test); }
   private root = process.cwd();
   private allowedSources = new Set(readdirSync(join(this.root, 'tests/e2e'), { withFileTypes: true })
     .filter(entry => entry.isFile() && /^[a-z0-9]+(?:-[a-z0-9]+)*\.spec\.ts$/.test(entry.name))
     .slice(0, 1000).map(entry => `tests/e2e/${entry.name}`));
   private results: { title: string; status: string; durationMs: number; failure?: SafeFailureDiagnostics }[] = [];
   onTestEnd(test: TestCase, result: TestResult) {
+    this.diagnostics.onTestEnd(test, result);
     // Only known source coordinates and fixed categories, never error content.
     const failure = failureDiagnostics(test.location, result, this.root, this.allowedSources);
     this.results.push({ title: test.titlePath().join(' / '), status: result.status, durationMs: result.duration,
       ...(failure ? { failure } : {}) });
     console.log(`${result.status}: ${test.titlePath().join(' / ')}`);
   }
-  onError() { console.error('Runner error (details withheld)'); }
+  onError() { this.diagnostics.onError(); console.error('Runner error (details withheld)'); }
   onStdOut(chunk: string | Buffer) { process.stdout.write(redact(String(chunk))); }
   onStdErr(chunk: string | Buffer) { process.stderr.write(redact(String(chunk))); }
   onEnd(result: FullResult) {
+    this.diagnostics.onEnd(result);
     mkdirSync('.e2e/evidence', { recursive: true });
     const report = { commit: process.env.QA_HEAD_SHA, status: result.status, results: this.results };
     writeFileSync('.e2e/evidence/results.json', JSON.stringify(report, null, 2));

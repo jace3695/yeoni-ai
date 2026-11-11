@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { diagnosticInvocations, emitDiagnosticJournal } from './qa-private-diagnostics.mjs';
 import { mkdir, mkdtemp, readFile, writeFile, open, stat } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +41,17 @@ export async function runStages(stages, { cwd, runnerTemp, env = process.env, em
     const local = join(directory, stage.id);
     await mkdir(local);
     const childEnv = { ...inherited };
+    delete childEnv.QA_PRIVATE_DIAGNOSTIC_FILE;
+    delete childEnv.QA_PRIVATE_DIAGNOSTIC_TOKEN;
+    const expected = diagnosticInvocations(stage.command);
+    const diagnosticPath = join(local, 'diagnostic.jsonl');
+    const diagnosticToken = randomBytes(32).toString('hex');
+    if (expected) {
+      await writeFile(diagnosticPath, '', { mode: 0o600, flag: 'wx' });
+      childEnv.QA_PRIVATE_DIAGNOSTIC_FILE = diagnosticPath;
+      childEnv.QA_PRIVATE_DIAGNOSTIC_TOKEN = diagnosticToken;
+    }
+    let termination = 'none';
     for (const key of channels) {
       childEnv[key] = join(local, key);
       await writeFile(childEnv[key], '', { mode: 0o600 });
@@ -48,15 +61,16 @@ export async function runStages(stages, { cwd, runnerTemp, env = process.env, em
     try {
       code = await new Promise(resolveResult => {
         // Abort may arrive during asynchronous private-file preparation.
-        if (!stage.cleanup && signal?.aborted) { cancelled = true; resolveResult(1); return; }
+        if (!stage.cleanup && signal?.aborted) { cancelled = true; termination = 'cancelled'; resolveResult(1); return; }
         const child = spawn('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', stage.command], { cwd, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
         let interrupted = false, killTimer;
-        const stop = () => {
+        const stop = (reason = 'timeout') => {
+          if (termination === 'none') termination = reason;
           interrupted = true;
           try { process.kill(-child.pid, 'SIGTERM'); } catch { /* Already stopped. */ }
           killTimer ??= setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* Already stopped. */ } }, 5000);
         };
-        const abort = () => { cancelled = true; stop(); };
+        const abort = () => { cancelled = true; stop('cancelled'); };
         // Cleanup still runs after interruption, with its own bounded lifetime.
         if (!stage.cleanup) {
           signal?.addEventListener('abort', abort, { once: true });
@@ -66,7 +80,7 @@ export async function runStages(stages, { cwd, runnerTemp, env = process.env, em
         const timer = setTimeout(stop, stage.cleanup ? Math.min(timeoutMs, 11 * 60_000) : timeoutMs);
         [child.stdout, child.stderr].forEach((stream, i) => stream.on('data', chunk => {
           const kept = chunk.subarray(0, Math.max(0, limit - bytes[i])); bytes[i] += kept.length;
-          if (kept.length) writes = writes.then(() => handles[i].write(kept)).catch(() => { captureFailed = true; interrupted = true; stop(); });
+          if (kept.length) writes = writes.then(() => handles[i].write(kept)).catch(() => { captureFailed = true; interrupted = true; stop('capture-error'); });
         }));
         let settled = false;
         const finish = value => {
@@ -74,7 +88,7 @@ export async function runStages(stages, { cwd, runnerTemp, env = process.env, em
           clearTimeout(timer); clearTimeout(killTimer); signal?.removeEventListener('abort', abort);
           resolveResult(interrupted ? 1 : value);
         };
-        child.on('error', () => finish(1));
+        child.on('error', () => { termination = 'runner-error'; finish(1); });
         child.on('close', value => finish(value === 0 ? 0 : 1));
       });
       await writes;
@@ -83,6 +97,12 @@ export async function runStages(stages, { cwd, runnerTemp, env = process.env, em
       if (code === 0) inherited = { ...inherited, ...additions };
     } catch { code = 1; }
     finally { await writes; await Promise.all(handles.map(handle => handle.close())); }
+    if (expected) {
+      const report = await emitDiagnosticJournal({ path: diagnosticPath, token: diagnosticToken, expected,
+        stage: stage.id, termination, emit });
+      // Diagnostic uncertainty cannot upgrade an exit failure or certify success.
+      if (report.report !== 'complete' || report.invocations.some(item => item.status !== 'passed')) code = 1;
+    }
     if (code !== 0) failed = true;
     emit(`${stage.id} ${code === 0 ? 'passed' : 'failed'}`);
     } catch { failed = true; emit(`${stage.id} failed`); }
