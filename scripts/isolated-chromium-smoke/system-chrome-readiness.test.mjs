@@ -78,9 +78,10 @@ test('system Chrome readiness pins official context, installed Playwright locato
 test('system Chrome probe reads only fixed metadata and executes only fixed --version with a minimal environment', async () => {
   const state = fixture(); state.options.env.PATH = canary; state.options.env.HOME = canary;
   state.options.env.NODE_OPTIONS = canary; state.options.env.HTTPS_PROXY = canary;
+  state.options.env.NODE_ENV = canary;
   assert.equal(await checkSystemChrome(state.options), 0);
   assert.deepEqual(state.launches, [{ path: chromePath, args: ['--version'], config: { cwd: '/',
-    env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true } }]);
+    env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true } }]);
   assert.deepEqual(state.reads, ['/', '/opt', '/opt/google', '/opt/google/chrome', chromePath, '/usr', '/usr/lib', '/usr/lib/os-release']);
   assert.equal(state.output.at(-2), 'stage-02 readiness browser=system-google-chrome image=ubuntu24 imageVersion=20261101-360-1 major=156 minor=0 build=8078 patch=79 status=passed');
   assert.equal(state.output.at(-1), 'stage-02 passed'); safeOutput(state.output);

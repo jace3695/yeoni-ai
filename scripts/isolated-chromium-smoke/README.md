@@ -110,7 +110,7 @@ No executable path or remote browser environment override is accepted.
 
 Read-only metadata checks require real root-owned, non-group/world-writable parent
 folders, the regular executable and OS-release file. A direct fixed `--version`
-child uses only fixed locale/PATH values and the unchanged a0 lifecycle helper.
+child uses only fixed locale/PATH values, NODE_ENV=production and the unchanged a0 lifecycle helper.
 Output is bounded to 128 bytes per stream; only one exact approved stdout version
 line and empty stderr pass. Missing, ambiguous, wrong, hostile, failed, cancelled
 or timed-out results stop before stage 03. The public readiness line has only fixed

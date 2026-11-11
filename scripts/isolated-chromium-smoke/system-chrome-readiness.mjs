@@ -14,6 +14,7 @@ const imageContext = Object.freeze({ RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64',
 const metadataPaths = ['/', '/opt', '/opt/google', '/opt/google/chrome', chromePath,
   '/usr', '/usr/lib', '/usr/lib/os-release'];
 const versionLimit = 128;
+/** @param {unknown} value */
 const requireTrue = value => { if (!value) throw new Error('Readiness rejected'); };
 
 /** @param {NodeJS.ProcessEnv} env */
@@ -41,7 +42,11 @@ export async function checkSystemChrome({ env, signal, timeoutMs = 240_000,
   emit = line => console.log(line), platform = process.platform, arch = process.arch,
   metadata = lstat, canonical = realpath, openFile = open, launch = spawn }) {
   let category = 'context', versionVerified = false;
-  const result = await runPrivateStage(async control => {
+  // Only the unchanged lifecycle control methods used by this probe.
+  /** @typedef {{ readonly finished: boolean, check: () => void,
+   * watch: (child: import('node:child_process').ChildProcess) => Promise<number>,
+   * captureError: () => void }} ReadinessControl */
+  const result = await runPrivateStage(/** @param {ReadinessControl} control */ async control => {
     officialChromeContext(env); control.check();
     requireTrue(platform === 'linux' && arch === 'x64');
     requireTrue(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 240_000);
@@ -68,12 +73,14 @@ export async function checkSystemChrome({ env, signal, timeoutMs = 240_000,
       requireTrue(lines.filter(line => line.startsWith('VERSION_ID=')).join('\n') === 'VERSION_ID="24.04"');
     } finally { await file.close(); }
     control.check(); category = 'exec';
-    const child = launch(chromePath, ['--version'], { cwd: '/',
-      env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
-      stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    /** @type {import('node:child_process').SpawnOptionsWithStdioTuple<'ignore', 'pipe', 'pipe'>} */
+    const launchOptions = { cwd: '/',
+      env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', NODE_ENV: 'production' },
+      stdio: ['ignore', 'pipe', 'pipe'], detached: true };
+    const child = launch(chromePath, ['--version'], launchOptions);
     const done = control.watch(child);
     const output = [Buffer.alloc(0), Buffer.alloc(0)];
-    [child.stdout, child.stderr].forEach((stream, index) => stream?.on('data', chunk => {
+    [child.stdout, child.stderr].forEach((stream, index) => stream?.on('data', /** @param {unknown} chunk */ chunk => {
       if (control.finished) return;
       if (!Buffer.isBuffer(chunk) || output[index].length + chunk.length > versionLimit) {
         category = 'capture'; control.captureError(); return;
