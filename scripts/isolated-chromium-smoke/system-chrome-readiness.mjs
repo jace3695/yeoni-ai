@@ -17,13 +17,34 @@ const versionLimit = 128;
 /** @param {unknown} value */
 const requireTrue = value => { if (!value) throw new Error('Readiness rejected'); };
 
+/** @typedef {'request' | 'runner' | 'image' | 'repository' | 'override'} ContextCategory */
+export class ChromeContextError extends Error {
+  /** @param {ContextCategory} category */
+  constructor(category) { super('Readiness rejected'); this.category = category; }
+}
+/** @param {unknown} value @param {ContextCategory} category */
+const requireContext = (value, category) => { if (!value) throw new ChromeContextError(category); };
+// Exact inventory defaults exported by the pinned official image, never launch inputs.
+/** @type {Readonly<Record<string, string>>} */
+const imageInventoryDefaults = Object.freeze({ CHROME_BIN: '/usr/bin/google-chrome',
+  SELENIUM_JAR_PATH: '/usr/share/java/selenium-server.jar' });
+
 /** @param {NodeJS.ProcessEnv} env */
 export function officialChromeContext(env) {
-  requireTrue(env.CI === 'true' && env.GITHUB_ACTIONS === 'true'
-    && env.GITHUB_EVENT_NAME === 'push' && env.GITHUB_REF === 'refs/heads/agent/yeoni-japanese-ci-20261110');
-  for (const [name, value] of Object.entries(imageContext)) requireTrue(env[name] === value);
-  // Reject alternate executable/remote connection inputs before sanitizing children.
-  requireTrue(!Object.keys(env).some(name => /^(?:PLAYWRIGHT_|PW_|PWTEST_|CHROME_|CHROMIUM_|SELENIUM_|LD_|DYLD_)/.test(name) && env[name]));
+  requireContext(env.CI === 'true' && env.GITHUB_ACTIONS === 'true'
+    && env.GITHUB_EVENT_NAME === 'push' && env.GITHUB_REF === 'refs/heads/agent/yeoni-japanese-ci-20261110', 'request');
+  for (const [name, value] of Object.entries(imageContext)) requireContext(env[name] === value,
+    name.startsWith('Image') ? 'image' : name.startsWith('RUNNER_') ? 'runner' : 'repository');
+  // Absent/empty stays unset. Known nonempty inventory values must match exactly.
+  // Case variants, arbitrary browser/remote/preload overrides still fail closed.
+  requireContext(!Object.keys(env).some(name => {
+    const value = env[name];
+    if (!value) return false;
+    if (Object.hasOwn(imageInventoryDefaults, name)) return value !== imageInventoryDefaults[name];
+    if (Object.hasOwn(imageInventoryDefaults, name.toUpperCase())) return true;
+    return /^(?:PLAYWRIGHT_|PW_|PWTEST_|CHROME_|CHROMIUM_|SELENIUM_|LD_|DYLD_)/.test(name);
+  }), 'override');
+  // Return only the approved image/context fields, never either inventory value.
   return { ...imageContext };
 }
 

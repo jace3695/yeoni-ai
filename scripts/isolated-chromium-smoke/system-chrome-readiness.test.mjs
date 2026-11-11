@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import { constants } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { checkSystemChrome, officialChromeContext, chromePath, approvedVersion, parseChromeVersion } from './system-chrome-readiness.mjs';
-import { supervise } from './supervisor.mjs';
+import { checkSystemChrome, officialChromeContext, ChromeContextError, chromePath, approvedVersion, parseChromeVersion } from './system-chrome-readiness.mjs';
+import { supervise, mainFailureLine } from './supervisor.mjs';
 
 const canary = 'SYNTHETIC_PRIVATE_eyJtoken.sb_secret_FAKE.https://private.invalid/?secret=CANARY\r\n::error::PRIVATE';
 const goodVersion = Buffer.from('Google Chrome 156.0.8078.79\n');
@@ -177,4 +178,162 @@ test('system Chrome cancellation and timeout settle failure, suppress late succe
     assert.equal(code, 1); assert.deepEqual(calls, ['stage-01']);
     assert.ok(state.output.includes('stage-03 not-run')); assert.ok(!state.output.some(line => line.includes('realBrowser=true'))); safeOutput(state.output);
   }
+});
+
+
+test('only exact official inventory defaults are admitted and neither becomes a child input', async () => {
+  const defaults = { CHROME_BIN: '/usr/bin/google-chrome', SELENIUM_JAR_PATH: '/usr/share/java/selenium-server.jar' };
+  for (const additions of [{}, { CHROME_BIN: '' }, { SELENIUM_JAR_PATH: '' },
+    { CHROME_BIN: defaults.CHROME_BIN }, { SELENIUM_JAR_PATH: defaults.SELENIUM_JAR_PATH }, defaults]) {
+    const state = fixture(); Object.assign(state.options.env, additions);
+    const admitted = officialChromeContext(state.options.env);
+    assert.ok(!Object.hasOwn(admitted, 'CHROME_BIN')); assert.ok(!Object.hasOwn(admitted, 'SELENIUM_JAR_PATH'));
+    assert.equal(await checkSystemChrome(state.options), 0);
+    assert.deepEqual(state.launches[0].config.env, { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', NODE_ENV: 'production' });
+    assert.equal(state.launches[0].path, chromePath); safeOutput(state.output);
+  }
+  for (const [name, value] of Object.entries(defaults)) {
+    for (const wrong of [value + ' ', ' ' + value, value + '/', value + '.extra', value.toUpperCase(), value.replace('/usr/', '/usr/../usr/'), 'file://' + value, canary]) {
+      const state = fixture(); state.options.env[name] = wrong;
+      assert.throws(() => officialChromeContext(state.options.env), error => error instanceof ChromeContextError && error.category === 'override');
+      assert.equal(await checkSystemChrome(state.options), 1); assert.equal(state.launches.length, 0); safeOutput(state.output);
+    }
+    for (const wrongName of [name.toLowerCase(), name[0] + name.slice(1).toLowerCase(), name + '_EXTRA']) {
+      const state = fixture(); state.options.env[wrongName] = value;
+      assert.equal(await checkSystemChrome(state.options), 1); assert.equal(state.launches.length, 0); safeOutput(state.output);
+    }
+  }
+});
+
+test('entry diagnostic categories never expose raw error, environment, property or phase content', () => {
+  for (const phase of ['fixture', 'private-mode', 'signal-handlers', 'child-environment', 'runner-context', canary, null, {}, 'handoff']) {
+    for (const error of [new Error(canary), canary, { category: canary }, undefined]) safeOutput([mainFailureLine(phase, error)]);
+  }
+  for (const category of ['request', 'runner', 'image', 'repository', 'override']) {
+    assert.equal(mainFailureLine('runner-context', new ChromeContextError(category)), `chromium-app-smoke admission failed category=context-${category}`);
+  }
+  const hostile = new ChromeContextError('override');
+  Object.defineProperty(hostile, 'category', { get: () => { throw new Error(canary); } });
+  assert.equal(mainFailureLine('runner-context', hostile), 'chromium-app-smoke admission failed category=runner-context');
+  assert.equal(mainFailureLine('handoff', hostile), 'chromium-app-smoke supervisor failed category=unexpected');
+  let reads = 0;
+  const changing = new ChromeContextError('override');
+  Object.defineProperty(changing, 'category', { get: () => ++reads === 1 ? 'override' : canary });
+  assert.equal(mainFailureLine('runner-context', changing), 'chromium-app-smoke admission failed category=context-override');
+  assert.equal(reads, 1);
+});
+
+test('actual main and fixture entry source distinguishes safe defaults and every synthetic pre-stage failure without launching', () => {
+  const harness = async () => {
+    const assert = (await import('node:assert/strict')).default;
+    const { readFile } = await import('node:fs/promises');
+    const { SourceTextModule, SyntheticModule, createContext } = await import('node:vm');
+    const path = await import('node:path'), url = await import('node:url');
+    const { constants } = await import('node:fs');
+    const root = process.cwd();
+    const supervisorSource = await readFile(path.join(root, 'scripts/isolated-chromium-smoke/supervisor.mjs'), 'utf8');
+    const boundarySource = await readFile(path.join(root, 'scripts/isolated-auth-api/boundary.mjs'), 'utf8');
+    const plan = await import(url.pathToFileURL(path.join(root, 'scripts/isolated-chromium-smoke/plan.mjs')));
+    const { officialChromeContext, ChromeContextError } = await import(url.pathToFileURL(path.join(root, 'scripts/isolated-chromium-smoke/system-chrome-readiness.mjs')));
+    const repo = '/synthetic/repository', runnerTemp = '/home/runner/work/_temp';
+    const entry = `${repo}/scripts/isolated-chromium-smoke/supervisor.mjs`;
+    const jwt = role => `e30.${Buffer.from(JSON.stringify({ role })).toString('base64url')}.synthetic`;
+    const base = () => ({ CI: 'true', GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push',
+      GITHUB_REF: 'refs/heads/agent/yeoni-japanese-ci-20261110', RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64',
+      RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261101.360.1',
+      GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com',
+      RUNNER_TEMP: runnerTemp, YEONI_E2E: '1', NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: jwt('anon'), PATH: '/synthetic/bin', HOME: '/synthetic/home', LANG: 'C' });
+    const failure = 'chromium-app-smoke failed browser=system-google-chrome realBrowser=unverified fixtureCleanup=unverified';
+    const cases = [
+      { name: 'valid-official-context', allowed: true },
+      { name: 'empty-defaults', env: { CHROME_BIN: '', SELENIUM_JAR_PATH: '' }, allowed: true },
+      { name: 'chrome-default', env: { CHROME_BIN: '/usr/bin/google-chrome' }, allowed: true },
+      { name: 'selenium-default', env: { SELENIUM_JAR_PATH: '/usr/share/java/selenium-server.jar' }, allowed: true },
+      { name: 'both-defaults', env: { CHROME_BIN: '/usr/bin/google-chrome', SELENIUM_JAR_PATH: '/usr/share/java/selenium-server.jar' }, allowed: true },
+      { name: 'request', env: { CI: 'false' }, category: 'context-request' },
+      { name: 'runner', env: { RUNNER_ARCH: 'ARM64' }, category: 'context-runner' },
+      { name: 'image', env: { ImageVersion: '20261102.1.1' }, category: 'context-image' },
+      { name: 'repository', env: { GITHUB_REPOSITORY: 'synthetic/other' }, category: 'context-repository' },
+      ...['CHROME_BIN','SELENIUM_JAR_PATH','CHROME_PATH','SELENIUM_REMOTE_URL','PW_TEST_CONNECT_WS_ENDPOINT','LD_PRELOAD','DYLD_INSERT_LIBRARIES','chrome_bin'].map(name => ({ name: 'override-' + name, env: { [name]: 'SYNTHETIC_PRIVATE' }, category: 'context-override' })),
+      ...['directoryError','directoryWrong','directoryLink','canonicalError','canonicalWrong','listError','envFile','fileFailure','modeFailure','readFailure','badJson','badRole'].map(name => ({ name, [name]: true, category: 'fixture' })),
+      { name: 'umaskFailure', umaskFailure: true, category: 'private-mode' },
+      { name: 'controllerFailure', controllerFailure: true, category: 'signal-handlers' },
+      { name: 'signalFailure', signalFailure: true, category: 'signal-handlers' },
+      { name: 'childEnvironmentFailure', childEnvironmentFailure: true, category: 'child-environment' },
+      { name: 'handoffFailure', handoffFailure: true, category: 'supervisor' },
+    ];
+    const results = [];
+    for (const scenario of cases) {
+      const env = { ...base(), ...scenario.env }, output = [], checkpoints = [], childEnvs = [];
+      if (scenario.childEnvironmentFailure) Object.defineProperty(env, 'PATH', { get: () => { throw new Error('SYNTHETIC_PRIVATE'); } });
+      const processMock = { env, argv: ['node', entry], cwd: () => repo, exitCode: undefined,
+        umask: () => { if (scenario.umaskFailure) throw new Error('SYNTHETIC_PRIVATE'); checkpoints.push('umask-boundary'); return 0o022; },
+        on: () => { if (scenario.signalFailure) throw new Error('SYNTHETIC_PRIVATE'); }, off: () => { if (scenario.handoffFailure) throw new Error('SYNTHETIC_PRIVATE'); } };
+      const context = createContext({ process: processMock, Buffer, URL, AbortController: class { constructor() { if (scenario.controllerFailure) throw new Error('SYNTHETIC_PRIVATE'); return new AbortController(); } }, setTimeout, clearTimeout,
+        console: { log: line => output.push(line) } });
+      const modules = new Map();
+      const stub = (name, exports) => {
+        const mod = new SyntheticModule(Object.keys(exports), function () { for (const [key, value] of Object.entries(exports)) this.setExport(key, value); }, { context, identifier: name });
+        modules.set(name, mod); return mod;
+      };
+      stub('node:path', { resolve: path.resolve, join: path.join });
+      stub('node:url', { fileURLToPath: url.fileURLToPath });
+      stub('node:fs', { constants });
+      const fixture = scenario.badJson ? Buffer.from('{') : Buffer.from(JSON.stringify({ API_URL: env.NEXT_PUBLIC_SUPABASE_URL, ANON_KEY: jwt('anon'), SERVICE_ROLE_KEY: jwt(scenario.badRole ? 'anon' : 'service_role') }));
+      stub('node:fs/promises', {
+        lstat: async target => { assert.equal(target, runnerTemp); checkpoints.push('fixture-directory'); if (scenario.directoryError) throw new Error('SYNTHETIC_PRIVATE'); return { isDirectory: () => !scenario.directoryWrong, isSymbolicLink: () => !!scenario.directoryLink }; },
+        realpath: async target => { assert.ok([runnerTemp, `${repo}/.e2e/stack-status.json`].includes(target)); if (scenario.canonicalError) throw new Error('SYNTHETIC_PRIVATE'); return scenario.canonicalWrong ? '/synthetic/wrong' : target; },
+        readdir: async target => { assert.equal(target, repo); if (scenario.listError) throw new Error('SYNTHETIC_PRIVATE'); return scenario.envFile ? ['.env.production'] : ['package.json', '.e2e']; },
+        open: async target => { assert.equal(target, `${repo}/.e2e/stack-status.json`); checkpoints.push('fixture-read');
+          if (scenario.fileFailure) throw new Error('SYNTHETIC_PRIVATE');
+          return { stat: async () => ({ isFile: () => true, mode: scenario.modeFailure ? 0o100644 : 0o100600, size: fixture.length }),
+            read: async buffer => { if (scenario.readFailure) throw new Error('SYNTHETIC_PRIVATE'); fixture.copy(buffer); return { bytesRead: fixture.length }; }, close: async () => {} };
+        },
+      });
+      stub('../qa-private-orchestrator.mjs', { runStages: async (_stages, options) => {
+        assert.equal(_stages.length, 1); assert.equal(_stages[0].id, 'stage-01');
+        checkpoints.push('synthetic-safety-boundary'); childEnvs.push(options.env); return 0;
+      } });
+      stub('../qa-private-lifecycle.mjs', { terminationGraceMs: 5000 });
+      stub('./plan.mjs', { stages: plan.stages, totalTimeoutMs: plan.totalTimeoutMs });
+      stub('./system-chrome-readiness.mjs', { ChromeContextError,
+        officialChromeContext: value => { checkpoints.push('official-context'); const accepted = officialChromeContext(value); checkpoints.push('official-context-passed'); return accepted; },
+        checkSystemChrome: async options => { checkpoints.push('no-launch-readiness-boundary'); childEnvs.push(options.env); return 1; },
+      });
+      const boundary = new SourceTextModule(boundarySource, { context, identifier: `${repo}/scripts/isolated-auth-api/boundary.mjs` });
+      modules.set('../isolated-auth-api/boundary.mjs', boundary);
+      const supervisor = new SourceTextModule(supervisorSource, { context, identifier: entry, initializeImportMeta: meta => { meta.url = url.pathToFileURL(entry).href; } });
+      await supervisor.link(specifier => { const mod = modules.get(specifier); if (!mod) throw new Error('Unmocked import forbidden'); return mod; });
+      await supervisor.evaluate();
+      for (let i = 0; processMock.exitCode === undefined && i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+      assert.equal(processMock.exitCode, 1);
+      assert.equal(output.at(-1), failure);
+      if (scenario.allowed) {
+        assert.ok(checkpoints.includes('no-launch-readiness-boundary'));
+        assert.deepEqual(output, ['stage-03 not-run', failure]);
+        for (const forwarded of childEnvs) {
+          for (const key of ['RUNNER_OS','RUNNER_ARCH','RUNNER_ENVIRONMENT','ImageOS','ImageVersion','GITHUB_REPOSITORY','GITHUB_SERVER_URL']) assert.equal(forwarded[key], base()[key]);
+          assert.equal(forwarded.NODE_ENV, 'production');
+          assert.ok(!Object.hasOwn(forwarded, 'CHROME_BIN')); assert.ok(!Object.hasOwn(forwarded, 'SELENIUM_JAR_PATH'));
+        }
+      } else if (scenario.handoffFailure) {
+        assert.ok(output.includes('chromium-app-smoke supervisor failed category=unexpected'));
+        assert.ok(!output.some(line => line.includes('admission failed')));
+      } else {
+        assert.deepEqual(output, [`chromium-app-smoke admission failed category=${scenario.category}`, failure]);
+        assert.ok(!checkpoints.includes('synthetic-safety-boundary'));
+      }
+      for (const line of output) { assert.match(line, /^[a-zA-Z0-9 =-]+$/); assert.ok(!line.includes('SYNTHETIC_PRIVATE')); }
+      results.push({ scenario: scenario.name, exitCode: 1, checkpoints, output, actualIo: false, actualChildOrBrowser: false });
+    }
+    console.log(JSON.stringify({ cases: results.length, passed: true, actualIo: false, actualChildOrBrowser: false }));
+  };
+  const result = spawnSync(process.execPath, ['--experimental-vm-modules', '--input-type=module', '-e', `await (${harness.toString()})();`], {
+    cwd: process.cwd(), env: { PATH: process.env.PATH, NODE_ENV: 'production' }, encoding: 'utf8', timeout: 5000, maxBuffer: 1024 * 1024,
+  });
+  assert.equal(result.status, 0);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.passed, true); assert.ok(report.cases >= 30);
+  assert.equal(report.actualIo, false); assert.equal(report.actualChildOrBrowser, false);
 });

@@ -155,7 +155,7 @@ test('standalone configuration rejects wrong Actions/ref/loopback context before
     env: { PATH: process.env.PATH }, encoding: 'utf8', timeout: 5000,
   });
   assert.equal(result.status, 1); assert.equal(result.stderr, '');
-  assert.equal(result.stdout, 'chromium-app-smoke failed browser=system-google-chrome realBrowser=unverified fixtureCleanup=unverified\n');
+  assert.equal(result.stdout, 'chromium-app-smoke admission failed category=fixture\nchromium-app-smoke failed browser=system-google-chrome realBrowser=unverified fixtureCleanup=unverified\n');
 });
 
 test('config contains only Chromium, strict deadlines, private media settings and real loopback Next start', () => {

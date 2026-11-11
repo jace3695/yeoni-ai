@@ -5,7 +5,7 @@ import { runStages } from '../qa-private-orchestrator.mjs';
 import { terminationGraceMs } from '../qa-private-lifecycle.mjs';
 import { loadContext, childEnvironment } from '../isolated-auth-api/boundary.mjs';
 import { stages, totalTimeoutMs } from './plan.mjs';
-import { checkSystemChrome, officialChromeContext } from './system-chrome-readiness.mjs';
+import { checkSystemChrome, officialChromeContext, ChromeContextError } from './system-chrome-readiness.mjs';
 
 const failedLine = 'chromium-app-smoke failed browser=system-google-chrome realBrowser=unverified fixtureCleanup=unverified';
 /** @param {{
@@ -53,17 +53,41 @@ export async function supervise({ cwd, runnerTemp, env, signal, emit = line => c
   }
 }
 
+/** @param {unknown} phase @param {unknown} error */
+export function mainFailureLine(phase, error) {
+  if (phase === 'handoff') return 'chromium-app-smoke supervisor failed category=unexpected';
+  let category = ['fixture', 'private-mode', 'signal-handlers', 'child-environment', 'runner-context']
+    .find(value => value === phase) ?? 'unexpected';
+  if (phase === 'runner-context') {
+    try {
+      const errorCategory = error instanceof ChromeContextError ? error.category : undefined;
+      if (errorCategory !== undefined && ['request', 'runner', 'image', 'repository', 'override'].includes(errorCategory)) {
+        category = `context-${errorCategory}`;
+      }
+    } catch { /* A hostile diagnostic property never exposes error content. */ }
+  }
+  return `chromium-app-smoke admission failed category=${category}`;
+}
+
+let entryPhase = 'fixture';
 async function main() {
   await loadContext();
   // Reporter and fixture evidence stays owner-only, including implicit directories.
+  entryPhase = 'private-mode';
   process.umask(0o077);
+  entryPhase = 'signal-handlers';
   const controller = new AbortController(); const abort = () => controller.abort();
   process.on('SIGTERM', abort); process.on('SIGINT', abort);
   try {
+    entryPhase = 'child-environment';
+    const childEnv = childEnvironment(process.env);
+    entryPhase = 'runner-context';
+    const context = officialChromeContext(process.env);
+    entryPhase = 'handoff';
     process.exitCode = await supervise({ cwd: process.cwd(), runnerTemp: process.env.RUNNER_TEMP,
-      env: { ...childEnvironment(process.env), ...officialChromeContext(process.env), NODE_ENV: 'production' }, signal: controller.signal });
+      env: { ...childEnv, ...context, NODE_ENV: 'production' }, signal: controller.signal });
   } finally { process.off('SIGTERM', abort); process.off('SIGINT', abort); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(() => { console.log(failedLine); process.exitCode = 1; });
+  main().catch(error => { console.log(mainFailureLine(entryPhase, error)); console.log(failedLine); process.exitCode = 1; });
 }

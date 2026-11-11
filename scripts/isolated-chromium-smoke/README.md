@@ -107,6 +107,21 @@ inventory, not an inferred major-version compatibility range. Unknown/newer imag
 or versions stop and need separate source review. The installed Playwright 1.63.0
 source supports channel `chrome` at the fixed `/opt/google/chrome/chrome` path.
 No executable path or remote browser environment override is accepted.
+The pinned official image exports CHROME_BIN=/usr/bin/google-chrome and
+SELENIUM_JAR_PATH=/usr/share/java/selenium-server.jar as inventory defaults.
+Only those exact nonempty raw values are tolerated after the existing image
+checks; absent/empty values remain unset. Case/path/value variants and all other
+browser, remote-connection and loader overrides still fail closed. Neither
+inventory variable is forwarded to any inspection child or used to select a path.
+The native binary remains fixed at /opt/google/chrome/chrome.
+
+A caught pre-stage failure now emits one closed admission category before the
+unchanged failure summary: fixture, private-mode, signal-handlers,
+child-environment, runner-context, context-request, context-runner, context-image,
+context-repository, context-override or unexpected. An escaped failure after
+supervisor handoff is labeled supervisor/unexpected instead of admission failure.
+These categories do not include raw environment, paths, messages or exceptions,
+and do not invent a stage result, browser version or successful launch.
 
 Read-only metadata checks require real root-owned, non-group/world-writable parent
 folders, the regular executable and OS-release file. A direct fixed `--version`
