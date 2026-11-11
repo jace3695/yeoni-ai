@@ -29,7 +29,7 @@ export async function supervise({ cwd, runnerTemp, env, signal, emit = line => c
       if (code !== 0 || controller.signal.aborted) failed = true;
     }
     if (failed || controller.signal.aborted) { emit(failedLine); return 1; }
-    emit('chromium-app-smoke passed tests=7 browser=chromium realBrowser=true fixtureCleanup=passed');
+    emit('chromium-app-smoke passed tests=9 browser=chromium realBrowser=true fixtureCleanup=passed');
     return 0;
   } catch { emit(failedLine); return 1; }
   finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }

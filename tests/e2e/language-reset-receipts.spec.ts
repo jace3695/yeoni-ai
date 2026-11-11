@@ -13,7 +13,15 @@ test('Japanese reset receipts survive genuine HTTP omission writes, concurrent r
   expect(otherSeed.error).toBeNull();
   const originalOther = await readRow(other.client, other.id);
   const ownerFitness = await qa.read(), otherFitness = await qa.read(other);
-  const initial = { ...originalLanguage, [levelKey]: practiceState('ci-before-reset') };
+  // Complete non-default settings are byte-stable under the real page initializer.
+  // The original two fixture strings are retained exactly, without a UI save.
+  const common = { ttsRate: 0.8, repeatCount: 2, repeatDelayMs: 300 };
+  const detailed = { ...common, showKoreanPronunciation: false, showReading: false };
+  const initial = { ...originalLanguage, [levelKey]: practiceState('ci-before-reset'),
+    japaneseAppSettings: JSON.stringify({ sections: {
+      kana: common, words: detailed, sentences: detailed, speaking: detailed, conversation: detailed,
+    } }),
+  };
   const seeded = await qa.account.client.from('language_user_state').update({ state: initial }).eq('user_id', qa.account.id).select('*').single();
   expect(seeded.error).toBeNull(); expect(seeded.data.state).toEqual(initial);
   expect(seeded.data[ledgerKey]).toEqual({}); expect(initial).not.toHaveProperty(CHUNK_REVIEW_KEY);
@@ -43,6 +51,7 @@ test('Japanese reset receipts survive genuine HTTP omission writes, concurrent r
   }));
   try {
     await login(page, qa.account, '/language/settings'); await languageSynced(page);
+    await assertSettingsBeforeReset(page, client, qa.account.id, initial, qa.traffic);
     await qa.traffic.drain(); await installAudit(page);
     page.on('framenavigated', onNavigation);
     const originalLocal = await localSnapshot(page, qa.account.id);
@@ -56,6 +65,7 @@ test('Japanese reset receipts survive genuine HTTP omission writes, concurrent r
     const committedA = await readRow(client, qa.account.id);
     expect(committedA.state[markerKey]).toBe(markerA);
     expect(committedA[ledgerKey]).toEqual({ [requestA]: markerA });
+    expect(settings(committedA.state)).toEqual(settings(initial));
     for (const key of APP_RECORD_KEYS.language) expect(committedA.state).not.toHaveProperty(key);
     // Exercise the app's existing focus-driven sync once while the labelled
     // read fault is armed, so failure isolation is observed rather than assumed.
@@ -129,6 +139,7 @@ test('Japanese reset receipts survive genuine HTTP omission writes, concurrent r
     }));
     const pageB = await second.newPage();
     await login(pageB, qa.account, '/language/settings'); await languageSynced(pageB);
+    await assertSettingsBeforeReset(pageB, client, qa.account.id, concurrentState, secondTraffic);
     const panelB = await openReset(pageB);
     await panelB.getByRole('button', { name: '일본어 기록 영구 삭제', exact: true }).click();
     await expect(pageB.getByText(success, { exact: true })).toBeVisible(); await languageSynced(pageB);
@@ -306,6 +317,44 @@ function assertWrite(entries: Wire[], method: 'PATCH' | 'POST', body: unknown, m
     expect(row).not.toHaveProperty(ledgerKey); expect(row.state).not.toHaveProperty(ledgerKey);
     expect(Object.keys(row).sort()).toEqual(method === 'PATCH' ? ['state'] : ['state', 'user_id']);
   }
+}
+async function assertSettingsBeforeReset(page: Page, client: SupabaseClient, userId: string, expectedState: State, traffic: Traffic) {
+  const expected = settings(expectedState);
+  for (const value of Object.values(expected)) expect(typeof value).toBe('string');
+  // Both original fixture strings stay exact. The third field is fixed above,
+  // not learned from a post-reset row or silently accepted after normalization.
+  expect(expected.learningSettings).toBe(originalLanguage.learningSettings);
+  expect(expected.integratedLearningSettingsV1).toBe(originalLanguage.integratedLearningSettingsV1);
+  const learning = JSON.parse(expected.learningSettings as string);
+  const integrated = JSON.parse(expected.integratedLearningSettingsV1 as string);
+  const app = JSON.parse(expected.japaneseAppSettings as string);
+  await expect(page.getByRole('button', { name: new RegExp(`^${learning.dailyGoalCount}\\s*개$`) })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#daily-goal-count')).toHaveValue(String(learning.dailyGoalCount));
+  for (const section of ['kana', 'words', 'sentences']) {
+    const value = app.sections[section];
+    for (const [id, field] of [['tts-rate', 'ttsRate'], ['repeat-count', 'repeatCount'], ['repeat-delay', 'repeatDelayMs']]) {
+      await expect(page.locator(`#${section}-${id}`)).toHaveValue(String(value[field]));
+    }
+    if (section !== 'kana') for (const [id, field] of [['show-reading', 'showReading'], ['show-korean-pronunciation', 'showKoreanPronunciation']]) {
+      if (value[field]) await expect(page.locator(`#${section}-${id}`)).toBeChecked();
+      else await expect(page.locator(`#${section}-${id}`)).not.toBeChecked();
+    }
+  }
+  for (const [label, field] of [['글자·문제 도움', 'learnerMode'], ['하루 학습 시간', 'dailyMinutes'], ['우선 학습 과정', 'preferredTrack'], ['기본 음성 속도', 'audioRate']]) {
+    await expect(page.getByLabel(label)).toHaveValue(String(integrated[field]));
+  }
+  for (const [label, field] of [['수업의 한글 발음 보조 표시', 'showKoreanHint'], ['읽는 법 표시', 'showReading'], ['한국어 뜻 표시', 'showMeaning']]) {
+    if (integrated[field]) await expect(page.getByLabel(label, { exact: true })).toBeChecked();
+    else await expect(page.getByLabel(label, { exact: true })).not.toBeChecked();
+  }
+  await expect.poll(() => page.evaluate(keys => Object.fromEntries(keys.map(key => [key, localStorage.getItem(key)])), Object.keys(expected))).toEqual(expected);
+  await languageSynced(page); await traffic.drain();
+  expect((await readRow(client, userId)).state).toEqual(expectedState);
+  // The seed is an ordinary SDK PATCH above. A byte-stable mount need not PATCH;
+  // require its genuine delivered GET, not an invented browser mutation.
+  expect(traffic.entries.some(entry => entry.table === 'language_user_state' && entry.method === 'GET'
+    && entry.status === 200 && !entry.synthetic && entry.delivered && entry.receivedState
+    && canonical(entry.receivedState) === canonical(expectedState))).toBe(true);
 }
 async function openReset(page: Page) {
   const panel = page.getByRole('region', { name: '일본어 기록 초기화', exact: true });

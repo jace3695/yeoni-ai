@@ -1,7 +1,7 @@
 // Synthetic processes, reports and collection only. No browser, Auth or DB starts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, readdir, stat, chmod, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, stat, chmod, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { inventory, browserCommand, stages, totalTimeoutMs } from './plan.mjs';
 import { supervise } from './supervisor.mjs';
 import { runStages } from '../qa-private-orchestrator.mjs';
-import { PrivateDiagnostics, diagnosticInvocations, parseDiagnosticJournal, readDiagnosticJournal } from '../qa-private-diagnostics.mjs';
+import { PrivateDiagnostics, diagnosticInvocations, parseDiagnosticJournal, readDiagnosticJournal, emitDiagnosticJournal } from '../qa-private-diagnostics.mjs';
 import { guardEnvironment, childEnvironment, RUNNER_TEMP, STACK_ORIGIN } from '../isolated-auth-api/boundary.mjs';
 import { sources } from '../qa-private-source-ids.mjs';
 
@@ -56,13 +56,19 @@ const preserved = {
 };
 const answerTestHash = '5e116c59e171b352a52c9c5297818b9080388bfda2706f9d9ccd3a31a6e10a93';
 const reviewTestHash = 'd8e4e91ba78a95f26e4576f1f500f3d21097550298f7268993fc323a87b05eba';
+const receiptTestHash = 'ced11900b839f50e01afc4f51e5992d25ab5849fb7fa633a55bda01d6259b8f2';
+const readingHashes = {
+  "tests/e2e/japanese-reading-flow.ts": "02b4246a7e5d0d9718c998659447bb58fff2b0485a34a59884ec2d1fdea5498e",
+  "tests/e2e/japanese-middle-reading.spec.ts": "430727fcbddd59081c59ae2e270a7d71fdba702c99bad6a27f0bbe527b7f1140",
+  "tests/e2e/japanese-upper-reading.spec.ts": "385693245d5eb1ed11a0a8d28afe7e9f04d363ade0b86045455db40184cfca0c"
+};
 const workflowHash = 'c65190845968db7077198840dbdeb9d9a42ae4e57038f1dcfbcdcbc3bd0e5bf6';
 
 test('exact command, fixed project/source inventory, installer and ceilings stay narrow', async () => {
-  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
+  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 tests/e2e/japanese-middle-reading.spec.ts:3 tests/e2e/japanese-upper-reading.spec.ts:3 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
   assert.deepEqual(inventory, [{ source: 19, line: 3, column: 5, project: 5 }, { source: 38, line: 3, column: 5, project: 5 },
-    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }]);
-  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts']);
+    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }]);
+  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts']);
   assert.equal(stages[0].command, 'node --test scripts/isolated-chromium-smoke/safety.test.mjs');
   assert.equal(stages[1].command, 'node node_modules/@playwright/test/cli.js install --with-deps --only-shell chromium');
   assert.equal(stages[2].command, browserCommand); assert.equal(stages[2].diagnosticInventory, inventory);
@@ -73,7 +79,7 @@ test('exact command, fixed project/source inventory, installer and ceilings stay
   assert.equal(lock.packages['node_modules/@playwright/test'].version, '1.63.0');
   assert.equal(lock.packages['node_modules/playwright'].version, '1.63.0');
   assert.equal(diagnosticInvocations(browserCommand), 1);
-  for (const changed of [browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
+  for (const changed of [browserCommand.replace('tests/e2e/japanese-middle-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-upper-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
     browserCommand.replace('--project chromium-app-smoke', '--project chromium'), stages[1].command, 'echo ' + browserCommand]) {
     assert.equal(diagnosticInvocations(changed), 0);
   }
@@ -97,7 +103,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
     }
     if (path === 'scripts/qa-private-source-ids.mjs') {
       let text = bytes.toString('utf8');
-      for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n", "  'tests/e2e/language-reset-receipts.spec.ts', // 48\n"]) {
+      for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n", "  'tests/e2e/language-reset-receipts.spec.ts', // 48\n", "  'tests/e2e/japanese-middle-reading.spec.ts', // 49\n", "  'tests/e2e/japanese-upper-reading.spec.ts', // 50\n"]) {
         assert.equal(text.split(addition).length, 2); text = text.replace(addition, '');
       }
       bytes = Buffer.from(text);
@@ -115,7 +121,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
   assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 344);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
-  const addition = "      - name: Verify seven authenticated app flows in Chromium privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
+  const addition = "      - name: Verify nine authenticated app flows in Chromium privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
   assert.equal(workflow.split('len(tests) == 344').length, 2);
   assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 344', 'len(tests) == 343')).digest('hex'), workflowHash);
@@ -148,7 +154,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
   });
   assert.equal(result.status, 0); const config = JSON.parse(result.stdout);
   assert.deepEqual(config.projects, [{ name: 'chromium-app-smoke' }]);
-  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts']);
+  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts']);
   assert.equal(config.fullyParallel, false); assert.equal(config.workers, 1); assert.equal(config.retries, 0);
   assert.equal(config.forbidOnly, true); assert.equal(config.repeatEach, 1); assert.equal(config.timeout, 90000);
   assert.equal(config.expect.timeout, 15000); assert.equal(config.use.browserName, 'chromium'); assert.equal(config.use.headless, true);
@@ -162,7 +168,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
     url: 'http://127.0.0.1:3000/diet/settings', reuseExistingServer: false, timeout: 120000 });
 });
 
-test('Playwright list-only collection resolves exactly seven titles and coordinates without fixtures', () => {
+test('Playwright list-only collection resolves exactly nine titles and coordinates without fixtures', () => {
   // --list does not start webServer, browsers, test bodies or fixture hooks.
   const args = browserCommand.split(' ').slice(1).concat(['--list', '--reporter=json']);
   const result = spawnSync(process.execPath, args, { env: environment(), encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
@@ -170,7 +176,7 @@ test('Playwright list-only collection resolves exactly seven titles and coordina
   assert.deepEqual(report.errors, []);
   const specs = suite => [...(suite.specs ?? []), ...(suite.suites ?? []).flatMap(specs)];
   const selected = report.suites.flatMap(specs);
-  assert.equal(selected.length, 7);
+  assert.equal(selected.length, 9);
   const expected = new Map([
     ['auth.spec.ts:3', 'login, logout and same-account relogin preserve all 17 original keys without PATCH'],
     ['sync.spec.ts:3', 'first GET delivery delayed while a real form saves: originals and new input survive'],
@@ -179,6 +185,8 @@ test('Playwright list-only collection resolves exactly seven titles and coordina
     ['japanese-answer-persistence.spec.ts:8', 'seven Japanese chunk answers persist through real preparation UI, reload and relogin without changing unrelated records'],
     ['daily-review-completion.spec.ts:3', 'three distinct reviews save one daily completion and hide the stale warning across reload and relogin'],
     ['language-reset-receipts.spec.ts:9', 'Japanese reset receipts survive genuine HTTP omission writes, concurrent retries and lost-response supersession with a new answer'],
+    ['japanese-middle-reading.spec.ts:3', 'all 18 new intermediate reading answers and three completion stamps persist through real UI, reload and relogin'],
+    ['japanese-upper-reading.spec.ts:3', 'all 18 new advanced reading answers and three completion stamps persist through real UI, reload and relogin'],
   ]);
   for (const spec of selected) {
     const key = `${spec.file}:${spec.line}`;
@@ -220,7 +228,7 @@ test('reports reject stale/missing tokens, malformed schema, injection, oversize
   }
   assert.equal(parseDiagnosticJournal('', token, 1, inventory).report, 'missing');
   for (const invalid of ['', undefined, canary]) assert.equal(parseDiagnosticJournal(journal(events()), invalid, 1, inventory).report, 'invalid');
-  for (const invalid of [[], {}, inventory.slice(0, 6), [...inventory, inventory[0]], inventory.map(() => inventory[0]),
+  for (const invalid of [[], {}, inventory.slice(0, 7), inventory.slice(0, 8), [...inventory, inventory[0]], inventory.map(() => inventory[0]),
     inventory.map(item => ({ ...item, extra: canary })), inventory.map(item => ({ ...item, project: 0 }))]) {
     assert.equal(parseDiagnosticJournal(journal(events()), token, 1, invalid).report, 'invalid');
   }
@@ -325,7 +333,7 @@ test('three-stage sequencing propagates safety/install/browser failures, cancell
     assert.equal(code, failure < 0 ? 0 : 1); assert.equal(calls.length, failure < 0 ? 3 : failure + 1);
     privateOutput(options.output);
     assert.equal(options.output.at(-1).includes('realBrowser=true'), failure < 0);
-    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=7 browser=chromium realBrowser=true fixtureCleanup=passed');
+    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=9 browser=chromium realBrowser=true fixtureCleanup=passed');
   }
   const options = await fresh(), controller = new AbortController(); controller.abort();
   assert.equal(await supervise({ ...options, signal: controller.signal, run: () => { throw new Error(canary); } }), 1);
@@ -371,4 +379,124 @@ test('sixth test requires the real notice fix and three distinct saved reviews w
   assert.equal(source.match(/client\.from\('language_user_state'\)\.update/g)?.length, 1);
   assert.ok(source.indexOf('.update({ state: before })') < source.indexOf('await login('));
   assert.equal(source.match(/test\('/g)?.length, 1);
+});
+
+
+test('independently reviewed seventh receipt scenario is pinned while IDs 49 and 50 append reading coverage', async () => {
+  assert.equal(createHash('sha256').update(await readFile('tests/e2e/language-reset-receipts.spec.ts')).digest('hex'), receiptTestHash);
+  assert.equal(sources.length, 50);
+  assert.deepEqual(sources.slice(48), ['tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts']);
+});
+
+test('reading scenarios retain all 36 source-mapped questions, UI writes and exact local-before-DB confirmation', async () => {
+  for (const [path, hash] of Object.entries(readingHashes)) {
+    assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash);
+  }
+  for (const [file, level] of [['middle', 'intermediate'], ['upper', 'advanced']]) {
+    const source = await readFile(`tests/e2e/japanese-${file}-reading.spec.ts`, 'utf8');
+    assert.equal(source.match(/test\('/g)?.length, 1);
+    assert.ok(source.includes(`await verifyReadingLessons(page, qa, '${level}', {`));
+    assert.ok(source.split('\n')[2].startsWith('test('));
+  }
+  const source = await readFile('tests/e2e/japanese-reading-flow.ts', 'utf8');
+  for (const required of ['JAPANESE_COURSE_GAP_LESSONS.filter', 'lessons.entries()', 'lesson.questions.entries()',
+    'await phases.setup(async () => {', 'await phases.lessons[lessonIndex](async () => {', 'await phases.restoration(async () => {',
+    'toHaveLength(3)', '.size).toBe(18)', 'question.choices[chosen]', 'question.explanation', 'enhancement.evidence.find',
+    'toHaveText(evidence.quotes)', 'questionIndex < 4', "name: '새 상황의 근거'", "name: '본문 정답 근거'",
+    "level === 'intermediate' && lessonIndex === 0 && questionIndex === 1", "level === 'intermediate' && lessonIndex === 0 && questionIndex === 2",
+    'attempts: 1, intervalDays: 1', 'Date.parse(answer.lastAnsweredAt)', 'answer.successDates', 'sessions.size).toBe(3)',
+    "expect(journey.selectedLevel).toBe('beginner')", "not.toHaveProperty('selectionUpdatedAt')", 'expectedAnswers', 'expectedUnits',
+    'const completed = await local()', 'saved = { ...before, [LEVEL_JOURNEY_KEY]: completed.raw }',
+    'qa.traffic.assertLanguageConfirmed(saved)', "entry.method === 'GET'", 'entry.delivered', 'canonical(await qa.readLanguage())',
+    "name: '이번 단원 연습 기록 저장'", 'toBeDisabled()', 'toBeEnabled()', 'page.reload()', 'await restored()',
+    "localStorage.getItem(key)", 'toBeNull()', 'await unchangedLocal()', 'beforeFitness', 'width: 320', 'await narrow()',
+    'scroll).toBeLessThanOrEqual(size.width)', "url.pathname === '/api/language/tts'", 'expect(ttsRequests', ').toBe(0)']) assert.ok(source.includes(required), required);
+  for (const forbidden of ['localStorage.setItem', 'sessionStorage.setItem', 'addInitScript', 'page.route', 'route.fulfill',
+    'rememberUpperAnswer(', 'writeLevelJourney(', 'audio.play', 'speakJapanese', 'waitForTimeout', 'test.setTimeout',
+    'test.skip', 'test.fixme', 'timeout:', 'qa.createAccount(', 'process.env.']) assert.ok(!source.includes(forbidden), forbidden);
+  assert.equal(source.match(/client\.from\('language_user_state'\)\.update/g)?.length, 1);
+  assert.ok(source.indexOf('.update({ state: before })') < source.indexOf('await login('));
+  assert.ok(source.indexOf('const completed = await local()') < source.indexOf('expect.poll(async () => canonical(await qa.readLanguage()))'));
+  assert.ok(source.indexOf('saved = { ...before, [LEVEL_JOURNEY_KEY]: completed.raw }') < source.indexOf('expect.poll(async () => canonical(await qa.readLanguage()))'));
+  const { JAPANESE_COURSE_GAP_LESSONS: lessons } = await import('../../data/japaneseCourseGapLessons.ts');
+  let correct = 0, wrong = 0, helped = 0, passage = 0, transfer = 0;
+  for (const level of ['intermediate', 'advanced']) {
+    const selected = lessons.filter(lesson => lesson.level === level); assert.equal(selected.length, 3);
+    assert.equal(selected.flatMap(lesson => lesson.questions).length, 18);
+    for (const [lessonIndex, lesson] of selected.entries()) for (const [questionIndex, question] of lesson.questions.entries()) {
+      assert.equal(question.id, `${lesson.id}-q${questionIndex + 1}`); assert.ok(question.choices[question.answer]);
+      if (level === 'intermediate' && lessonIndex === 0 && questionIndex === 1) wrong++; else correct++;
+      if (level === 'intermediate' && lessonIndex === 0 && questionIndex === 2) helped++;
+      if (questionIndex < 4) passage++; else transfer++;
+    }
+  }
+  assert.deepEqual({ correct, wrong, helped, passage, transfer }, { correct: 35, wrong: 1, helped: 1, passage: 24, transfer: 12 });
+});
+
+test('each literal reading phase preserves a native same-spec coordinate for external helper failures without leaking content', async () => {
+  const repository = process.cwd();
+  const root = await mkdtemp(join(tmpdir(), 'reading-native-phase-'));
+  const paths = ['tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts'];
+  const phaseLines = new Map();
+  try {
+    await mkdir(join(root, 'tests/e2e'), { recursive: true });
+    for (const path of paths) {
+      const source = await readFile(path, 'utf8');
+      const positions = source.split('\n').flatMap((line, index) => line.includes('test.step(') ? [index + 1] : []);
+      assert.deepEqual(positions, [5, 7, 8, 9, 11]); phaseLines.set(path, positions);
+      // Reuse the actual literal phase callbacks. Replace only imports and remove
+      // the page/qa fixture request; the offline helper never uses either value.
+      const synthetic = source.replace("import { test } from './fixture';", `import { test } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};`)
+        .replace("from './japanese-reading-flow'", "from './offline-reading-helper'")
+        .replace('async ({ page, qa }) => {', 'async () => { const page = null, qa = null;');
+      assert.ok(!synthetic.includes("from './fixture'")); assert.ok(!synthetic.includes('async ({ page, qa })'));
+      await writeFile(join(root, path), synthetic);
+    }
+    await writeFile(join(root, 'tests/e2e/offline-reading-helper.ts'), `
+import { expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};
+export async function verifyReadingLessons(_page, _qa, _level, phases) {
+  for (const [index, phase] of [phases.setup, ...phases.lessons, phases.restoration].entries()) {
+    await phase(async () => {
+      if (index === Number(process.env.QA_READING_FAILURE_PHASE)) expect(${JSON.stringify(canary)}).toBe('PRIVATE_EXPECTED');
+    });
+  }
+}
+`);
+    await writeFile(join(root, 'offline.config.mjs'), `export default ${JSON.stringify({
+      testDir: './tests/e2e', workers: 1, retries: 0, projects: [{ name: 'chromium-app-smoke' }],
+      reporter: [[join(repository, 'tests/e2e/reporter.ts')]],
+    })};\n`);
+    // Pure native runner only: no browser/page/context/request fixture, webServer,
+    // network URL, real app body, Auth/DB seed, stack or installation is involved.
+    for (let phase = 0; phase < 5; phase++) {
+      const path = join(root, `journal-${phase}.jsonl`); await writeFile(path, '', { mode: 0o600 });
+      const child = spawnSync(process.execPath, [join(repository, 'node_modules/@playwright/test/cli.js'), 'test', '--config', 'offline.config.mjs'], {
+        cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: 'true', QA_READING_FAILURE_PHASE: String(phase),
+          QA_PRIVATE_DIAGNOSTIC_FILE: path, QA_PRIVATE_DIAGNOSTIC_TOKEN: token, GITHUB_STEP_SUMMARY: join(root, 'summary.md') },
+      });
+      assert.equal(child.error, undefined); assert.equal(child.status, 1);
+      const output = [];
+      const report = await emitDiagnosticJournal({ path, token, expected: 1, stage: 'stage-03', termination: 'none', emit: line => output.push(line) });
+      assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
+      assert.equal(report.invocations[0].counts.failed, 2); assert.equal(report.invocations[0].runnerErrors, 0);
+      assert.equal(report.invocations[0].details.length, 2);
+      for (const detail of report.invocations[0].details) {
+        assert.ok([49, 50].includes(detail.source)); assert.equal(detail.line, 3); assert.equal(detail.column, 5);
+        assert.equal(detail.project, 5); assert.equal(detail.status, 'failed'); assert.equal(detail.failure.category, 1);
+        assert.deepEqual(detail.failure.errors, []); assert.deepEqual(detail.failure.failedOperations, []);
+        assert.equal(detail.failure.failedSteps.length, 1);
+        const step = detail.failure.failedSteps[0];
+        assert.equal(step.source, detail.source); assert.equal(step.line, phaseLines.get(paths[detail.source - 49])[phase]);
+        assert.ok(Number.isInteger(step.column) && step.column > 0); assert.equal(detail.failure.stepScanTruncated, 0);
+      }
+      const text = output.join('\n'), journalText = await readFile(path, 'utf8');
+      privateOutput(output);
+      for (const secret of [canary, 'PRIVATE_EXPECTED', 'reading setup', 'reading lesson', 'reading restoration', 'offline-reading-helper', ...paths, root]) {
+        assert.ok(!text.includes(secret)); assert.ok(!journalText.includes(secret));
+      }
+      assert.ok(output.some(line => line.includes(`phase=1 source=49 line=${phaseLines.get(paths[0])[phase]} `)));
+      assert.ok(output.some(line => line.includes(`phase=1 source=50 line=${phaseLines.get(paths[1])[phase]} `)));
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

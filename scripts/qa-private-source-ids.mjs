@@ -49,4 +49,6 @@ export const sources = Object.freeze([
   'tests/e2e/japanese-answer-persistence.spec.ts', // 46
   'tests/e2e/daily-review-completion.spec.ts', // 47
   'tests/e2e/language-reset-receipts.spec.ts', // 48
+  'tests/e2e/japanese-middle-reading.spec.ts', // 49
+  'tests/e2e/japanese-upper-reading.spec.ts', // 50
 ]);
