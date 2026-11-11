@@ -41,7 +41,7 @@ test('time and water commands share history, protect ordering and restore the or
 
 test('stale clock confirmations and later manual meal edits cannot overwrite current records',async({page,qa,browser})=>{
   expect((await qa.account.client.from('user_app_state').update({state:seed()}).eq('user_id',qa.account.id)).error).toBeNull();await login(page,qa.account);await synced(page);await openCommand(page);await expect(reviewFor(page)).toBeVisible();
-  const context=await browser.newContext({viewport:{width:390,height:844},timezoneId:'Asia/Seoul'});await qa.traffic.install(context);
+  const context=await browser.newContext({ serviceWorkers: 'block',viewport:{width:390,height:844},timezoneId:'Asia/Seoul'});await qa.traffic.install(context);
   try{const second=await context.newPage();await login(second,qa.account);await synced(second);await openCommand(second);await expect(reviewFor(second)).toBeVisible();
     await reviewFor(page).getByRole('button',{name:'확인하고 저장'}).click();await expect(receiptFor(page)).toContainText('식단 기록 저장');await reviewFor(second).getByRole('button',{name:'확인하고 저장'}).click();await expect(reviewFor(second).getByRole('alert')).toContainText('다른 곳에서 오늘 식단 기록이 변경');await reviewFor(second).getByRole('button',{name:'확인 화면 닫기',exact:true}).click();
     await second.goto('/diet');await expect(second.getByLabel('마지막 음식·프로틴 섭취시간')).toHaveValue('00:00');await second.getByLabel('마지막 음식·프로틴 섭취시간').fill('00:01');await saveMeal(second,'CI 이후 직접 시각 수정');await mealSaved(second,qa,'CI 이후 직접 시각 수정');const modified=await qa.read();

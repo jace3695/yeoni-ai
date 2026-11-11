@@ -70,7 +70,7 @@ test('chat creates a reviewed task; two browser sessions cannot confirm stale ch
   await expect(page.getByText(/할 일 추가 완료/)).toBeVisible();
   const before = (await qa.account.client.from('assistant_items').select('*').single()).data!;
 
-  const second = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const second = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } });
   await qa.traffic.install(second);
   const otherPage = await second.newPage();
   try {

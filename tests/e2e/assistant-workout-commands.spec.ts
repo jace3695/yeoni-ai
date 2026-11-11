@@ -70,7 +70,7 @@ test('workout confirmation cancels, recovers a lost response, appears in the cal
 test('two real workout sessions reject stale confirmation and a later calendar edit blocks undo', async ({ page, qa, browser }) => {
   expect((await qa.account.client.from('user_app_state').update({ state: seed() }).eq('user_id', qa.account.id)).error).toBeNull();
   await login(page, qa.account); await synced(page); await openCommand(page); await expect(reviewFor(page)).toBeVisible();
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Seoul' }); await qa.traffic.install(context);
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Seoul' }); await qa.traffic.install(context);
   try {
     const second = await context.newPage(); await login(second, qa.account); await synced(second); await openCommand(second); await expect(reviewFor(second)).toBeVisible();
     await reviewFor(page).getByRole('button', { name: '확인하고 저장' }).click(); await expect(page.getByText(/운동 완료 저장/)).toBeVisible();

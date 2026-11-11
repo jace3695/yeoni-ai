@@ -1,20 +1,13 @@
 name: Isolated browser verification
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:
-
+'on':
+  workflow_dispatch: null
 permissions:
   contents: read
-
 concurrency:
   group: browser-qa-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
 jobs:
   focused-components:
-    # Real browser/source components only. No hosted Auth, DB, microphone or provider.
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -24,53 +17,25 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
       QA_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '24.19.0'
-          cache: npm
-      - run: npm ci && npm --prefix scripts/browser-qa ci
-      - name: Install real browser engines and Korean review fonts
-        run: |
-          npx playwright install --with-deps chromium webkit
-          sudo apt-get update
-          sudo apt-get install -y fonts-noto-cjk
-      - name: Checkout the same fixed WebKit network library as the full suite
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          repository: GNOME/libsoup
-          ref: 25eac153004f777581ca2d95e31a02ca96844332
-          path: .e2e/libsoup-source
-          persist-credentials: false
-      - name: Build the existing pinned WebKit library
-        run: |
-          sudo apt-get install -y meson ninja-build build-essential pkg-config libglib2.0-dev libnghttp2-dev libsqlite3-dev libpsl-dev libbrotli-dev glib-networking
-          meson setup .e2e/libsoup-build .e2e/libsoup-source --prefix="$RUNNER_TEMP/webkit-soup" --libdir=lib --wrap-mode=nofallback -Dgssapi=disabled -Dvapi=disabled -Dntlm=disabled -Dsysprof=disabled -Dautobahn=disabled -Dpkcs11_tests=disabled -Dintrospection=disabled -Ddocs=disabled -Dtests=false
-          meson compile -C .e2e/libsoup-build
-          meson install -C .e2e/libsoup-build
-          echo "QA_SOUP_LIBRARY=$RUNNER_TEMP/webkit-soup/lib/libsoup-3.0.so.0" >> "$GITHUB_ENV"
-      - name: Prepare pinned local OCR assets without image data
-        run: node scripts/browser-qa/cloud/prepare-ocr-assets.mjs
-      - name: Verify isolated source components in both browser engines
-        run: npx playwright test --config tests/browser-cloud/playwright.config.ts
-      - name: Preserve only synthetic component evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: component-browser-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            .e2e/component-browser/evidence/results.json
-            .e2e/component-browser/evidence/*.png
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 7
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: 'false'
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      with:
+        node-version: 24.19.0
+        package-manager-cache: false
+    - name: Checkout the same fixed WebKit network library as the full suite
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        repository: GNOME/libsoup
+        ref: 25eac153004f777581ca2d95e31a02ca96844332
+        path: .e2e/libsoup-source
+        persist-credentials: 'false'
+    - name: Run private verification with fixed status output
+      run: node scripts/qa-private-orchestrator.mjs focused-components
   browser:
     runs-on: ubuntu-24.04
-    # The complete suite includes all authored drawing lessons in both engines.
-    # Keep every regression check while allowing the growing suite to finish.
     timeout-minutes: 105
     env:
       CI: 'true'
@@ -78,94 +43,20 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
       QA_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '24.19.0'
-          cache: npm
-      - run: npm ci
-      - name: Existing checks
-        run: |
-          npm test
-          node scripts/qa-pr189-sync.mjs
-          npm run lint
-          npx tsc --noEmit
-      - name: Install real browsers
-        run: npx playwright install --with-deps chromium webkit
-      - name: Checkout official libsoup 3.6.6 source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          repository: GNOME/libsoup
-          ref: 25eac153004f777581ca2d95e31a02ca96844332
-          path: .e2e/libsoup-source
-          persist-credentials: false
-      - name: Build fixed library for isolated browser comparison
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y meson ninja-build build-essential pkg-config libglib2.0-dev libnghttp2-dev libsqlite3-dev libpsl-dev libbrotli-dev glib-networking
-          meson setup .e2e/libsoup-build .e2e/libsoup-source --prefix="$RUNNER_TEMP/webkit-soup" --libdir=lib --wrap-mode=nofallback -Dgssapi=disabled -Dvapi=disabled -Dntlm=disabled -Dsysprof=disabled -Dautobahn=disabled -Dpkcs11_tests=disabled -Dintrospection=disabled -Ddocs=disabled -Dtests=false
-          meson compile -C .e2e/libsoup-build
-          meson install -C .e2e/libsoup-build
-          echo "QA_SOUP_LIBRARY=$RUNNER_TEMP/webkit-soup/lib/libsoup-3.0.so.0" >> "$GITHUB_ENV"
-      - name: Start disposable database and auth
-        run: node scripts/e2e-stack.mjs start
-      - name: Build the isolated production app
-        run: npm run build
-      - name: Keep hosted-only speech diagnostics denied on the isolated app
-        run: node scripts/qa-playwright.mjs tests/e2e/diagnostic-denial.spec.ts --project=chromium --project=webkit-diagnostic-denial
-      - name: Verify record and free-mode regression flows first
-        run: node scripts/qa-playwright.mjs tests/e2e/assistant-workout-cardio-commands.spec.ts tests/e2e/assistant-workout-commands.spec.ts tests/e2e/budget-improvements.spec.ts tests/e2e/free-first.spec.ts --project=chromium --project=webkit-small --grep 'cardio review cancels|two sessions reject stale cardio|invalid or expired cardio|workout confirmation cancels|two real workout sessions|lost field response reuses one request|bulk category memory|free mode keeps paid routes'
-      - name: Verify handwriting course in Chromium and WebKit
-        run: node scripts/qa-playwright.mjs tests/e2e/handwriting-course.spec.ts tests/e2e/roadmap-completion.spec.ts --project=chromium --project=webkit-small --grep 'handwriting'
-      - name: Verify assistant home, advice and briefing in both browsers
-        run: node scripts/qa-playwright.mjs tests/e2e/free-advice.spec.ts tests/e2e/roadmap-completion.spec.ts tests/e2e/p2.spec.ts tests/e2e/assistant-budget-commands.spec.ts tests/e2e/chatgpt-connection.spec.ts --project=chromium --project=webkit-small --grep 'free advice|unified chat|empty records stay explicit|morning and evening briefing|AI Yeoni shows a seven-day|budget command reviews one original|ChatGPT advice is isolated by owner'
-      - name: Verify beginner drawing flow in both browsers
-        run: node scripts/qa-playwright.mjs tests/e2e/drawing-simple.spec.ts --project=chromium --project=webkit-small
-      - name: Verify PIN status delays, failures and logout races
-        run: node scripts/qa-playwright.mjs tests/e2e/pin-status.spec.ts --project=chromium --project=webkit-small
-      - name: Diagnose D06, D23, D33 and D79 navigation without retries
-        run: node scripts/qa-playwright.mjs tests/e2e/drawing.spec.ts --project=chromium --project=webkit-small --grep 'drawing D(06|23|33|79):' --repeat-each=3
-      - name: Verify drawing save and restore in Chromium and WebKit
-        run: |
-          node scripts/qa-playwright.mjs tests/e2e/drawing.spec.ts --project=chromium --project=webkit-small --grep 'drawing C0[1-4]'
-          node scripts/qa-playwright.mjs tests/e2e/drawing.spec.ts --project=chromium --project=webkit-small --grep 'drawing D(7[1-9]|80)'
-          node scripts/qa-playwright.mjs tests/e2e/drawing.spec.ts --project=chromium --project=webkit-small --grep 'drawing D(6[1-9]|70)'
-          node scripts/qa-playwright.mjs tests/e2e/drawing.spec.ts --project=chromium --project=webkit-small --grep 'drawing D(5[3-9]|60)'
-          node scripts/qa-playwright.mjs tests/e2e/drawing.spec.ts --project=chromium --project=webkit-small --grep 'drawing D46: reuse'
-          node scripts/qa-playwright.mjs tests/e2e/drawing.spec.ts --project=chromium --project=webkit-small --grep 'drawing D(4[3-9]|5[0-2])' --grep-invert 'drawing D46: reuse'
-          node scripts/qa-playwright.mjs tests/e2e/drawing.spec.ts tests/e2e/drawing-templates.spec.ts --project=chromium --project=webkit-small --grep-invert 'drawing (D(4[3-9]|5[0-9]|6[0-9]|7[0-9]|80)|C0[1-4])'
-      - name: Verify typing basics in Chromium and WebKit
-        run: node scripts/qa-playwright.mjs tests/e2e/typing-basics.spec.ts --project=chromium --project=webkit-small
-      - name: Verify spoken numeric ranges in Chromium and WebKit
-        run: node scripts/qa-playwright.mjs tests/e2e/workout-voice.spec.ts --project=chromium --project=webkit-small --grep 'pull-up posture range stays visible|late silent unlock rejection'
-      - name: Repeat the previously failing WebKit flows
-        run: node scripts/qa-playwright.mjs tests/e2e/p2.spec.ts tests/e2e/workout-times.spec.ts tests/e2e/budget-improvements.spec.ts tests/e2e/drawing.spec.ts tests/e2e/roadmap-completion.spec.ts --project=webkit-small --grep 'growth pattern loading failure|actual workout times review, save, revise, compare and delete|lost field response reuses one request|drawing D14:|workout evidence links only saved dates' --repeat-each=3
-      - name: Actual browser flows and HTTP body assertions
-        run: node scripts/qa-playwright.mjs
-      - name: Remove disposable database and keys
-        if: always()
-        run: node scripts/e2e-stack.mjs stop
-      - name: Publish synthetic evidence only
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: browser-verification-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            .e2e/evidence/*.json
-            .e2e/evidence/server-navigation.jsonl
-            .e2e/evidence/drawing-simple-*.png
-            .e2e/evidence/pin-status-*.png
-            .e2e/evidence/drawing-stage3-*.png
-            .e2e/evidence/drawing-stage4-*.png
-            .e2e/evidence/drawing-stage5-*.png
-            .e2e/evidence/drawing-stage6-*.png
-            .e2e/evidence/drawing-stage7-*.png
-            .e2e/evidence/drawing-stage8-*.png
-            .e2e/evidence/drawing-stage9-*.png
-            .e2e/evidence/drawing-project-*.png
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 7
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: 'false'
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      with:
+        node-version: 24.19.0
+        package-manager-cache: false
+    - name: Checkout official libsoup 3.6.6 source
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        repository: GNOME/libsoup
+        ref: 25eac153004f777581ca2d95e31a02ca96844332
+        path: .e2e/libsoup-source
+        persist-credentials: 'false'
+    - name: Run private verification with fixed status output
+      run: node scripts/qa-private-orchestrator.mjs browser
