@@ -62,7 +62,21 @@ for (const remaining of ['japaneseLevelJourneyV1', 'japaneseChunkReviewV1', 'sav
     remote: { languageRecordResetV1: marker, [remaining]: 'synthetic-old' },
   }, async ({ reset, entries, session, reads }) => {
     const before = new Map(entries);
-    await assert.rejects(reset(), /서버에 일본어 학습 기록이 남아/);
+    await assert.rejects(reset(), (error: unknown) => {
+      // A remaining-record failure needs a new, explicitly confirmed reset,
+      // not an automatic request-ID rotation or an unsafe same-request retry.
+      const message = (error as { message: string }).message;
+      assert.match(message, /^서버에 일본어 학습 기록이 남아 있어/);
+      assert.match(message, /이 기기의 기록은 지우지 않았습니다/);
+      assert.match(message, /서버 업데이트 상태/);
+      assert.match(message, /필요한 기록을 먼저 보관/);
+      assert.match(message, /다른 기기와 탭의 학습을 끝낸 뒤/);
+      assert.match(message, /화면을 새로고침/);
+      assert.match(message, /체크박스와 ‘초기화’ 입력으로 다시 확인/);
+      assert.match(message, /새로운 삭제 요청/);
+      assert.match(message, /이후에 새로 만든 기록도 모두 삭제/);
+      return true;
+    });
     assert.deepEqual(entries, before);
     assert.equal(session.api.length, 0);
     assert.deepEqual(reads, ['language_user_state', 'state', 'user_id:A']);

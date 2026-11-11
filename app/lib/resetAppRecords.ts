@@ -55,7 +55,7 @@ async function performReset(app: RecordResetApp, requestId: string, expectedUser
       && verifiedLanguageReset.marker === data.marker
       && window.localStorage.getItem(resetMarkerKey(app)) === data.marker;
     if (!verifiedEmptyLanguageState && !verifiedRepeat) {
-      throw new Error("서버에 일본어 학습 기록이 남아 있어 초기화를 완료로 표시하지 않았어요. 이 기기의 기록은 지우지 않았습니다. 서버 업데이트 또는 다른 기기의 새 기록을 확인해 주세요.");
+      throw new Error("서버에 일본어 학습 기록이 남아 있어 초기화를 완료로 표시하지 않았어요. 이 기기의 기록은 지우지 않았습니다. 서버 업데이트 상태를 확인해 주세요. 남은 기록을 모두 삭제하려면 필요한 기록을 먼저 보관하고, 다른 기기와 탭의 학습을 끝낸 뒤 화면을 새로고침해 주세요. 체크박스와 ‘초기화’ 입력으로 다시 확인하면 새로운 삭제 요청이 실행되며, 이전 요청 이후에 새로 만든 기록도 모두 삭제됩니다.");
     }
   }
   const { data: current } = await supabase.auth.getUser();
