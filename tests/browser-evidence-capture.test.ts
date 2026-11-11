@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { PrivateDiagnostics } from '../scripts/qa-private-diagnostics.mjs';
 import { captureFullPageEvidence, fullPageEvidenceClips } from './browser-cloud/evidence-capture.ts';
 
 // Native browsers are not launched by these tests. This exercises capture planning,
@@ -70,7 +71,13 @@ test('reporter emits only bounded fixed phase enums and never raw assertions, er
   const output: Record<string, string> = {};
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const exports: { default?: new () => { onStepEnd: (...args: unknown[]) => void; onTestEnd: (...args: unknown[]) => void; onEnd: (...args: unknown[]) => void } } = {};
-  vm.runInNewContext(js, { exports, require: () => ({ mkdirSync: () => {}, writeFileSync: (path: string, text: string) => { output[path] = text; }, appendFileSync: () => {} }), process: { env: {} }, console: { log: () => {} } });
+  vm.runInNewContext(js, { exports, require: (name: string) => {
+    if (name === '../../scripts/qa-private-diagnostics.mjs') return {
+      PrivateDiagnostics: class extends PrivateDiagnostics { constructor() { super({ env: {} }); } },
+    };
+    assert.equal(name, 'node:fs');
+    return { mkdirSync: () => {}, writeFileSync: (path: string, text: string) => { output[path] = text; }, appendFileSync: () => {} };
+  }, process: { env: {} }, console: { log: () => {} } });
   assert.ok(exports.default);
   const reporter = new exports.default();
   assert.equal(typeof reporter.onStepEnd, 'function');

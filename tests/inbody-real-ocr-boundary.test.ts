@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { PrivateDiagnostics } from '../scripts/qa-private-diagnostics.mjs';
 import { inbodyLocalAssetOptions } from '../app/lib/inbodyReportParser.ts';
 import { OCR_ASSETS, OCR_ASSET_ID, OCR_ASSET_PREFIX } from '../scripts/browser-qa/cloud/ocr-assets.mjs';
 import { verifyOcrAsset } from '../scripts/browser-qa/cloud/prepare-ocr-assets.mjs';
@@ -108,6 +109,9 @@ test('actual reporter accepts only four fixed B3 real phases, strips diagnostics
   type Reporter = { onStepEnd(a: unknown, b: unknown, c: unknown): void; onTestEnd(a: unknown, b: unknown): void; onEnd(a: unknown): void };
   const exports: { default?: new () => Reporter } = {}; let output = '';
   vm.runInNewContext(`(function(exports, require){${code}\n})`, { process: { env: {} }, console: { log() {} } })(exports, (name: string) => {
+    if (name === '../../scripts/qa-private-diagnostics.mjs') return {
+      PrivateDiagnostics: class extends PrivateDiagnostics { constructor() { super({ env: {} }); } },
+    };
     assert.equal(name, 'node:fs'); return { mkdirSync() {}, appendFileSync() { assert.fail('No summary configured'); }, writeFileSync(_path: string, value: string) { output = value; } };
   });
   assert.ok(exports.default); const reporter = new exports.default();

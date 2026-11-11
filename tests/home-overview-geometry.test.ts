@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { PrivateDiagnostics } from '../scripts/qa-private-diagnostics.mjs';
 import { renderToString } from 'react-dom/server';
 import type { ReactElement } from 'react';
 import type { HomeOverviewProps } from '../components/HomeOverview';
@@ -105,6 +106,9 @@ function reporterFixture() {
   vm.runInNewContext(`(function(exports, require){${compile(readFileSync('tests/browser-cloud/reporter.ts', 'utf8'))}\n})`, {
     process: { env: { QA_HEAD_SHA: 'synthetic-commit' } }, console: { log() {} },
   })(exports, (name: string) => {
+    if (name === '../../scripts/qa-private-diagnostics.mjs') return {
+      PrivateDiagnostics: class extends PrivateDiagnostics { constructor() { super({ env: {} }); } },
+    };
     assert.equal(name, 'node:fs');
     return { mkdirSync() {}, appendFileSync() { assert.fail('No summary path configured'); },
       writeFileSync(_path: string, value: string) { output = value; } };
