@@ -10,7 +10,7 @@ import { CHUNK_REVIEW_KEY } from '../../utils/japaneseChunkReview';
 type Qa = { account: Parameters<typeof login>[1]; traffic: Traffic; read: () => Promise<State>; readLanguage: () => Promise<State> };
 type Level = 'intermediate' | 'advanced';
 type Phase = (action: () => Promise<void>) => Promise<void>;
-type ReadingPhases = { setup: Phase; lessons: [Phase, Phase, Phase]; restoration: Phase };
+type ReadingPhases = { setup: Phase; lessons: [Phase, Phase, Phase]; repeat: Phase; restoration: Phase };
 const lessonIds = {
   intermediate: ['middle-core-01', 'middle-core-02', 'middle-core-03'],
   advanced: ['upper-core-01', 'upper-core-02', 'upper-core-03'],
@@ -192,7 +192,55 @@ export async function verifyReadingLessons(page: Page, qa: Qa, level: Level, pha
         await synced(); qa.traffic.assertLanguageConfirmed(saved);
         expect(await qa.read()).toEqual(beforeFitness);
         if (lessonIndex === 0) await narrow();
-        await done.getByRole('link', { name: `${levelTitle} 단원 목록으로`, exact: true }).click(); await badge(lesson.id);
+        if (lessonIndex === 2) {
+          await phases.repeat(async () => {
+            // One extra answer only: 19 attempts across 18 questions, still three completions.
+            const question = lesson.questions[0]; const previous = expectedAnswers[question.id];
+            const beforeRepeat = await local();
+            await done.getByRole('button', { name: '같은 문제 더 반복하기', exact: true }).click();
+            const questionRegion = page.getByRole('region', { name: '읽기 확인 문제', exact: true });
+            await expect(questionRegion.getByRole('heading', { level: 2, name: question.prompt, exact: true })).toBeVisible();
+            await expect(questionRegion.getByRole('status')).toHaveCount(0);
+            await expect(questionRegion.getByRole('region', { name: '본문 정답 근거', exact: true })).toHaveCount(0);
+            await expect(questionRegion.getByRole('button', { name: '다음 문제', exact: true })).toBeDisabled();
+            expect((await local()).raw).toBe(beforeRepeat.raw);
+            const startedAt = await page.evaluate(() => Date.now());
+            await questionRegion.getByRole('button', { name: question.choices[question.answer], exact: true }).click();
+            const feedback = questionRegion.getByRole('status');
+            await expect(feedback.getByText('맞게 골랐어요.', { exact: true })).toBeVisible();
+            await expect(feedback.getByText(question.explanation, { exact: true })).toBeVisible();
+            await expect(feedback.getByText('이 답을 복습 기록에 저장했어요.', { exact: true })).toBeVisible();
+            const repeated = await local(); const answer = repeated.journey.answers[question.id];
+            expect(answer).toMatchObject({ lessonId: lesson.id, questionId: question.id, correct: true, neededHelp: true, attempts: 2, intervalDays: 1, successDates: [] });
+            expect(answer.lastAttemptId).not.toBe(previous.lastAttemptId);
+            expect(answer.lastAttemptId.endsWith(`:${question.id}`)).toBe(true);
+            const prefix = answer.lastAttemptId.slice(0, -question.id.length - 1);
+            expect(prefix).toMatch(uuid); expect(sessions.has(prefix)).toBe(false); sessions.add(prefix);
+            expect(Date.parse(answer.lastAnsweredAt)).toBeGreaterThanOrEqual(startedAt);
+            expect(Date.parse(answer.lastAnsweredAt)).toBeLessThanOrEqual(repeated.at);
+            expect(Date.parse(answer.nextReviewAt)).toBe(Date.parse(answer.lastAnsweredAt) + 86_400_000);
+            expect(upperAnswerStable(answer)).toBe(false);
+            expectedAnswers = { ...expectedAnswers, [question.id]: answer };
+            // The real saver stamps this successful write; every other field remains exact.
+            const repeatedUpdatedAt = Date.parse(repeated.journey.updatedAt!);
+            expect(repeatedUpdatedAt).toBeGreaterThanOrEqual(startedAt);
+            expect(repeatedUpdatedAt).toBeLessThanOrEqual(repeated.at);
+            expect(repeatedUpdatedAt).toBeGreaterThan(Date.parse(beforeRepeat.journey.updatedAt!));
+            expect(repeated.journey).toEqual({ ...beforeRepeat.journey, answers: expectedAnswers, updatedAt: repeated.journey.updatedAt });
+            expect(repeated.journey.practicedUnits).toEqual(expectedUnits);
+            saved = { ...before, [LEVEL_JOURNEY_KEY]: repeated.raw };
+            await unchangedLocal();
+            await expect.poll(async () => canonical(await qa.readLanguage())).toBe(canonical(saved));
+            await expect.poll(() => qa.traffic.entries.some(entry => entry.table === 'language_user_state' && entry.method === 'GET'
+              && entry.status === 200 && entry.delivered && entry.receivedState && canonical(entry.receivedState) === canonical(saved))).toBe(true);
+            await synced(); qa.traffic.assertLanguageConfirmed(saved);
+            expect(await qa.read()).toEqual(beforeFitness);
+            // Exit after the confirmed answer without creating another completion stamp.
+            await page.getByRole('link', { name: `← ${levelTitle} 단원으로`, exact: true }).click(); await badge(lesson.id);
+          });
+        } else {
+          await done.getByRole('link', { name: `${levelTitle} 단원 목록으로`, exact: true }).click(); await badge(lesson.id);
+        }
         if (lessonIndex === 0) await page.setViewportSize({ width: 1280, height: 720 });
       });
     }
@@ -201,8 +249,11 @@ export async function verifyReadingLessons(page: Page, qa: Qa, level: Level, pha
       expect(Object.keys(final.journey.answers).sort()).toEqual(lessons.flatMap(lesson => lesson.questions.map(question => question.id)).sort());
       expect(Object.keys(final.journey.practicedUnits).sort()).toEqual([...Object.keys(preservedUnits), ...lessonIds[level]].sort());
       expect(Object.values(final.journey.answers).filter(answer => answer.correct)).toHaveLength(level === 'intermediate' ? 17 : 18);
-      expect(Object.values(final.journey.answers).filter(answer => answer.neededHelp)).toHaveLength(level === 'intermediate' ? 1 : 0);
-      expect(sessions.size).toBe(3);
+      expect(Object.values(final.journey.answers).filter(answer => answer.neededHelp)).toHaveLength(level === 'intermediate' ? 2 : 1);
+      const repeatedId = lessons[2].questions[0].id;
+      for (const [id, answer] of Object.entries(final.journey.answers)) expect(answer.attempts).toBe(id === repeatedId ? 2 : 1);
+      expect(Object.values(final.journey.answers).reduce((sum, answer) => sum + answer.attempts, 0)).toBe(19);
+      expect(sessions.size).toBe(4);
       const restored = async () => {
         await synced(); await expect(listing()).toBeVisible();
         for (const lesson of lessons) await badge(lesson.id);

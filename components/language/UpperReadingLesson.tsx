@@ -102,7 +102,8 @@ export default function UpperReadingLesson({ lesson, level, journey, update, rev
   const repeat = () => {
     if (operation.current) return;
     audio.stop(); setChunkPracticeOpen(false); setSessionId(crypto.randomUUID()); responseCache.current = {}; setResponses({}); setHinted({}); setCursor(0);
-    setHighlighted(false); setInitialHelp(false); setQuestionsStarted(true);
+    // These answers were just shown in feedback, so an immediate repeat is helped practice.
+    setHighlighted(false); setInitialHelp(true); setQuestionsStarted(true);
     setSampleShown(false); setReflected(false); setError(''); setStage('questions');
   };
   if (!questions.length) return <section className={styles.page}><h1>지금 예정된 복습은 없어요</h1><p>선택한 학습 단계와 이전 기록은 그대로예요. 원하면 단원 전체를 다시 볼 수 있어요.</p><div className={styles.actions}><Link className={styles.button} href={`/language/levels?lesson=${lesson.id}`}>단원 전체 보기</Link><Link className={styles.button} href={levelHref}>{levelTitle} 단계 화면으로</Link></div></section>;

@@ -5,14 +5,13 @@ Auth/API inspection and before the unconditional stack teardown. It uses the
 already compiled app and the existing disposable Supabase fixture. The webpack
 matrix entry is unchanged. No deployment, new workflow trigger, artifact upload, cache, dependency, job limit
 or repository permission changes. The receipt migration is appended only to the
-disposable fixture initialization; tests/e2e/schema.sql stays unchanged. The exact unit inventory increases to 344 for
-the separately integrated content test. Product changes remain separately reviewed.
+disposable fixture initialization; tests/e2e/schema.sql stays unchanged. The exact unit inventory increases to 345 for
+the separately integrated content and remaining-level-flow tests. Product changes remain separately reviewed.
 
 ## Exact coverage
 
 The explicit CLI preserves six prior tests unchanged, includes the separately reviewed
-fixed-settings baseline correction in the seventh receipt scenario, and adds two
-new bounded reading tests by source line:
+fixed-settings baseline correction in the seventh receipt scenario, retains both bounded reading tests, and adds level-choice and overdue-review tests by source line:
 
 - `auth.spec.ts:3`: login, logout, re-login and reload preserve 17 original keys
   without an unintended PATCH.
@@ -56,6 +55,9 @@ new bounded reading tests by source line:
 - `japanese-upper-reading.spec.ts:3`: use a separate unchanged qa fixture to visit
   all three new advanced lesson links and answer all 18 reading questions correctly.
 
+- `japanese-level-choice.spec.ts:3`: explicit level choice and preview backtracking preserve earlier records through save, reload and relogin.
+- `japanese-due-review.spec.ts:3`: a synthetic overdue subset retains its queue and helped repeats without completing the full unit.
+
 Both reading tests use `japanese-reading-flow.ts` to check the actual passage,
 source-mapped choices, feedback, explanation, 24 passage-evidence and 12 transfer
 panels in total, gated comparison/self-check and all six completion stamps. Each
@@ -66,9 +68,11 @@ the question cursor. Selected level, unrelated language state, chunk absence and
 fitness remain unchanged. Each first lesson uses 320 CSS pixels with overflow
 checks and actual clicks. This is responsive Chromium, not a physical phone test.
 Static answers verify source-to-UI mapping, not independent language quality.
-Across both flows there are 35 correct answers, one intentional wrong answer and
-one help-assisted correct answer; none is a learner mastery claim. No answer is
-seeded, no app save function is called directly, and no successful write is mocked.
+The initial traversals contain 35 correct answers, one intentional wrong answer and
+one help-assisted correct answer. Each flow then repeats one answer with help,
+for 38 attempts across 36 distinct questions, without adding a completion stamp.
+None is a learner mastery claim. No answer is
+seeded in either complete reading traversal, no app save function is called directly, and no successful write is mocked.
 No listening control is clicked. A zero-TTS request observer is supplemental only.
 
 This is an explicit two-test subdivision of the proposed one-test 36-question
@@ -76,7 +80,7 @@ traversal: 18 questions and three lessons per unchanged 90-second test, with no
 omitted question or raised timeout. Actual fit in the unchanged overall lane
 remains unverified until a bounded run and fixture cleanup finish.
 
-The receipt test uses two generated owners. These nine tests use eleven disposable accounts in total. The existing fixture handles
+The receipt test uses two generated owners. These eleven tests use thirteen disposable accounts in total. The existing fixture handles
 account creation, route draining, browser closure, deletion and scoped zero-row
 checks. Passing requires completion of all test teardown assertions. Interrupted
 or failed teardown is not certified. The existing unconditional disposable stack
@@ -115,7 +119,7 @@ rows, URLs, credentials, errors or DOM is forwarded to public output.
 
 The private diagnostic channel has a fresh random token, bounded reads, no-follow
 file access and an exact schema. Acceptance requires one completed invocation,
-the nine exact source coordinates with project ID 5, nine passed tests and zero
+the eleven exact source coordinates with project ID 5, eleven passed tests and zero
 skips, failures, unknown outcomes, active tests or runner errors. Missing, stale,
 partial, duplicate, malformed or oversized reports fail closed, even with exit 0.
 Existing project IDs are unchanged. Public output contains fixed labels and
@@ -130,8 +134,8 @@ server-side network sandbox. No paid generation or TTS is requested by these tes
 The safety suite uses synthetic reports, child processes and list-only test
 collection. It does not start a browser, Auth, a database or the app server. Run `node --test scripts/isolated-chromium-smoke/safety.test.mjs` and
 `node --test scripts/qa-private-orchestrator.test.mjs`, plus focused lint, syntax and
-type checks. These are distinct from real browser execution. The integrated content expansion adds one unit test, so the exact unit inventory
-is 344. This integration preserves six prior browser tests and every product
+type checks. These are distinct from real browser execution. The integrated content and remaining-level-flow tests bring the exact unit inventory
+to 345. This integration preserves six prior browser tests and every product
 component. The seventh receipt scenario includes the separately reviewed fixed-settings
 baseline correction. Focused synthetic/list-only checks are not browser execution.
 
@@ -142,15 +146,19 @@ same commit. Do not reinterpret a local synthetic pass as application verificati
 The receipt fixture adds only the reviewed replay-receipt migration after the two
 existing reset migrations. Its guard removes exactly that single append line before
 checking the unchanged launcher baseline hash. The schema.sql source, grants, policies, optional
-docs guard and fixture source remain unchanged. Source IDs 1–48 remain stable; the
-intermediate and advanced reading specs append IDs 49 and 50, both at line 3, column 5. Unknown pre-upgrade requests, destructive legacy writes,
+docs guard and fixture source remain unchanged. Source IDs 1–50 remain stable. Level-choice and overdue-review specs append IDs 51 and 52, respectively, both at line 3, column 5. Unknown pre-upgrade requests, destructive legacy writes,
 metadata tampering, hosted rollout and ledger performance remain outside this lane.
 
 Reading-specific scope, nonclaims and pending admission are recorded in
 `docs/japanese-reading-browser-verification.md`.
 
-Five explicitly awaited literal test.step callbacks per reading spec retain
-spec-owned setup, lesson 1/2/3 and restoration phase locations while helper
+Six explicitly awaited literal test.step callbacks per reading spec retain
+spec-owned setup, lesson 1/2/3, immediate repeat and restoration phase locations while helper
 assertion details remain subject to the unchanged same-spec privacy guard.
-The safety suite exercises all ten phase-failure cases with a fixtureless native
+The safety suite exercises all twelve phase-failure cases with a fixtureless native
 runner and checks that no helper/error/label content reaches numeric output.
+
+The level-choice and overdue-review specs and their shared state helper are
+strictly pinned separately. Eleven additional offline helper-failure injections
+check each new literal phase's original source line. These coordinate fixtures
+replace application bodies and do not certify application behavior.

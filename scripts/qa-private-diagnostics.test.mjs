@@ -352,3 +352,26 @@ test('journal revalidation rejects forged extra fields, categories, numeric boun
     assert.equal(parse(entries).report, 'complete');
   }
 });
+
+test('appended level-choice and due-review IDs retain private same-spec failure coordinates', async () => {
+  for (const [file, source] of [['tests/e2e/japanese-level-choice.spec.ts', 51], ['tests/e2e/japanese-due-review.spec.ts', 52]]) {
+    const fixture = await fresh(), reporter = new PrivateDiagnostics(fixture);
+    const definition = { file, line: 3, column: 5 };
+    const at = { file, line: 8, column: 11 };
+    reporter.onTestEnd(specimen(definition, 'chromium-app-smoke'), { status: 'failed' }, {
+      category: 'test-error', testDefinition: definition,
+      errors: [{ location: at }], omittedErrors: 0, failedSteps: [at],
+      failedOperations: [{ location: at, category: 'expect', durationMs: 15 }],
+    });
+    reporter.onEnd({ status: 'failed' });
+    const { report, output } = await emit(fixture);
+    assert.equal(report.report, 'complete');
+    const detail = report.invocations[0].details[0];
+    assert.equal(detail.source, source); assert.equal(detail.line, 3); assert.equal(detail.column, 5);
+    assert.equal(detail.project, 5);
+    assert.deepEqual(detail.failure.failedSteps, [{ source, line: 8, column: 11 }]);
+    assert.ok(output.some(line => line.includes(`phase=1 source=${source} line=8 column=11`)));
+    const bytes = await readFile(fixture.path, 'utf8');
+    for (const secret of [file, canary, 'message', 'stack', 'attachments', 'https:']) assert.ok(!bytes.includes(secret));
+  }
+});

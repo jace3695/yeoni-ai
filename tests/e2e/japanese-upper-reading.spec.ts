@@ -8,6 +8,7 @@ test('all 18 new advanced reading answers and three completion stamps persist th
       async action => { await test.step('reading lesson 2', action); },
       async action => { await test.step('reading lesson 3', action); },
     ],
+    repeat: async action => { await test.step('reading immediate repeat', action); },
     restoration: async action => { await test.step('reading restoration', action); },
   });
 });
