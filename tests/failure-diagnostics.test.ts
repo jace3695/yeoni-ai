@@ -464,3 +464,105 @@ test('installed native runner retains a spec-owned expect site and duration with
       /diagnostic-private|literal private|toBe|https:|locator/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('native same-spec helper assertion reaches the numeric private journal without browser, DB or raw errors', async () => {
+  const { emitDiagnosticJournal } = await import('../scripts/qa-private-diagnostics.mjs');
+  const repository = process.cwd(), directory = mkdtempSync(join(tmpdir(), 'qa-native-numeric-failure-'));
+  const token = 'a'.repeat(64), source = 'tests/e2e/language-reset-receipts.spec.ts';
+  try {
+    mkdirSync(join(directory, 'tests/e2e'), { recursive: true });
+    writeFileSync(join(directory, source), [
+      `import { test, expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};`,
+      "test('synthetic numeric evidence', async () => {",
+      "  await test.step('private phase label', async () => fail());",
+      '});',
+      "function fail() { expect('private-actual-value').toBe('private-expected-value'); }",
+      "test('synthetic unknown helper', async () => { await test.step('private unknown phase', async () => (await import('./helper')).fail()); });",
+    ].join('\n'));
+    writeFileSync(join(directory, 'offline.config.mjs'), `export default ${JSON.stringify({
+      testDir: './tests/e2e', workers: 1, retries: 0, projects: [{ name: 'chromium-app-smoke' }],
+      reporter: [[join(repository, 'tests/e2e/reporter.ts')]],
+    })};\n`);
+    writeFileSync(join(directory, 'tests/e2e/helper.ts'), "export function fail() { throw new Error('private helper error'); }\n");
+    const path = join(directory, 'diagnostic.jsonl');
+    writeFileSync(path, '', { mode: 0o600 });
+    // No browser/page/context/request fixture, webServer, URL, DB or provider.
+    const child = spawnSync(process.execPath, [join(repository, 'node_modules/@playwright/test/cli.js'),
+      'test', '--config', 'offline.config.mjs'], { cwd: directory, encoding: 'utf8', timeout: 20_000,
+      env: { ...process.env, QA_PRIVATE_DIAGNOSTIC_FILE: path, QA_PRIVATE_DIAGNOSTIC_TOKEN: token,
+        GITHUB_STEP_SUMMARY: join(directory, 'summary.md') } });
+    assert.equal(child.error, undefined); assert.equal(child.status, 1);
+    const output: string[] = [];
+    const report = await emitDiagnosticJournal({ path, token, expected: 1, stage: 'stage-03', termination: 'none',
+      emit: (line: string) => output.push(line), inventory: undefined });
+    assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
+    type Detail = { source: number; line: number; column: number; project: number; status: string;
+      failure: { category: number; failedSteps: { source: number; line: number; column: number }[];
+        errors: unknown[]; failedOperations: { source: number; line: number; column: number; category: number; durationMs: number }[];
+        stepScanTruncated: number } };
+    const details = report.invocations[0].details as Detail[];
+    assert.equal(details.length, 2);
+    const detail = details[0];
+    assert.deepEqual([detail.source, detail.line, detail.column, detail.project, detail.status], [48, 2, 5, 5, 'failed']);
+    assert.equal(detail.failure.category, 1);
+    assert.deepEqual(detail.failure.failedSteps, [{ source: 48, line: 3, column: 3 }]);
+    assert.equal(detail.failure.failedOperations.length, 1);
+    const operation = detail.failure.failedOperations[0];
+    assert.deepEqual([operation.source, operation.line, operation.column, operation.category], [48, 5, 50, 1]);
+    assert.ok(Number.isInteger(operation.durationMs) && operation.durationMs >= 0 && operation.durationMs <= 1000000);
+    assert.equal(detail.failure.stepScanTruncated, 0);
+    assert.deepEqual(details[1].failure.errors, []);
+    assert.deepEqual(details[1].failure.failedOperations, []);
+    assert.equal(details[1].failure.failedSteps.length, 1);
+    assert.equal(details[1].failure.failedSteps[0].source, 48);
+    assert.equal(details[1].failure.failedSteps[0].line, 6);
+    const publicText = output.join('\n'), journal = readFileSync(path, 'utf8');
+    assert.match(publicText, /^[a-zA-Z0-9 =\-\n]+$/);
+    for (const secret of [token, 'private', source, directory, 'toBe', 'actual-value', 'expected-value']) {
+      assert.ok(!publicText.includes(secret));
+    }
+    for (const secret of ['private', source, directory, 'toBe', 'actual-value', 'expected-value']) assert.ok(!journal.includes(secret));
+    assert.ok(output.some(line => line.includes('operation=1 source=48 line=5 column=50 category=expect durationMs=')));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('optional extraction failure cannot suppress the native failed status or inspect the thrown object', async context => {
+  const { emitDiagnosticJournal } = await import('../scripts/qa-private-diagnostics.mjs');
+  const directory = mkdtempSync(join(tmpdir(), 'qa-native-poison-evidence-')), previous = process.cwd();
+  const priorFile = process.env.QA_PRIVATE_DIAGNOSTIC_FILE, priorToken = process.env.QA_PRIVATE_DIAGNOSTIC_TOKEN;
+  const token = 'a'.repeat(64), path = join(directory, 'diagnostic.jsonl');
+  context.mock.method(console, 'log', () => {});
+  try {
+    mkdirSync(join(directory, 'tests/e2e'), { recursive: true });
+    writeFileSync(join(directory, 'tests/e2e/language-reset-receipts.spec.ts'), '// synthetic source');
+    writeFileSync(path, '', { mode: 0o600 });
+    process.chdir(directory);
+    process.env.QA_PRIVATE_DIAGNOSTIC_FILE = path; process.env.QA_PRIVATE_DIAGNOSTIC_TOKEN = token;
+    const reporter = new SafeReporter();
+    const poison = Object.defineProperties({}, Object.fromEntries(['message', 'stack', 'toJSON'].map(key => [key,
+      { get() { throw new Error('Thrown object must not be inspected'); } }])));
+    for (const key of ['errors', 'steps']) {
+      const specimen = { location: { file: 'tests/e2e/language-reset-receipts.spec.ts', line: 9, column: 5 },
+        parent: { project: () => ({ name: 'chromium-app-smoke' }) }, titlePath: () => ['synthetic evidence'] } as unknown as TestCase;
+      const result = Object.defineProperty({ status: 'failed', duration: 1, errors: [] }, key,
+        { get() { throw poison; } }) as unknown as TestResult;
+      reporter.onTestEnd(specimen, result);
+    }
+    // The standalone private journal is independently complete; no raw report is read.
+    const { appendFileSync } = await import('node:fs');
+    appendFileSync(path, JSON.stringify({ token, event: 'end', status: 'failed' }) + '\n');
+    const output: string[] = [];
+    const report = await emitDiagnosticJournal({ path, token, expected: 1, stage: 'stage-03', termination: 'none',
+      emit: (line: string) => output.push(line), inventory: undefined });
+    assert.equal(report.report, 'complete'); assert.equal(report.invocations[0].counts.failed, 2);
+    assert.equal(report.invocations[0].details.length, 2);
+    assert.ok(output.includes('stage-03 invocation=1 test=1 source=48 line=9 column=5 project=5 status=failed'));
+    assert.ok(output.includes('stage-03 invocation=1 test=2 source=48 line=9 column=5 project=5 status=failed'));
+    assert.equal(output.some(line => line.includes(' failure=')), false);
+  } finally {
+    process.chdir(previous);
+    if (priorFile === undefined) delete process.env.QA_PRIVATE_DIAGNOSTIC_FILE; else process.env.QA_PRIVATE_DIAGNOSTIC_FILE = priorFile;
+    if (priorToken === undefined) delete process.env.QA_PRIVATE_DIAGNOSTIC_TOKEN; else process.env.QA_PRIVATE_DIAGNOSTIC_TOKEN = priorToken;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

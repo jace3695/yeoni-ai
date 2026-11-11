@@ -82,6 +82,19 @@ test('exact command, fixed project/source inventory, installer and ceilings stay
 test('existing tests, fixtures, WebKit guards, dependencies, schema and stack are byte-preserved', async () => {
   for (const [path, hash] of Object.entries(preserved)) {
     let bytes = await readFile(path);
+    if (path === 'tests/e2e/reporter.ts') {
+      const before = '    this.diagnostics.onTestEnd(test, result);\n';
+      const after = '    this.diagnostics.onTestEnd(test, result, failure);\n';
+      const anchor = '    // Only known source coordinates and fixed categories, never error content.\n';
+      const extraction = '    let failure: SafeFailureDiagnostics | undefined;\n'
+        + '    try { failure = failureDiagnostics(test.location, result, this.root, this.allowedSources); }\n'
+        + '    catch { /* Optional evidence must never suppress the native result status. */ }';
+      const original = '    const failure = failureDiagnostics(test.location, result, this.root, this.allowedSources);';
+      const text = bytes.toString('utf8');
+      assert.equal(text.split(after).length, 2); assert.equal(text.split(anchor).length, 2);
+      assert.equal(text.split(extraction).length, 2);
+      bytes = Buffer.from(text.replace(after, '').replace(anchor, before + anchor).replace(extraction, original));
+    }
     if (path === 'scripts/qa-private-source-ids.mjs') {
       let text = bytes.toString('utf8');
       for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n", "  'tests/e2e/language-reset-receipts.spec.ts', // 48\n"]) {

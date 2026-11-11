@@ -222,3 +222,133 @@ test('fresh sequential invocations pass while a later stage receives a different
   assert.ok(options.output.includes('stage-05 passed')); assert.ok(options.output.includes('stage-06 passed'));
   const token = await readFile(join(options.cwd, 'prior-token'), 'utf8'); assert.ok(!options.output.join('').includes(token));
 });
+
+const receiptFile = 'tests/e2e/language-reset-receipts.spec.ts';
+const receiptDefinition = { file: receiptFile, line: 9, column: 5 };
+const safeAt = (line = 52) => ({ file: receiptFile, line, column: 31 });
+const safeFailure = () => ({ category: 'test-error', testDefinition: receiptDefinition,
+  errors: [{ location: safeAt() }], omittedErrors: 0, failedSteps: [safeAt(44)],
+  failedOperations: [{ location: safeAt(), category: 'expect', durationMs: 15 }] });
+const numericAt = (line = 52) => ({ source: 48, line, column: 31 });
+const numericFailure = () => ({ category: 1, errors: [numericAt()], omittedErrors: 0,
+  failedSteps: [numericAt(44)], failedOperations: [{ ...numericAt(), category: 1, durationMs: 15 }], stepScanTruncated: 0 });
+const receiptBegin = { event: 'begin', test: 1, source: 48, line: 9, column: 5, project: 5 };
+const withFailure = failure => [start, receiptBegin, { event: 'result', test: 1, status: 'failed', failure }, { event: 'end', status: 'failed' }];
+const publishFailure = async failure => {
+  const fixture = await fresh(), reporter = new PrivateDiagnostics(fixture);
+  reporter.onTestEnd(specimen(receiptDefinition, 'chromium-app-smoke'), { status: 'failed',
+    get errors() { throw new Error('Native errors must not be inspected by numeric serializer'); } }, failure);
+  reporter.onEnd({ status: 'failed' });
+  const result = await emit(fixture);
+  const bytes = await readFile(fixture.path, 'utf8');
+  for (const text of ['PRIVATE', receiptFile, 'message', 'stack', 'params', 'attachments', 'https:']) assert.ok(!bytes.includes(text));
+  return result;
+};
+
+test('safe native failure evidence crosses the journal as same-source bounded numbers and fixed labels', async () => {
+  const { report, output } = await publishFailure(safeFailure());
+  assert.deepEqual(report.invocations[0].details[0].failure, numericFailure());
+  assert.ok(output.includes('stage-05 invocation=1 test=1 operation=1 source=48 line=52 column=31 category=expect durationMs=15'));
+  assert.ok(output.includes('stage-05 invocation=1 test=1 phase=1 source=48 line=44 column=31'));
+  assert.ok(output.includes('stage-05 invocation=1 test=1 error=1 source=48 line=52 column=31'));
+  assert.ok(output.includes('stage-05 invocation=1 test=1 failure=test-error omittedErrors=0 stepScanTruncated=0'));
+  const api = safeFailure(); api.failedOperations[0].category = 'pw:api'; api.failedOperations[0].durationMs = 1000000;
+  assert.ok((await publishFailure(api)).output.some(line => line.endsWith('category=pw-api durationMs=1000000')));
+});
+
+test('safe failure producer neither invokes malicious getters nor copies extra fields, names or contents', async () => {
+  const denied = { get() { throw new Error('Must not inspect a private getter'); } };
+  const failure = safeFailure();
+  for (const value of [failure, failure.testDefinition, failure.errors[0], failure.errors[0].location,
+    failure.failedSteps[0], failure.failedOperations[0], failure.failedOperations[0].location]) {
+    Object.defineProperties(value, Object.fromEntries(['message', 'stack', 'snippet', 'cause', 'title', 'params', 'attachments', 'toJSON', 'token']
+      .map(key => [key, denied])));
+  }
+  assert.deepEqual((await publishFailure(failure)).report.invocations[0].details[0].failure, numericFailure());
+  for (const key of ['category', 'testDefinition']) {
+    const bad = Object.defineProperty(safeFailure(), key, denied);
+    assert.equal((await publishFailure(bad)).report.invocations[0].details[0].failure, undefined);
+  }
+  for (const key of ['errors', 'failedSteps', 'failedOperations']) {
+    const bad = Object.defineProperty(safeFailure(), key, denied);
+    assert.equal((await publishFailure(bad)).report.invocations[0].details[0].failure[key].length, 0);
+  }
+  const failureWithAccessor = safeFailure();
+  for (const values of [failureWithAccessor.errors, failureWithAccessor.failedSteps, failureWithAccessor.failedOperations]) {
+    Object.defineProperty(values, '0', denied);
+  }
+  const result = (await publishFailure(failureWithAccessor)).report.invocations[0].details[0].failure;
+  assert.deepEqual([result.errors, result.failedSteps, result.failedOperations], [[], [], []]);
+  const proxied = safeFailure();
+  for (const key of ['errors', 'failedSteps', 'failedOperations']) {
+    proxied[key] = new Proxy(proxied[key], { get() { throw new Error('Must not invoke array property getters'); } });
+  }
+  assert.deepEqual((await publishFailure(proxied)).report.invocations[0].details[0].failure, numericFailure());
+  const revoked = Proxy.revocable([], {}); revoked.revoke();
+  const withRevoked = safeFailure(); withRevoked.failedOperations = revoked.proxy;
+  assert.deepEqual((await publishFailure(withRevoked)).report.invocations[0].details[0].failure.failedOperations, []);
+});
+
+test('producer drops unknown, cross-spec, outside-root, malformed and non-native locations instead of inferring sites', async () => {
+  const badLocations = [undefined, null, {}, { ...safeAt(), line: 0 }, { ...safeAt(), column: 1000001 },
+    ...['tests/e2e/auth.spec.ts', 'tests/e2e/fixture.ts', '/outside/' + receiptFile, '../' + receiptFile,
+      'file://' + receiptFile, receiptFile + '\n' + canary, 'x'.repeat(4097)].map(file => ({ ...safeAt(), file }))];
+  for (const location of badLocations) {
+    const bad = safeFailure(); bad.errors = [{ location }]; bad.failedSteps = [location]; bad.failedOperations[0].location = location;
+    const failure = (await publishFailure(bad)).report.invocations[0].details[0].failure;
+    assert.deepEqual([failure.errors, failure.failedSteps, failure.failedOperations], [[], [], []]);
+  }
+  for (const category of [canary, 'test.step', undefined]) {
+    const bad = safeFailure(); bad.failedOperations[0].category = category;
+    assert.deepEqual((await publishFailure(bad)).report.invocations[0].details[0].failure.failedOperations, []);
+  }
+  for (const durationMs of [-1, 1.5, Infinity, NaN, 1000001, '12']) {
+    const bad = safeFailure(); bad.failedOperations[0].durationMs = durationMs;
+    assert.deepEqual((await publishFailure(bad)).report.invocations[0].details[0].failure.failedOperations, []);
+  }
+  const bad = safeFailure(); bad.testDefinition = { ...receiptDefinition, line: 10 };
+  assert.equal((await publishFailure(bad)).report.invocations[0].details[0].failure, undefined);
+});
+
+test('producer caps each failure list at three, preserves native truncation and does not scan later getters', async () => {
+  const failure = safeFailure(); failure.omittedErrors = 1000000;
+  for (const key of ['errors', 'failedSteps', 'failedOperations']) {
+    failure[key] = Array.from({ length: 2001 }, () => failure[key][0]);
+    Object.defineProperty(failure[key], '3', { get() { throw new Error('Must not scan fourth record'); } });
+  }
+  const result = (await publishFailure(failure)).report.invocations[0].details[0].failure;
+  assert.deepEqual([result.errors.length, result.failedSteps.length, result.failedOperations.length], [3, 3, 3]);
+  assert.equal(result.omittedErrors, 1000000); assert.equal(result.stepScanTruncated, 1);
+  const truncated = safeFailure(); truncated.stepScanTruncated = true;
+  assert.equal((await publishFailure(truncated)).report.invocations[0].details[0].failure.stepScanTruncated, 1);
+});
+
+test('journal revalidation rejects forged extra fields, categories, numeric bounds, cross-source and oversized failure lists', async () => {
+  const invalid = [null, {}, [], { ...numericFailure(), extra: canary }, { ...numericFailure(), category: 2 },
+    { ...numericFailure(), errors: [{ ...numericAt(), file: receiptFile }] },
+    ...['errors', 'failedSteps', 'failedOperations'].flatMap(key => [
+      { ...numericFailure(), [key]: 'PRIVATE' }, { ...numericFailure(), [key]: [null] },
+      { ...numericFailure(), [key]: Array.from({ length: 4 }, () => numericFailure()[key][0]) },
+      ...[0, 19, 49, '48'].map(source => ({ ...numericFailure(), [key]: [{ ...numericFailure()[key][0], source }] })),
+      ...[0, 1000001, -1, 1.5, '52'].map(line => ({ ...numericFailure(), [key]: [{ ...numericFailure()[key][0], line }] })),
+    ]),
+    ...[-1, 1000001, 1.5, '0'].map(omittedErrors => ({ ...numericFailure(), omittedErrors })),
+    ...[-1, 2, true, '0'].map(stepScanTruncated => ({ ...numericFailure(), stepScanTruncated })),
+    ...[0, 3, 'expect', canary].map(category => ({ ...numericFailure(), failedOperations: [{ ...numericFailure().failedOperations[0], category }] })),
+    ...[-1, 1000001, 1.5, '0'].map(durationMs => ({ ...numericFailure(), failedOperations: [{ ...numericFailure().failedOperations[0], durationMs }] })),
+  ];
+  const fixture = await fresh();
+  for (const failure of invalid) {
+    const input = journal(withFailure(failure));
+    assert.equal(parseDiagnosticJournal(input, token, 1).report, 'invalid');
+    await writeFile(fixture.path, input); assert.equal((await emit(fixture)).report.report, 'invalid');
+  }
+  for (const status of ['passed', 'skipped', 'unknown', 'timedOut', 'interrupted']) {
+    const entries = withFailure(numericFailure()); entries[2].status = status;
+    assert.equal(parse(entries).report, 'invalid');
+  }
+  for (const [status, category] of [['timedOut', 2], ['interrupted', 3]]) {
+    const entries = withFailure({ ...numericFailure(), category }); entries[2].status = status;
+    assert.equal(parse(entries).report, 'complete');
+  }
+});

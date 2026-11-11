@@ -17,9 +17,11 @@ export default class SafeReporter implements Reporter {
     .slice(0, 1000).map(entry => `tests/e2e/${entry.name}`));
   private results: { title: string; status: string; durationMs: number; failure?: SafeFailureDiagnostics }[] = [];
   onTestEnd(test: TestCase, result: TestResult) {
-    this.diagnostics.onTestEnd(test, result);
     // Only known source coordinates and fixed categories, never error content.
-    const failure = failureDiagnostics(test.location, result, this.root, this.allowedSources);
+    let failure: SafeFailureDiagnostics | undefined;
+    try { failure = failureDiagnostics(test.location, result, this.root, this.allowedSources); }
+    catch { /* Optional evidence must never suppress the native result status. */ }
+    this.diagnostics.onTestEnd(test, result, failure);
     this.results.push({ title: test.titlePath().join(' / '), status: result.status, durationMs: result.duration,
       ...(failure ? { failure } : {}) });
     console.log(`${result.status}: ${test.titlePath().join(' / ')}`);

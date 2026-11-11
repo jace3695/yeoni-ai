@@ -11,6 +11,70 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const exact = (value, keys) => record(value) && Object.keys(value).sort().join(',') === keys.slice().sort().join(',');
 const counts = () => Object.fromEntries(statuses.map(status => [status, 0]));
 
+const failureCategories = ['test-error', 'timeout', 'interrupted'];
+const operationCategories = ['expect', 'pw-api'];
+const failureStatus = status => ['failed', 'timedOut', 'interrupted'].indexOf(status) + 1;
+// Inspect only own data fields of the existing allowlisted diagnostic object.
+// Do not invoke getters, toJSON, iterators or inspect the native error contents.
+const field = (value, key) => {
+  try { return value !== null && typeof value === 'object' ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined; }
+  catch { return undefined; }
+};
+const array = value => { try { return Array.isArray(value) ? value : []; } catch { return []; } };
+const arraySize = value => { const size = field(value, 'length'); return integer(size, 0, 4294967295) ? size : 0; };
+const sourceLocation = (value, root) => {
+  const file = field(value, 'file'), line = field(value, 'line'), column = field(value, 'column');
+  const source = sources.findIndex(known => file === known || file === `${root}/${known}`) + 1;
+  return source && integer(line, 1, 1000000) && integer(column, 1, 1000000) ? { source, line, column } : undefined;
+};
+function numericFailure(value, item, status, root) {
+  const category = failureStatus(status), definition = sourceLocation(field(value, 'testDefinition'), root);
+  if (!category || field(value, 'category') !== failureCategories[category - 1] || !definition
+    || !['source', 'line', 'column'].every(key => definition[key] === item[key])) return;
+  const sameSource = value => {
+    const at = sourceLocation(value, root);
+    return at?.source === item.source ? at : undefined;
+  };
+  const rawErrors = array(field(value, 'errors')), rawSteps = array(field(value, 'failedSteps'));
+  const rawOperations = array(field(value, 'failedOperations'));
+  const errors = [], failedSteps = [], failedOperations = [];
+  for (let index = 0; index < 3; index++) {
+    const error = sameSource(field(field(rawErrors, String(index)), 'location'));
+    if (error) errors.push(error);
+    const step = sameSource(field(rawSteps, String(index)));
+    if (step) failedSteps.push(step);
+    const operation = field(rawOperations, String(index)), at = sameSource(field(operation, 'location'));
+    const nativeCategory = field(operation, 'category'), durationMs = field(operation, 'durationMs');
+    const category = ['expect', 'pw:api'].indexOf(nativeCategory) + 1;
+    if (at && category && integer(durationMs, 0, 1000000)) failedOperations.push({ ...at, category, durationMs });
+  }
+  const omitted = field(value, 'omittedErrors');
+  return { category, errors, omittedErrors: Math.min(1000000,
+    (integer(omitted, 0, 1000000) ? omitted : 0) + Math.max(0, arraySize(rawErrors) - 3)),
+  failedSteps, failedOperations, stepScanTruncated: field(value, 'stepScanTruncated') === true
+    || arraySize(rawSteps) > 3 || arraySize(rawOperations) > 3 ? 1 : 0 };
+}
+function validatedFailure(value, item, status) {
+  if (!exact(value, ['category', 'errors', 'omittedErrors', 'failedSteps', 'failedOperations', 'stepScanTruncated'])
+    || !failureStatus(status) || value.category !== failureStatus(status)
+    || !integer(value.omittedErrors, 0, 1000000) || !integer(value.stepScanTruncated, 0, 1)) throw 0;
+  const location = value => integer(value.source, 1, sources.length) && value.source === item.source
+    && integer(value.line, 1, 1000000) && integer(value.column, 1, 1000000);
+  const entries = (values, operation = false) => {
+    if (!Array.isArray(values) || values.length > 3) throw 0;
+    return values.map(value => {
+      if (!exact(value, operation ? ['source', 'line', 'column', 'category', 'durationMs'] : ['source', 'line', 'column'])
+        || !location(value) || (operation && (!integer(value.category, 1, operationCategories.length)
+          || !integer(value.durationMs, 0, 1000000)))) throw 0;
+      return { source: value.source, line: value.line, column: value.column,
+        ...(operation ? { category: value.category, durationMs: value.durationMs } : {}) };
+    });
+  };
+  return { category: value.category, errors: entries(value.errors), omittedErrors: value.omittedErrors,
+    failedSteps: entries(value.failedSteps), failedOperations: entries(value.failedOperations, true),
+    stepScanTruncated: value.stepScanTruncated };
+}
+
 export function diagnosticInvocations(command) {
   return command.split('\n').filter(line => line === 'npx playwright test --config tests/browser-cloud/playwright.config.ts'
     || line === 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke'
@@ -46,11 +110,12 @@ export class PrivateDiagnostics {
     this.tests.set(test, item);
     this.write({ event: 'begin', ...item });
   }
-  onTestEnd(test, result) {
+  onTestEnd(test, result, safeFailure) {
     if (!this.enabled) return;
     if (!this.tests.has(test)) this.onTestBegin(test);
-    this.write({ event: 'result', test: this.tests.get(test).test,
-      status: statuses.includes(result.status) ? result.status : 'unknown' });
+    const item = this.tests.get(test), status = statuses.includes(result.status) ? result.status : 'unknown';
+    const failure = numericFailure(safeFailure, item, status, this.root);
+    this.write({ event: 'result', test: item.test, status, ...(failure ? { failure } : {}) });
     this.tests.delete(test);
   }
   onError() { this.write({ event: 'error' }); }
@@ -100,12 +165,15 @@ export function parseDiagnosticJournal(text, token, expected, inventory) {
           current.active.set(entry.test, { test: entry.test, source: entry.source, line: entry.line,
             column: entry.column, project: entry.project });
         } else if (entry.event === 'result') {
-          if (!exact(entry, ['token', 'event', 'test', 'status']) || !current.active.has(entry.test) || !statuses.includes(entry.status)) throw 0;
+          const hasFailure = Object.hasOwn(entry, 'failure');
+          if (!exact(entry, hasFailure ? ['token', 'event', 'test', 'status', 'failure'] : ['token', 'event', 'test', 'status'])
+            || !current.active.has(entry.test) || !statuses.includes(entry.status)) throw 0;
           const item = current.active.get(entry.test);
+          const failure = hasFailure ? validatedFailure(entry.failure, item, entry.status) : undefined;
           current.active.delete(entry.test);
           current.counts[entry.status]++;
           if (['failed', 'timedOut', 'interrupted', 'unknown'].includes(entry.status)) {
-            if (current.details.length < maxDetails) current.details.push({ ...item, status: statuses[statuses.indexOf(entry.status)] });
+            if (current.details.length < maxDetails) current.details.push({ ...item, status: statuses[statuses.indexOf(entry.status)], ...(failure ? { failure } : {}) });
             else current.omitted++;
           }
         } else if (entry.event === 'error') {
@@ -161,6 +229,19 @@ export async function emitDiagnosticJournal({ path, token, expected, stage, term
     emit(`${prefix} status=${item.status} ${statuses.map(status => `${status}=${item.counts[status]}`).join(' ')} runnerErrors=${item.runnerErrors} omitted=${item.omitted} active=${item.active.length}`);
     for (const detail of [...item.details, ...item.active.map(active => ({ ...active, status: 'running' }))]) {
       emit(`${prefix} test=${detail.test} source=${detail.source} line=${detail.line} column=${detail.column} project=${detail.project} status=${detail.status}`);
+      if (detail.failure) {
+        const failure = detail.failure, at = `${prefix} test=${detail.test}`;
+        emit(`${at} failure=${failureCategories[failure.category - 1]} omittedErrors=${failure.omittedErrors} stepScanTruncated=${failure.stepScanTruncated}`);
+        for (const [index, error] of failure.errors.entries()) {
+          emit(`${at} error=${index + 1} source=${error.source} line=${error.line} column=${error.column}`);
+        }
+        for (const [index, step] of failure.failedSteps.entries()) {
+          emit(`${at} phase=${index + 1} source=${step.source} line=${step.line} column=${step.column}`);
+        }
+        for (const [index, operation] of failure.failedOperations.entries()) {
+          emit(`${at} operation=${index + 1} source=${operation.source} line=${operation.line} column=${operation.column} category=${operationCategories[operation.category - 1]} durationMs=${operation.durationMs}`);
+        }
+      }
     }
   }
   return report;
