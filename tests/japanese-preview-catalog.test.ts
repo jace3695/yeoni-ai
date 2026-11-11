@@ -81,9 +81,11 @@ test('all curriculum checks remain choice-based and fixture adds no removed prac
     }
   }
   const entry = await readFile(new URL('../scripts/japanese-preview/entry.tsx', import.meta.url), 'utf8');
-  assert.match(entry, /<FocusedLesson lesson=\{lesson\} studyLevel=\{studyLevel\}/);
+  assert.match(entry, /<LearnPage \/>/);
+  const learn = await readFile(new URL('../app/language/learn/page.tsx', import.meta.url), 'utf8');
+  assert.match(learn, /<FocusedLesson key=/);
   assert.match(entry, /<JapaneseChunkPractice lesson=\{chunk\}/);
-  assert.match(entry, /getLessonStudyLevel\(lesson\.id\) === requestedLevel/);
-  assert.doesNotMatch(entry, /PracticeWorkspace|Recorder|FreeConversationPractice|KanaStarter|GrammarWritingPractice|WorkWritingPractice/);
-  for (const href of ['/language/practice', '/language/conversation', '/language/writing', '/language/kana-writing', '/language/settings']) assert.equal(previewHash(href), '#/unsupported');
+  assert.match(learn, /getLessonStudyLevel\(lesson\.id\) === requestedLevel/);
+  assert.doesNotMatch(entry, /PracticeWorkspace|Recorder|FreeConversationPractice|GrammarWritingPractice|WorkWritingPractice/);
+  for (const href of ['/language/practice', '/language/conversation', '/language/writing', '/language/kana-writing', '/settings']) assert.equal(previewHash(href), '#/unsupported');
 });

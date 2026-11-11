@@ -64,6 +64,10 @@ function panel() {
   const local: ProbeVoice = { name: 'Synthetic Japanese', voiceURI: 'urn:qa:ja', lang: 'ja-JP', localService: true, default: true };
   const submitted: ProbeUtterance[] = [], voiceListeners = new Set<() => void>();
   const pageListeners = new Map<string, Set<() => void>>();
+  const documentListeners = new Map<string, Set<() => void>>();
+  const document = { hidden: false, addEventListener(name: string, listener: () => void) {
+    if (!documentListeners.has(name)) documentListeners.set(name, new Set()); documentListeners.get(name)!.add(listener);
+  }, removeEventListener(name: string, listener: () => void) { documentListeners.get(name)?.delete(listener); } };
   let cancels = 0, speaking = false, pending = false;
   const port: LocalSpeechPort = {
     getVoices: () => [local], createUtterance: text => ({ text, voice: null, lang: '', rate: 0, pitch: 0, volume: 0, onstart: null, onend: null, onerror: null }),
@@ -85,13 +89,13 @@ function panel() {
     '../../utils/japaneseLevelJourney': {}, '../../utils/japaneseChunkReview': {}, './navigation': navigation,
     './runtime': { assertOpaquePreviewOrigin: (origin: string) => assert.equal(origin, 'null'), seedSyntheticOwner() {} },
   };
-  for (const name of ['../../components/language/LevelLearningWorkspace', '../../components/language/FocusedLesson', '../../components/language/JapaneseChunkPractice', '../../components/language/ChunkReviewWorkspace', './PreviewCatalog', './SessionOptions', '../../app/language/kana/page', '../../app/language/words/page', '../../app/language/grammar/page', '../../app/language/sentences/page', '../../app/language/review/page', './DailyRecordProbe']) imports[name] = () => null;
+  for (const name of ['../../components/language/LanguageShell', '../../app/components/HubBottomNav', '../../app/language/page', '../../app/language/learn/page', '../../app/language/progress/page', '../../app/language/start/page', '../../app/language/calendar/page', '../../components/language/LevelLearningWorkspace', '../../components/language/FocusedLesson', '../../components/language/JapaneseChunkPractice', '../../components/language/ChunkReviewWorkspace', './PreviewCatalog', './SessionOptions', '../../app/language/kana/page', '../../app/language/words/page', '../../app/language/grammar/page', '../../app/language/sentences/page', '../../app/language/review/page', './DailyRecordProbe']) imports[name] = () => null;
   compile('../scripts/japanese-preview/entry.tsx', imports, { window, location: { hash: '#/language/qa-catalog' }, document: { getElementById: () => ({}) } });
   assert.ok(root);
   const Parent = root.type as () => Element;
   const Child = compile('../scripts/japanese-preview/LocalAudioProbe.tsx', {
     react: childHooks.api, './local-audio-probe': audio, './native-local-audio': { browserLocalSpeechPort: () => port },
-  }, { window }).default;
+  }, { window, document }).default;
   let child: Element;
   const render = () => {
     const parent = parentHooks.render(Parent);
@@ -107,6 +111,8 @@ function panel() {
   const button = () => nodes(render().child).find(node => node.type === 'button' && label(node.props.children as ReactNode) === '선택한 로컬 음성으로 1회 검사')!;
   return {
     render, toggle, button, submitted, get cancels() { return cancels; },
+    get visibilityListeners() { return documentListeners.get('visibilitychange')?.size ?? 0; },
+    visibility(hidden: boolean) { document.hidden = hidden; for (const listener of documentListeners.get('visibilitychange') ?? []) listener(); },
     select() { const select = nodes(render().child).find(node => node.type === 'select')!; (select.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: audio.strictLocalJapaneseVoices([local])[0].key } }); render(); },
     run: () => (button().props.onClick as () => Promise<void>)(),
     start() { pending = false; speaking = true; submitted.at(-1)?.onstart?.(); },
@@ -141,5 +147,39 @@ test('actual collapse cancels a queued or started request once and reopening doe
     flow.start(); flow.end(); await next;
     assert.match(flow.html(), /ended/); flow.toggle(false); assert.equal(flow.cancels, 1);
     flow.unmount();
+  }
+});
+
+
+test('developer tools are collapsed by default and closing the parent also cancels an open audio probe', async () => {
+  const flow = panel();
+  const tools = nodes(flow.render().parent).find(node => node.props.className === 'qa-tools')!;
+  assert.equal(tools.props.open, undefined);
+  flow.toggle(true); flow.select(); const pending = flow.run(); flow.start();
+  (tools.props.onToggle as (event: { currentTarget: { open: boolean } }) => void)({ currentTarget: { open: false } });
+  flow.render(); await pending;
+  assert.equal(flow.cancels, 1); assert.equal(flow.button().props.disabled, true);
+  flow.unmount();
+});
+
+
+test('hidden document cancels pending or started probe, visible does not, and unmount removes listener', async () => {
+  for (const started of [false, true]) {
+    const flow = panel(); flow.toggle(true); flow.select();
+    assert.equal(flow.visibilityListeners, 1);
+    const pending = flow.run();
+    if (started) flow.start();
+    const oldEnd = flow.submitted[0].onend;
+    flow.visibility(false); assert.equal(flow.cancels, 0);
+    flow.visibility(true); await pending;
+    assert.equal(flow.cancels, 1);
+    assert.match(flow.html(), /cancelled/); assert.match(flow.html(), /실제 청취: 미검증/);
+    const cancelled = flow.html(); oldEnd?.(); assert.equal(flow.html(), cancelled);
+    flow.visibility(true); flow.visibility(false);
+    assert.equal(flow.cancels, 1); assert.equal(flow.submitted.length, 1);
+    const next = flow.run(); flow.start(); flow.end(); await next;
+    assert.match(flow.html(), /ended/); assert.equal(flow.submitted.length, 2);
+    flow.unmount(); assert.equal(flow.visibilityListeners, 0);
+    flow.visibility(true); assert.equal(flow.cancels, 1);
   }
 });

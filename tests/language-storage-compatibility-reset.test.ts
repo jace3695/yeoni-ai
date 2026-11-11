@@ -22,6 +22,7 @@ for (const shape of ['absent', 'undefined', 'missing-request'] as const) {
       './supabase': { supabase: {
         auth: { getUser: async () => ({ data: { user: { id: 'A' } }, error: null }) },
         rpc: async () => { requests++; return { data: { app: 'language', user_id: 'A', marker }, error: null }; },
+        from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { state: { languageRecordResetV1: marker } }, error: null }) }) }) }),
       } },
     };
     const exports: { resetAppRecords?: (app: string, requestId: string, expectedUser: string) => Promise<unknown> } = {};

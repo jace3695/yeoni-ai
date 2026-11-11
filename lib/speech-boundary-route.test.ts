@@ -64,7 +64,7 @@ test('retired diagnostic page cannot initialize its boundary client', () => {
   assert.equal(render().props.language, true);
 });
 
-function routeHarness(path: string | null, gateAllowed = true, delays: { beforeDigest?: () => Promise<void>; beforeProbe?: () => Promise<void> } = {}) {
+function routeHarness(path: string | null, gateAllowed = true, delays: { beforeDigest?: () => Promise<void>; beforeProbe?: () => Promise<void> } = {}, storageStatus = 'ready') {
   const mounted: string[] = [], effects: (() => unknown)[] = [], elements: Element[] = [], states: BoundaryState[] = [], calls: { path: string; method?: string }[] = [];
   const terminal = deferred<BoundaryState>();
   const modules: Record<string, unknown> = {
@@ -76,10 +76,15 @@ function routeHarness(path: string | null, gateAllowed = true, delays: { beforeD
     'next/navigation': { usePathname: () => path },
     '@/lib/speech-boundary-path': { isSpeechBoundaryPath },
   };
+  let storageStarts = 0;
+  const storageGate = load('../app/components/StorageAccessGate.tsx', {
+    ...modules, react: { ...(modules.react as Record<string, unknown>), useSyncExternalStore: (_subscribe: unknown, snapshot: () => string) => snapshot() },
+    '../data/storageOwnership': { beginStorageAccess: () => { storageStarts++; }, getStorageAccessStatus: () => storageStatus, subscribeStorageAccess: () => () => {} },
+  }).default;
   const isolation = load('../app/components/DiagnosticIsolation.tsx', modules).default;
   const component = (name: string) => ({ default: (props: Record<string, unknown>) => { mounted.push(name); return props.children ?? null; } });
   const root = load('../app/layout.tsx', {
-    ...modules, './globals.css': {}, './components/DiagnosticIsolation': { default: isolation },
+    ...modules, './globals.css': {}, './components/StorageAccessGate': { default: storageGate }, './components/DiagnosticIsolation': { default: isolation },
     ...Object.fromEntries(['PwaManager', 'AiBudgetNotifier', 'RecordResetListener', 'CloudSyncPanel', 'SyncQaPanel'].map(name => [`./components/${name}`, component(name)])),
     '@/components/yeoni/CommonCharacterShell': component('CommonCharacterShell'), '@/lib/yeoni/common-host-policy': { commonCharacterEnabled: () => true },
   }, { process: { env: { NODE_ENV: 'development' } } }).default as (props: Record<string, unknown>) => Element;
@@ -92,7 +97,10 @@ function routeHarness(path: string | null, gateAllowed = true, delays: { beforeD
       '@/components/AppCompanion': component('AppCompanion'),
       '@/components/yeoni/LocalRecordGuidance': component('LocalRecordGuidance'),
     }).default },
-    '@/components/TopNav': component('TopNav'), '@/components/LanguageCloudSync': component('LanguageCloudSync'), '../components/AppIdentity': component('AppIdentity'),
+    '@/components/language/LanguageShell': { default: load('../components/language/LanguageShell.tsx', {
+      ...modules, '@/app/components/AppIdentity': component('AppIdentity'), '@/components/TopNav': component('TopNav'),
+    }).default },
+    '@/components/LanguageCloudSync': component('LanguageCloudSync'),
   }).default as (props: Record<string, unknown>) => Element;
   const sdk = createClient('http://127.0.0.1:54321', 'sb_publishable_synthetic_boundary_only', {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -123,7 +131,7 @@ function routeHarness(path: string | null, gateAllowed = true, delays: { beforeD
   }
   mount(jsx(root, { children: jsx(language, { children: jsx(panel, { ownerHash: hash, client }) }) }));
   const cleanup = effects.map(effect => effect()).filter((value): value is () => void => typeof value === 'function');
-  return { mounted, elements, states, calls, listeners, terminal: terminal.promise, authCalls: () => authCalls, gateCalls: () => gateCalls, authChanged: (id: string) => authCallback?.('SIGNED_IN', { user: { id } }), cleanup: () => cleanup.forEach(fn => fn()), unsubscribed: () => unsubscribed };
+  return { mounted, elements, states, calls, listeners, storageStarts: () => storageStarts, terminal: terminal.promise, authCalls: () => authCalls, gateCalls: () => gateCalls, authChanged: (id: string) => authCallback?.('SIGNED_IN', { user: { id } }), cleanup: () => cleanup.forEach(fn => fn()), unsubscribed: () => unsubscribed };
 }
 
 test('full root + language + real panel synthetic mount excludes all record services before/after explicit SDK probes', async t => {
@@ -221,4 +229,15 @@ test('fresh page-gate fetch is HEAD/no-store/no-redirect, body unread, cancellat
 
 test('unknown pathname renders neither unguarded page children nor ordinary record services', () => {
   const h = routeHarness(null); assert.equal(h.mounted.length, 0); assert.equal(h.calls.length, 0); assert.equal(h.elements.filter(element => element.type === 'button').length, 0); assert.equal(h.authCalls(), 0); h.cleanup();
+});
+
+test('real storage gate blocks ordinary services but never starts on diagnostic or unknown routes',()=>{
+ for(const status of ['waiting','failed','revoked','unsupported']) {
+  const ordinary=routeHarness('/language/practice',true,{},status);
+  assert.deepEqual(ordinary.mounted,[]); assert.equal(ordinary.storageStarts(),1); assert.equal(ordinary.authCalls(),0); ordinary.cleanup();
+  const diagnostic=routeHarness(SPEECH_BOUNDARY_PATH,true,{},status);
+  assert.equal(diagnostic.storageStarts(),0); assert.deepEqual(diagnostic.mounted,[]); diagnostic.cleanup();
+ }
+ const unknown=routeHarness(null); assert.equal(unknown.storageStarts(),0); assert.deepEqual(unknown.mounted,[]); unknown.cleanup();
+ const ready=routeHarness('/language/practice');assert.equal(ready.storageStarts(),1);assert.ok(ready.mounted.includes('AuthGate'));ready.cleanup();
 });

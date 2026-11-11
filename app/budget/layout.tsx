@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./budget.css";
+import "./budget-redesign.css";
 
 export const metadata: Metadata = {
   title: "가계 | AI 연이",

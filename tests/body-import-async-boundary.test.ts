@@ -8,6 +8,34 @@ import { bodyForm, bodyImportOwner, validMeasurementDate } from '../app/lib/body
 import { dateFromText } from '../app/lib/oaReportParser.ts';
 
 type Result = { values: Record<string, number>; detectedDate?: string };
+import * as bodyRecordStorage from '../app/data/recordStorage.ts';
+import * as storageOwnership from '../app/data/storageOwnership.ts';
+import { grantSyntheticStorageOwnership } from './storageOwnershipFixture.ts';
+
+// Execute actual snapshot/journal modules in this fixture's synthetic window.
+// The real ownership manager is acquired with synthetic Web Locks, never bypassed.
+function bodySaveFixture(storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>, onNotify = () => {}) {
+  grantSyntheticStorageOwnership();
+  const txModule = { exports: {} };
+  const bodyModule = { exports: {} };
+  const context = vm.createContext({ Error, Event, CustomEvent, window: {
+    localStorage: storage, dispatchEvent: () => { onNotify(); return true; },
+  }, queueMicrotask: (run: () => void) => run() });
+  const load = (name: string, module: { exports: object }, dependencies: Record<string, object>) => {
+    const source = readFileSync(new URL(`../app/data/${name}.ts`, import.meta.url), 'utf8');
+    const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+    vm.runInContext(`(function(require,module,exports){${code}\n})`, context)((name: string) => {
+      const dependency = dependencies[name.replace(/\.ts$/, '')];
+      if (!dependency) throw new Error(`Unexpected dependency: ${name}`);
+      return dependency;
+    }, module, module.exports);
+  };
+  load('storageTransaction', txModule, { './storageOwnership': storageOwnership });
+  load('bodyRecordSave', bodyModule, { './recordStorage': bodyRecordStorage, './storageTransaction': txModule.exports, './storageOwnership': storageOwnership });
+  return { ...bodyModule.exports, ...txModule.exports } as typeof import('../app/data/bodyRecordSave') & typeof import('../app/data/storageTransaction');
+}
+
+
 function fixture(format = 'oa-long') {
   const source = readFileSync(new URL('../app/components/BodyRecordCard.tsx', import.meta.url), 'utf8');
   const start = source.indexOf('  const importOaReport =');
@@ -21,9 +49,13 @@ function fixture(format = 'oa-long') {
   const state = { draft: null as unknown, message: '', importing: false, progress: 0, mutations: 0, readers: [] as string[] };
   let cleanup = () => {};
   const update = (fn: () => void) => { state.mutations++; fn(); };
+  grantSyntheticStorageOwnership();
+  const localStorage = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => { storage.set(key, value); }, removeItem: (key: string) => { storage.delete(key); } };
+  const body = bodySaveFixture(localStorage);
   const context = {
+    formScope: { current: body.readBodySaveScope(localStorage) as import('../app/data/bodyRecordSave').BodySaveScope | null }, invalidatedScope: { current: false }, isBodySaveScopeCurrent: body.isBodySaveScopeCurrent, setScopeRevision: () => {},
     window: {
-      localStorage: { getItem: (key: string) => storage.get(key) ?? null },
+      localStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => { storage.set(key, value); }, removeItem: (key: string) => { storage.delete(key); } },
       addEventListener: (type: string, fn: (event: { key?: string }) => void) => listeners.set(type, fn),
       removeEventListener: (type: string) => listeners.delete(type),
     },
@@ -40,7 +72,8 @@ function fixture(format = 'oa-long') {
     setImportProgress: (value: number) => update(() => { state.progress = value; }),
     setRecordMessage: () => update(() => {}), setConfirmedPro: () => {}, setManualDirty: () => {}, setForm: () => {}, Error,
   };
-  const code = ts.transpileModule(source.slice(effectStart, effectEnd) + '\n' + source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const scopeCode = source.slice(source.indexOf('  const isCurrentBodyScope ='), source.indexOf('  const editField ='));
+  const code = ts.transpileModule(scopeCode + source.slice(effectStart, effectEnd) + '\n' + source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const run = vm.runInNewContext(code + '\nimportOaReport', context) as (event: unknown) => Promise<void>;
   return { state, storage, pending, context, leave: () => cleanup(), emit: (type: string) => listeners.get(type)?.({}),
     start: () => run({ target: { files: [{ type: 'image/png' }], value: 'synthetic' } }) };
@@ -87,12 +120,15 @@ test('pagehide invalidates pending OCR even when browser preserves mounted page'
   const f = fixture(); const task = f.start(); f.emit('pagehide'); const before = structuredClone(f.state);
   f.pending[0].progress(99); f.pending[0].resolve(result()); await task; assert.deepEqual(structuredClone(f.state), before);
 });
-test('pagehide preserves reviewed input and a restored page can explicitly start a new import', async () => {
+test('pagehide preserves reviewed input but requires a fresh document before another import', async () => {
   const f = fixture(); f.state.draft = { patch: { memo: 'reviewed input' } };
   f.emit('pagehide'); assert.deepEqual(f.state.draft, { patch: { memo: 'reviewed input' } });
   assert.equal(f.context.form.memo, 'manual memo'); assert.equal(f.state.importing, false);
-  const task = f.start(); f.pending[0].resolve(result(73)); await task;
-  assert.equal((f.state.draft as unknown as { patch: { weight: string } }).patch.weight, '73');
+  await f.start(); assert.equal(f.pending.length, 0);
+  assert.deepEqual(f.state.draft, { patch: { memo: 'reviewed input' } });
+  // A fresh document is admitted through the ownership gate before mounting.
+  const fresh = fixture(); const task = fresh.start(); fresh.pending[0].resolve(result(73)); await task;
+  assert.equal((fresh.state.draft as unknown as { patch: { weight: string } }).patch.weight, '73');
 });
 
 

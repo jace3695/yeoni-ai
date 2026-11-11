@@ -5,6 +5,10 @@ import { APP_RECORD_KEYS, RECORD_RESET_STORAGE_EVENT, resetMarkerKey, type Recor
 import { getGrowthRoutinesStorageKey, parseGrowthRoutines } from "../data/growthRoutines";
 import { pendingBudgetSaveKey } from "../budget/lib/pending-save";
 
+// Bounded, tab-local proof. A cloud-synced marker (or an older client receipt)
+// cannot substitute for this client's successful server verification.
+let verifiedLanguageReset: { userId: string; marker: string } | null = null;
+
 export function clearGrowthRecordBackup(userId: string, marker: string) {
   const key = getGrowthRoutinesStorageKey(userId);
   const raw = window.localStorage.getItem(key);
@@ -22,6 +26,7 @@ export async function resetAppRecords(app: RecordResetApp, requestId: string, ex
 }
 
 async function performReset(app: RecordResetApp, requestId: string, expectedUserId: string) {
+  let verifiedEmptyLanguageState = false;
   const languageSession = app === "language" ? JSON.stringify(['language-cloud-sync-user', 'language-cloud-sync-epoch', 'fitness-cloud-sync-user', 'fitness-cloud-sync-epoch'].map(key => window.localStorage.getItem(key))) : null;
   if (!supabase) throw new Error("클라우드 연결을 확인해 주세요.");
   if (!navigator.onLine) throw new Error("인터넷에 연결한 뒤 초기화해 주세요.");
@@ -32,6 +37,26 @@ async function performReset(app: RecordResetApp, requestId: string, expectedUser
   const { data, error } = await supabase.rpc("reset_my_app_records", { p_app: app, p_request_id: requestId, p_confirmation: "초기화" });
   if (error || data?.app !== app || data?.user_id !== userId || typeof data?.marker !== "string") {
     throw new Error("초기화 완료 여부를 확인하지 못했어요. 같은 버튼을 눌러 다시 확인해 주세요.");
+  }
+  if (app === "language") {
+    // A valid receipt from an older server does not prove that newly added
+    // record keys were removed. Verify before clearing this device's copy.
+    const { data: remote, error: readError } = await supabase.from("language_user_state")
+      .select("state").eq("user_id", userId).maybeSingle();
+    const state: unknown = remote?.state;
+    if (readError || !state || typeof state !== "object" || Array.isArray(state)
+      || (state as Record<string, unknown>)[resetMarkerKey(app)] !== data.marker) {
+      throw new Error("서버의 일본어 초기화 결과를 확인하지 못했어요. 이 기기의 기록은 지우지 않았으니 같은 버튼으로 다시 확인해 주세요.");
+    }
+    verifiedEmptyLanguageState = !APP_RECORD_KEYS.language.some(key => Object.hasOwn(state, key));
+    // Only this client's own verified receipt permits newer work on retry.
+    // A failed old-server reset can otherwise sync its incomplete marker here.
+    const verifiedRepeat = verifiedLanguageReset?.userId === userId
+      && verifiedLanguageReset.marker === data.marker
+      && window.localStorage.getItem(resetMarkerKey(app)) === data.marker;
+    if (!verifiedEmptyLanguageState && !verifiedRepeat) {
+      throw new Error("서버에 일본어 학습 기록이 남아 있어 초기화를 완료로 표시하지 않았어요. 이 기기의 기록은 지우지 않았습니다. 서버 업데이트 또는 다른 기기의 새 기록을 확인해 주세요.");
+    }
   }
   const { data: current } = await supabase.auth.getUser();
   if (current.user?.id !== userId) throw new Error("계정이 바뀌었어요. 원래 계정에서 초기화 결과를 확인해 주세요.");
@@ -60,6 +85,7 @@ async function performReset(app: RecordResetApp, requestId: string, expectedUser
   if (app === "language" && JSON.stringify(['language-cloud-sync-user', 'language-cloud-sync-epoch', 'fitness-cloud-sync-user', 'fitness-cloud-sync-epoch'].map(key => window.localStorage.getItem(key))) !== languageSession) {
     throw new Error('계정 세션이 바뀌어 초기화 확인을 멈췄어요. 원래 계정에서 결과를 확인해 주세요.');
   }
+  if (app === "language" && verifiedEmptyLanguageState) verifiedLanguageReset = { userId, marker: data.marker };
   if (app === "growth" && window.localStorage.getItem(`${getGrowthRoutinesStorageKey(userId)}:record-reset`) !== data.marker) clearGrowthRecordBackup(userId, data.marker);
   window.localStorage.setItem(RECORD_RESET_STORAGE_EVENT, JSON.stringify({ userId, app, marker: data.marker }));
   window.sessionStorage.setItem(`record-reset-receipt:${userId}:${app}`, "1");

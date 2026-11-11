@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { readBodySaveScope, readBodySaveSnapshot, isBodySaveScopeCurrent } from "../data/bodyRecordSave";
+import type { BodySaveScope } from "../data/bodyRecordSave";
 import { RECORDS_CHANGED_EVENT } from "../data/storageTransaction";
 import { useUnsavedChanges } from "../../components/useUnsavedChanges";
 import {
@@ -98,6 +100,11 @@ export default function RecordCalendarView() {
   const [timePending, setTimePending] = useState(false);
   const [manualBodyPending, setManualBodyPending] = useState(false);
   const [stores, setStores] = useState<RecordStores | null>(null);
+  const [readError, setReadError] = useState(false);
+  const [sessionChanged, setSessionChanged] = useState(false);
+  const calendarScope = useRef<BodySaveScope | null>(null);
+  const calendarInvalidated = useRef(false);
+  const [reloadAttempt, setReloadAttempt] = useState(0);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteNotice, setNoteNotice] = useState("");
   const [editingWorkout, setEditingWorkout] = useState(false);
@@ -152,15 +159,34 @@ export default function RecordCalendarView() {
   }, []);
   useUnsavedChanges(editingWorkout || editingSecondary !== null || noteDraft !== (stores?.notes[selected] || ""));
   useEffect(() => {
-    const refresh = () => setStores(readRecordStores());
+    const refresh = () => {
+      if (calendarInvalidated.current) return;
+      try {
+        const scope = calendarScope.current ?? readBodySaveScope(window.localStorage);
+        if (calendarScope.current && !isBodySaveScopeCurrent(window.localStorage, calendarScope.current)) {
+          calendarInvalidated.current = true;
+          setSessionChanged(true);
+          return;
+        }
+        // Root ownership admission performs startup recovery. Once mounted,
+        // validate this document's scope and journal before any generic reader
+        // can recover a before-image belonging to another session.
+        calendarScope.current = scope;
+        readBodySaveSnapshot(window.localStorage, scope);
+        const next = readRecordStores({ strictBodyRecords: true });
+        setStores(next); setReadError(false);
+      } catch { setReadError(true); }
+    };
     refresh();
     window.addEventListener(RECORDS_CHANGED_EVENT, refresh);
     window.addEventListener("storage", refresh);
+    window.addEventListener("yeoni-cloud-session-changed", refresh);
     return () => {
       window.removeEventListener(RECORDS_CHANGED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
+      window.removeEventListener("yeoni-cloud-session-changed", refresh);
     };
-  }, []);
+  }, [reloadAttempt]);
   useEffect(
     () => {
       if (noteDate.current !== selected) { noteEdited.current = false; setNoteNotice(""); }
@@ -206,6 +232,13 @@ export default function RecordCalendarView() {
     setFoamMemoDraft(selectedWorkoutRecord?.foamRollerMemo || "");
   }, [selected, selectedWorkoutRecord, editingWorkout, editingSecondary]);
   if (sessionInvalid) return <p role="status">계정 또는 화면 상태가 바뀌었어요. 기록 화면을 다시 열어 주세요.</p>;
+  if (sessionChanged) return <section role="alert" className="rounded-2xl bg-white p-4 text-[13px] text-gray-700">로그인 상태가 바뀌었습니다. 새로고침하여 현재 계정의 기록을 다시 확인해주세요.</section>;
+  if (readError) return (
+    <section role="alert" className="rounded-2xl bg-white p-4 text-[13px] text-gray-700">
+      <p>기록을 불러오지 못해 저장과 삭제를 멈췄습니다. 기존 저장공간을 지우지 말고 다시 확인해주세요.</p>
+      <button type="button" className="mt-3 rounded-xl border px-3 py-2" onClick={() => setReloadAttempt((attempt) => attempt + 1)}>다시 불러오기</button>
+    </section>
+  );
   if (!stores)
     return (
       <div className="rounded-2xl bg-white p-4 text-[13px] text-gray-500">
@@ -214,8 +247,21 @@ export default function RecordCalendarView() {
     );
   const moveMonth = (delta: number) =>
     setVisible(new Date(visible.getFullYear(), visible.getMonth() + delta, 1));
+  const canEditCalendar = () => {
+    if (!recordsLive.current) return false;
+    try {
+      if (calendarInvalidated.current || !isBodySaveScopeCurrent(window.localStorage, calendarScope.current)) {
+        calendarInvalidated.current = true;
+        setSessionChanged(true);
+        return false;
+      }
+      readBodySaveSnapshot(window.localStorage, calendarScope.current);
+      return true;
+    } catch { setReadError(true); }
+    return false;
+  };
   const saveNote = () => {
-    if (!recordsLive.current) return;
+    if (!recordsLive.current || !canEditCalendar()) return;
     try {
       const next = readJson<DailyNotesStore>(DAILY_NOTES_KEY, {});
       if (noteDraft.trim()) next[selected] = noteDraft.trim();
@@ -230,7 +276,7 @@ export default function RecordCalendarView() {
     }
   };
   const deleteNote = () => {
-    if (!recordsLive.current) return;
+    if (!recordsLive.current || !canEditCalendar()) return;
     try {
       const next = readJson<DailyNotesStore>(DAILY_NOTES_KEY, {});
       delete next[selected];
@@ -292,7 +338,7 @@ export default function RecordCalendarView() {
     stores.lunchProteins[selected],
   );
   const writeWorkoutStore = (update: (record: WorkoutDayRecord) => WorkoutDayRecord) => {
-    if (!recordsLive.current || workoutWriteLocked.current) return false;
+    if (!recordsLive.current || workoutWriteLocked.current || !canEditCalendar()) return false;
     workoutWriteLocked.current = true;
     try {
       const workouts = readJson<RecordStores["workouts"]>(WORKOUT_COMPLETED_DAYS_KEY, {});
@@ -401,7 +447,7 @@ export default function RecordCalendarView() {
     setWorkoutNotice(`${label} 기록을 삭제했습니다.`);
   };
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div role="tablist" aria-label="기록 메뉴" className="grid grid-cols-3 gap-1 rounded-2xl bg-gray-100 p-1">
         {([
           ["summary", "통합 정보"], ["body", "체중관리"], ["workout", "운동기록"],
@@ -557,9 +603,10 @@ export default function RecordCalendarView() {
         year={visible.getFullYear()}
         monthIndex={visible.getMonth()}
         cutoffDateKey={todayKey}
-        onGoalChange={(goal) =>
-          setStores({ ...stores, weightGoal: saveWeightGoal(goal) })
-        }
+        onGoalChange={(goal) => {
+          if (!canEditCalendar()) return;
+          setStores({ ...stores, weightGoal: saveWeightGoal(goal) });
+        }}
       />
       <RecordDashboard stores={stores} year={visible.getFullYear()} monthIndex={visible.getMonth()} view="body" />
           <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">

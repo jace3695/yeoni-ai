@@ -140,7 +140,7 @@ test('plain anchors retain handlers but normalize every DOM destination and remo
   const create = compiled.jsx as (type: string, props: object) => Element;
   let clicks = 0;
   const onClick = () => clicks++;
-  for (const href of ['https://example.com', '//example.com', 'javascript:alert(1)', '/language/profile?word=水', '/language/settings', '/language/grammar#outside']) {
+  for (const href of ['https://example.com', '//example.com', 'javascript:alert(1)', '/language/profile?word=水', '/settings', '/language/grammar#outside']) {
     const link = create('a', { href, target: '_blank', download: 'file', ping: 'https://example.com', onClick, children: 'source' });
     assert.equal(link.props.href, '#/unsupported');
     assert.equal(link.props.target, undefined); assert.equal(link.props.download, undefined); assert.equal(link.props.ping, undefined);
@@ -337,4 +337,32 @@ test('hash-authorized QA CSS exactly supplies every public glyph group style wit
   assert.match(component, /timeline\.characters\[characterIndex\]\.starts\[strokeIndex\]/);
   const response = await readFile('lib/japanese-preview-response.ts', 'utf8');
   assert.doesNotMatch(response, /unsafe-inline|unsafe-hashes|style-src-attr/);
+});
+
+test('original home, curriculum and first-letter pages preserve product journeys in the memory-only preview', async () => {
+  const window = { addEventListener() {}, removeEventListener() {} };
+  const document = { documentElement: { dataset: {} }, addEventListener() {}, removeEventListener() {} };
+  for (const [page, pathname, heading] of [
+    ['', '/language', '글자부터 문장까지'],
+    ['/learn', '/language/learn', '한 번에 하나씩, 내 속도로'],
+    ['/start', '/language/start', '가나 첫걸음'],
+  ]) {
+    const state = hooks();
+    const compiled = await compile(`export { default as Component } from './app/language${page}/page';
+      export { qaLocalStorage as store, seedSyntheticOwner } from './scripts/japanese-preview/runtime';`,
+    { window, document, location: { hash: `#${pathname}` } }, state.api);
+    (compiled.seedSyntheticOwner as () => void)();
+    const Component = compiled.Component as () => Element;
+    state.render(Component);
+    const tree = state.render(Component);
+    assert.ok(label(tree).includes(heading), `${pathname}: original heading`);
+    const hrefs = nodes(tree).flatMap(node => typeof node.props.href === 'string' ? [node.props.href] : []);
+    if (page === '') assert.ok(hrefs.includes('/language/learn'));
+    if (page === '/learn') {
+      assert.ok(hrefs.includes('/language/start'));
+      assert.ok(hrefs.includes('/language/learn?lesson=f01'));
+    }
+    if (page === '/start') assert.ok(hrefs.includes('/language/learn?lesson=f01'));
+    assert.doesNotMatch(label(tree), /계정으로 로그인|로그인 설정이 필요/);
+  }
 });

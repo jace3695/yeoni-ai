@@ -174,6 +174,13 @@ function BudgetDashboard() {
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
   })
   const [input, setInput] = useState('')
+  const [entryMode, setEntryMode] = useState<'manual' | 'sentence'>('manual')
+  const [entryCoolingDown, setEntryCoolingDown] = useState(false)
+  useEffect(() => {
+    if (!entryCoolingDown) return
+    const timer = window.setTimeout(() => setEntryCoolingDown(false), 600)
+    return () => window.clearTimeout(timer)
+  }, [entryCoolingDown])
   const [feedback, setFeedback] = useState('')
   const [parsedItems, setParsedItems] = useState<any[]>([])
   const [showConfirm, setShowConfirm] = useState(false)
@@ -614,7 +621,7 @@ function BudgetDashboard() {
         acc[category] = loadedCategories[category] > 0 ? String(loadedCategories[category]) : ''
         return acc
       }, {} as Record<string, string>))
-      setShowBudgetEditor(!loadedBudget)
+      setShowBudgetEditor(false)
       setBudgetLoading(false)
     }
 
@@ -1538,8 +1545,9 @@ function BudgetDashboard() {
       setHasPendingSave(false)
       setShowConfirm(false)
       setParsedItems([])
-      setInput('')
       if (reviewWasManual.current) { manualEntry.clear(); setManualReset(value => value + 1) }
+      else { setInput('') }
+      setEntryCoolingDown(true)
       setFeedback(String(data?.count ?? pending.items.length) + '건의 저장을 확인했어요.')
       await Promise.all([fetchIncome(), fetchTransactions(), fetchSavings()])
     } catch {
@@ -3213,32 +3221,14 @@ return (
               <p className="home-greeting">{selectedMonthLabel} 돈의 흐름을 편안하게 살펴보세요.</p>
             </div>
             <div className="home-header-actions">
-              <span className="home-ai-status">{currentMonth + 1}월 소비 흐름을 살펴보고 있어요.</span>
+              <span className="home-ai-status">{selectedMonthLabel} 기록 기준</span>
               <button className="home-logout" onClick={handleLogout}>로그아웃</button>
             </div>
           </header>
-          <CommonCharacterGuide>
-          <section className="home-ai-card home-ai-card-primary home-yeoni-diagnosis">
-            <div className="home-ai-content">
-              <p className="home-section-label">연이와 소비 살펴보기</p>
-              <p className="home-diagnosis-basis">{homeGuidance.basis}</p>
-              <RecordReplyStatus source={rollingReplySource(user?.id, "budget", { transactions, incomeList, savings, currency }, recordsReady && guidanceCurrencyScope?.owner === user?.id && guidanceCurrencyScope?.status === "ready")} />
-              <h2>{homeGuidance.title}</h2>
-              <p className="home-ai-summary">{homeGuidance.detail}</p>
-              <div className="home-ai-action-line">
-                <span>선택 월 살펴보기</span>
-                <strong>{homeGuidance.action ?? "확인된 기록이 준비되면 함께 살펴볼게요."}</strong>
-              </div>
-              <button type="button" className="home-text-action" onClick={() => { setAnalysisView('ai'); setTab('analysis') }}>
-                자세한 분석 보기 <ArrowRight size={15} aria-hidden="true" />
-              </button>
-            </div>
-          </section>
-          </CommonCharacterGuide>
-
-          {user?.id && <PaymentPlans key={`home-plans:${user.id}`} userId={user.id} records={transactions} month={selectedMonth} budget={monthlyBudget} ready={recordsReady && !budgetLoading} currency={currency} compact onManage={() => { setTab('analysis'); setAnalysisView('stats'); }} onRefreshRecords={fetchTransactions} />}
-
-
+          <div className="budget-home-actions">
+            <button type="button" className="budget-primary-action" onClick={() => setTab('input')}>＋ 기록 추가</button>
+            <button type="button" className="budget-secondary-action" onClick={() => setTab('list')}>내역 확인</button>
+          </div>
           {(() => {
             const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate()
             const remainDays = isCurrentMonthSelected ? lastDay - today.getDate() : null
@@ -3269,7 +3259,7 @@ return (
                   </div>
                   <div>
                     <span>현재 지출</span>
-                    <strong>{formatKRW(total)}</strong>
+                    <strong>−{formatKRW(total)}</strong>
                   </div>
                 </div>
 
@@ -3289,6 +3279,26 @@ return (
               </section>
             )
           })()}
+
+          <CommonCharacterGuide>
+          <section className="home-ai-card home-ai-card-primary home-yeoni-diagnosis">
+            <div className="home-ai-content">
+              <p className="home-section-label">연이와 소비 살펴보기</p>
+              <p className="home-diagnosis-basis">{homeGuidance.basis}</p>
+              <RecordReplyStatus source={rollingReplySource(user?.id, "budget", { transactions, incomeList, savings, currency }, recordsReady && guidanceCurrencyScope?.owner === user?.id && guidanceCurrencyScope?.status === "ready")} />
+              <h2>{homeGuidance.title}</h2>
+              <p className="home-ai-summary">{homeGuidance.detail}</p>
+              <div className="home-ai-action-line">
+                <span>선택 월 살펴보기</span>
+                <strong>{homeGuidance.action ?? "확인된 기록이 준비되면 함께 살펴볼게요."}</strong>
+              </div>
+              <button type="button" className="home-text-action" onClick={() => { setAnalysisView('ai'); setTab('analysis') }}>
+                자세한 분석 보기 <ArrowRight size={15} aria-hidden="true" />
+              </button>
+            </div>
+          </section>
+          </CommonCharacterGuide>
+
 
           {showBudgetEditor && (
             <section className="home-budget-editor">
@@ -3329,6 +3339,9 @@ return (
             </section>
           )}
 
+          <details className="budget-home-details">
+            <summary>돈의 흐름 · 지출 분석 · 결제 예정</summary>
+            <p className="budget-section-help">선택한 달의 기록을 자세히 살펴보세요.</p>
           <section className="home-flow-card">
             <div className="home-section-heading">
               <div>
@@ -3339,14 +3352,14 @@ return (
             </div>
             <div className="home-flow-grid">
               {[
-                { label: '수입', value: incomeTotal, tone: 'income' },
-                { label: '지출', value: total, tone: 'expense' },
-                { label: '저축', value: savingsRecordedTotal, tone: 'saving' },
-                { label: '여유 자금', value: incomeTotal - total - savingsRecordedTotal, tone: 'available' }
+                { label: '수입', value: incomeTotal, tone: 'income', sign: '+' },
+                { label: '지출', value: total, tone: 'expense', sign: '−' },
+                { label: '저축', value: savingsRecordedTotal, tone: 'saving', sign: '' },
+                { label: '기록상 남은 돈', value: incomeTotal - total - savingsRecordedTotal, tone: 'available', sign: '' }
               ].map(item => (
                 <div className={`home-flow-item ${item.tone}`} key={item.label}>
                   <span>{item.label}</span>
-                  <strong>{formatKRW(item.value)}</strong>
+                  <strong>{item.sign}{formatKRW(item.value)}</strong>
                 </div>
               ))}
             </div>
@@ -3415,6 +3428,9 @@ return (
             )
           })()}
 
+          {user?.id && <PaymentPlans key={`home-plans:${user.id}`} userId={user.id} records={transactions} month={selectedMonth} budget={monthlyBudget} ready={recordsReady && !budgetLoading} currency={currency} compact onManage={() => { setTab('analysis'); setAnalysisView('stats'); }} onRefreshRecords={fetchTransactions} />}
+          </details>
+
           <section className="home-recent-card">
             <div className="home-section-heading">
               <div>
@@ -3442,7 +3458,7 @@ return (
                       <span>{meta}</span>
                     </div>
                     <strong className={`home-recent-amount ${isIncome ? 'income' : isSaving ? 'saving' : 'expense'}`}>
-                      {isIncome || isSaving ? '+' : '-'}{formatKRW(item.amount)}
+                      {isIncome ? '+' : isSaving ? '' : '−'}{formatKRW(item.amount)}
                     </strong>
                   </div>
                 )
@@ -3461,19 +3477,25 @@ return (
       )}
 
       {tab === 'input' && (
-        <main className="record-screen app-safe-top" style={{ padding: '24px 20px 88px' }}>
+        <main inert={entryCoolingDown} className="record-screen app-safe-top" style={{ padding: '24px 20px 88px' }}>
           <header className="record-header">
             <h2>{showConfirm ? '2. 입력 내용을 확인하고 저장하세요' : '1. 수입·지출 내역을 입력하세요'}</h2>
             <p>
               {showConfirm
                 ? '날짜·금액·분류를 확인하고 필요한 내용을 수정한 뒤 저장하세요.'
-                : '문장으로 입력하거나 아래 상세 항목을 직접 작성하세요. 확인 후 저장됩니다.'}
+                : '직접 적기와 문장 입력 중 편한 방법을 골라요. 마지막 확인 전에는 저장하지 않습니다.'}
             </p>
           </header>
 
+          {!showConfirm && <div className="budget-entry-switch" role="group" aria-label="기록 입력 방법">
+            <button type="button" aria-pressed={entryMode === 'manual'} disabled={aiLoading || listening || isSavingRecords || hasPendingSave} onClick={() => setEntryMode('manual')}>직접 적기</button>
+            <button type="button" aria-pressed={entryMode === 'sentence'} disabled={aiLoading || listening || isSavingRecords || hasPendingSave} onClick={() => setEntryMode('sentence')}>문장으로 입력</button>
+          </div>}
+          {!showConfirm && <p className="budget-entry-preservation">입력 방법을 바꿔도 적던 내용은 유지돼요.</p>}
+
           {!showConfirm ? (
             <>
-              <details open className="budget-sentence-entry"><summary style={{minHeight:44,cursor:'pointer'}}>문장으로 입력하기</summary><p>입력한 문장을 앱 서버에 보내 해석을 요청합니다. 직접 입력하려면 아래 상세 항목을 이용하세요.</p>
+              <details open hidden={entryMode !== 'sentence'} className="budget-sentence-entry"><summary style={{minHeight:44,cursor:'pointer'}}>문장으로 입력하기</summary><p>입력한 문장을 앱 서버에 보내 해석을 요청합니다. 직접 입력하려면 위의 ‘직접 적기’ 탭을 선택하세요.</p>
               <section style={{ background: 'rgba(19,19,28,0.72)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 18, padding: 14, marginBottom: 12, backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
                 <label htmlFor="ai-record-input" style={{ display: 'block', color: '#F8FAFC', fontSize: 13, fontWeight: 700, marginBottom: 9 }}>
                   기록할 내용
@@ -3574,7 +3596,7 @@ return (
                           setParsedItems(updated)
                           if (updated.length === 0) setShowConfirm(false)
                         }}
-                        style={{ background: '#FF6B6B18', border: '1px solid #FF6B6B66', borderRadius: 8, color: '#FF9B9B', fontSize: 11, padding: '5px 8px', cursor: 'pointer' }}
+                        style={{ background: '#FF6B6B18', border: '1px solid #FF6B6B66', borderRadius: 8, color: '#9b2437', fontSize: 11, padding: '5px 8px', cursor: 'pointer' }}
                       >
                         삭제
                       </button>
@@ -3721,7 +3743,14 @@ return (
             </section>
           ) : null}
 
-          <ManualEntry draft={manualEntry.draft} onDraftChange={manualEntry.change} key={String(user?.id ?? '') + ':' + manualReset} owner={user?.id ?? ''} hidden={showConfirm} disabled={isSavingRecords || hasPendingSave || aiLoading} categories={BUDGET_CATEGORIES} onReview={handleManualReview} />
+          <ManualEntry draft={manualEntry.draft} onDraftChange={manualEntry.change} key={String(user?.id ?? '') + ':' + manualReset} owner={user?.id ?? ''} hidden={showConfirm || entryMode !== 'manual'} disabled={isSavingRecords || hasPendingSave || aiLoading} categories={BUDGET_CATEGORIES} onReview={handleManualReview} />
+
+          {!showConfirm && <details className="budget-entry-scope">
+            <summary>내 계좌 이체·카드대금·환불을 기록할 때</summary>
+            <p>현재 기록은 수입·지출·저축으로 구분돼요. 결제수단의 ‘계좌이체’는 소비 대금을 보낸 방법이며, 내 계좌 사이 이동을 자동으로 제외하는 기능은 아닙니다.</p>
+            <p>이미 기록한 카드 구매를 카드대금 납부 때 다시 지출로 적으면 합계가 중복돼요. 환불을 새 수입으로 적어도 원래 지출이 자동 취소되지는 않아요. 먼저 상세 내역에서 원거래를 확인하세요.</p>
+            <button type="button" className="budget-secondary-action" onClick={() => setTab('list')}>기존 내역 확인</button>
+          </details>}
 
           {!showConfirm && feedback && (
             <p aria-live="polite" style={{ color: feedback.includes('오류') || feedback.includes('못했') ? '#FF9B9B' : '#4ECDC4', fontSize: 13, lineHeight: 1.6, margin: '12px 2px 0' }}>
@@ -4340,7 +4369,7 @@ return (
                           type="button"
                           onClick={() => handleDeletePasskey(passkey.id)}
                           disabled={passkeyBusy}
-                          style={{ flexShrink: 0, background: 'rgba(255,107,107,0.10)', border: '1px solid rgba(255,107,107,0.35)', borderRadius: 8, padding: '7px 10px', color: '#FF9B9B', fontSize: 11, cursor: passkeyBusy ? 'default' : 'pointer' }}
+                          style={{ flexShrink: 0, background: 'rgba(255,107,107,0.10)', border: '1px solid rgba(255,107,107,0.35)', borderRadius: 8, padding: '7px 10px', color: '#9b2437', fontSize: 11, cursor: passkeyBusy ? 'default' : 'pointer' }}
                         >
                           삭제
                         </button>

@@ -112,15 +112,15 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
     
               <section aria-label="상세 내역 필터" style={{ ...getCardStyle(), padding: 12, marginBottom: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 10 }}>
-                  <label style={{ display: 'grid', gap: 5, color: '#E0E0EA', fontSize: 12 }}>
+                  <label style={{ display: 'grid', gap: 5, color: 'var(--foreground)', fontSize: 12 }}>
                     시작일
                     <input type="date" value={historyStartDate} max={historyEndDate || undefined} onChange={(e) => setHistoryStartDate(e.target.value)} style={{ minHeight: 42, borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 10px' }} />
                   </label>
-                  <label style={{ display: 'grid', gap: 5, color: '#E0E0EA', fontSize: 12 }}>
+                  <label style={{ display: 'grid', gap: 5, color: 'var(--foreground)', fontSize: 12 }}>
                     종료일
                     <input type="date" value={historyEndDate} min={historyStartDate || undefined} onChange={(e) => setHistoryEndDate(e.target.value)} style={{ minHeight: 42, borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 10px' }} />
                   </label>
-                  <label style={{ display: 'grid', gap: 5, color: '#E0E0EA', fontSize: 12 }}>
+                  <label style={{ display: 'grid', gap: 5, color: 'var(--foreground)', fontSize: 12 }}>
                     유형
                     <select aria-label="내역 유형" value={historyTypeFilter} onChange={(e) => setHistoryTypeFilter(e.target.value as 'all' | 'income' | 'expense' | 'saving')} style={{ minHeight: 42, borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 10px' }}>
                       <option value="all">전체</option>
@@ -129,7 +129,7 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                       <option value="saving">저축</option>
                     </select>
                   </label>
-                  <label style={{ display: 'grid', gap: 5, color: '#E0E0EA', fontSize: 12 }}>
+                  <label style={{ display: 'grid', gap: 5, color: 'var(--foreground)', fontSize: 12 }}>
                     지출 카테고리
                     <select aria-label="지출 카테고리" value={historyCategoryFilter} disabled={historyTypeFilter === 'income' || historyTypeFilter === 'saving'} onChange={(e) => setHistoryCategoryFilter(e.target.value)} style={{ minHeight: 42, borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 10px' }}>
                       <option value="all">전체</option>
@@ -153,7 +153,7 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                 {filterError && <p role="alert">{filterError}</p>}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                   <button type="button" onClick={resetHistoryFilters} style={{ minHeight: 40, flex: '1 1 120px', borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 12px', cursor: 'pointer' }}>필터 초기화</button>
-                  <button type="button" disabled={Boolean(filterError)} onClick={exportFilteredHistoryCsv} style={{ minHeight: 40, flex: '1 1 150px', borderRadius: 9, border: '1px solid #4ECDC4', padding: '8px 12px', cursor: 'pointer', color: '#4ECDC4' }}>현재 결과 CSV 저장</button>
+                  <button type="button" disabled={Boolean(filterError)} onClick={exportFilteredHistoryCsv} style={{ minHeight: 40, flex: '1 1 150px', borderRadius: 9, border: '1px solid var(--border)', padding: '8px 12px', cursor: 'pointer', color: 'var(--sage-dark)', background: 'var(--surface)' }}>현재 결과 CSV 저장</button>
                 </div>
                 <p aria-live="polite" style={{ color: '#9CA3AF', fontSize: 11, margin: '10px 0 0' }}>
                   총 {filteredIncomeItems.length + filteredExpenseItems.length + filteredSavingItems.length}건

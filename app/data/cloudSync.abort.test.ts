@@ -1,3 +1,4 @@
+import { isValidInbodyRecord } from './recordStorage.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -6,6 +7,7 @@ import ts from 'typescript';
 import { createClient } from '@supabase/supabase-js';
 import * as resets from './appRecordReset.ts';
 import * as storage from './storageTransaction.ts';
+import * as ownership from './storageOwnership.ts';
 
 // Run the original query functions with the installed SDK and an in-memory
 // fetch boundary. No credentials, real auth, browser or remote server is used.
@@ -19,9 +21,11 @@ function cloudWithFetch(send: typeof fetch): typeof import('./cloudSync.ts') {
   }).outputText;
   const exports = {};
   const requireFixture = (path: string) => {
+    if (path === './recordStorage.ts') return { isValidInbodyRecord };
     if (path === '../lib/supabase.ts') return { supabase };
     if (path === './appRecordReset.ts') return resets;
     if (path === './storageTransaction.ts') return storage;
+    if (path === './storageOwnership.ts') return ownership;
     throw new Error(`Unexpected dependency: ${path}`);
   };
   vm.runInNewContext(`(function(exports, require) { ${code}\n})`)(exports, requireFixture);

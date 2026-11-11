@@ -23,14 +23,17 @@ export default function LocalAudioProbe({ isOpen }: { isOpen: boolean }) {
   useEffect(() => {
     const refresh = () => setInventory(probe.inspect());
     const cancel = () => probe.cancel();
+    const onVisibility = () => { if (document.hidden) probe.cancel(); };
     let removeListener = () => {};
     try { removeListener = port?.onVoicesChanged(refresh) ?? removeListener; } catch { refresh(); }
     window.addEventListener('pagehide', cancel);
     window.addEventListener('hashchange', cancel);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       removeListener(); probe.cancel();
       window.removeEventListener('pagehide', cancel);
       window.removeEventListener('hashchange', cancel);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [port, probe]);
 

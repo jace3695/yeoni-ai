@@ -1,11 +1,24 @@
 import { build } from 'esbuild';
 import postcss from 'postcss';
+import tailwindcss from 'tailwindcss';
+import autoprefixer from 'autoprefixer';
+import sharp from 'sharp';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const previewBuildDirectory = '.generated/japanese-preview';
+export const languageIconPath = 'public/app-icons/language.png';
+export const reviewedLanguageIconHash = 'f3bfd7621c8170ad3da340ecbc04df96d963d272235cd1f5f363889e8b401aa3';
+
+export async function decodePreviewLanguageIcon(bytes) {
+  if (createHash('sha256').update(bytes).digest('hex') !== reviewedLanguageIconHash) throw new Error('Language icon changed: review required');
+  const { data, info } = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  if (info.width !== 192 || info.height !== 192 || info.channels !== 4) throw new Error('Invalid language icon dimensions');
+  return { width: info.width, height: info.height, pixels: data.toString('base64') };
+}
+
 export const forbiddenPreviewInput = /(?:^|\/)(?:lib\/supabase(?:\.ts)?|app\/(?:layout|language\/layout|lib\/(?:supabase|authenticatedHeaders))|app\/components\/(?:AuthGate|CloudSyncPanel|RecordResetListener|AiBudgetNotifier|PwaManager)|components\/(?:language\/)?LanguageCloudSync|app\/data\/languageCloudSync|utils\/(?:speakJapanese|japaneseTts)|lib\/yeoni\/speech-participant|scripts\/scope-qa\/synthetic-client)(?:\.|\/|$)/i;
 
 export const nativeAudioBridgePath = 'scripts/japanese-preview/native-local-audio.ts';
@@ -55,13 +68,15 @@ export async function buildJapanesePreview(root = process.cwd()) {
     minifySyntax: true, minifyWhitespace: true, minifyIdentifiers: false, legalComments: 'inline',
     sourcemap: false, metafile: true, define, inject: [own('runtime.ts'), own('asset-request.ts'), own('location-query.ts')],
     plugins: [{ name: 'japanese-preview-isolation', setup(builder) {
-      // Use the exact product tokens without importing Tailwind directives or
-      // unrelated global application chrome. The full file is source-hashed.
+      // Use the product's actual chrome and utility styles, without network resources.
       builder.onLoad({ filter: /[\\/]app[\\/]globals\.css$/ }, async args => {
-        const parsed = postcss.parse(await readFile(args.path, 'utf8'));
-        const themes = parsed.nodes.filter(node => node.type === 'rule' && node.selector === ':root');
-        if (themes.length !== 1) throw new Error('Expected exactly one product theme root');
-        return { contents: themes[0].toString(), loader: 'css' };
+        const compiled = await postcss([tailwindcss(resolve(root, 'tailwind.config.ts')), autoprefixer()])
+          .process(await readFile(args.path, 'utf8'), { from: args.path, map: false });
+        return { contents: compiled.css, loader: 'css' };
+      });
+      builder.onLoad({ filter: /[\\/]public[\\/]app-icons[\\/]language\.png$/ }, async args => {
+        if (args.path !== resolve(root, languageIconPath)) throw new Error('Unexpected icon input');
+        return { contents: JSON.stringify(await decodePreviewLanguageIcon(await readFile(args.path))), loader: 'json' };
       });
       builder.onResolve({ filter: /^qa-preview-jsx\/jsx-runtime$/ }, () => ({ path: own('jsx-runtime.ts') }));
       builder.onResolve({ filter: /^@\/app\/lib\/authenticatedHeaders$/ }, () => ({ path: own('authenticated-headers.ts') }));
@@ -94,20 +109,23 @@ export async function buildJapanesePreview(root = process.cwd()) {
   const sourceHashes = [];
   const sourceEntries = [];
   for (const name of inputs) {
-    const source = name.startsWith('<define:') ? JSON.stringify(define) : await readFile(resolve(root, name), 'utf8');
-    sourceEntries.push({ path: name, source });
+    const source = name.startsWith('<define:') ? JSON.stringify(define) : await readFile(resolve(root, name));
+    sourceEntries.push({ path: name, source: String(source) });
     sourceHashes.push({ path: name, sha256: createHash('sha256').update(source).digest('hex') });
   }
   assertPreviewNativeAudioSources(sourceEntries);
   assertPreviewKanaAsset(sourceEntries);
-  for (const name of ['scripts/japanese-preview/build.mjs', 'package-lock.json']) sourceHashes.push({ path: name, sha256: createHash('sha256').update(await readFile(resolve(root, name))).digest('hex') });
-  const sourceDigest = createHash('sha256').update(JSON.stringify(sourceHashes)).digest('hex');
+  for (const name of ['scripts/japanese-preview/build.mjs', 'tailwind.config.ts', 'package-lock.json']) sourceHashes.push({ path: name, sha256: createHash('sha256').update(await readFile(resolve(root, name))).digest('hex') });
+  // Tailwind also scans product files outside the JS import graph. Bind the
+  // compiled bytes as well, so every CSS/content change changes this digest.
+  const compiledHashes = { script: createHash('sha256').update(script).digest('hex'), styles: createHash('sha256').update(styles).digest('hex') };
+  const sourceDigest = createHash('sha256').update(JSON.stringify({ inputs: sourceHashes, compiledHashes })).digest('hex');
   const payload = { version: 1, script, styles, sourceDigest };
   const output = resolve(root, previewBuildDirectory);
   await mkdir(output, { recursive: true });
   await writeFile(resolve(output, 'payload.json'), JSON.stringify(payload));
   await writeFile(resolve(output, 'build-manifest.json'), JSON.stringify({
-    sourceDigest, inputs: sourceHashes, payloadSha256: createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
+    sourceDigest, inputs: sourceHashes, compiledHashes, payloadSha256: createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
     outputs: result.outputFiles.map(file => ({ path: relative(output, file.path), bytes: file.contents.length })),
   }, null, 2));
   return { payload, inputs, output };

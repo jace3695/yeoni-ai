@@ -5,6 +5,7 @@ import { WORKOUT_COMPLETED_DAYS_KEY } from './workoutCompletion.ts';
 import type { WorkoutCompletionStore } from './workoutCompletion.ts';
 import type { DailyConditionRecord } from './recoveryMode.ts';
 import { notifyRecordsChanged, recoverStorageTransaction } from './storageTransaction.ts';
+import { assertStorageOwnership } from './storageOwnership.ts';
 
 export const WEIGHT_RECORDS_KEY = 'ai-fitness-weight-records';
 export const INBODY_RECORDS_KEY = 'ai-fitness-inbody-records';
@@ -67,6 +68,38 @@ export interface InbodyRecord {
   rightLegMuscleMass?: number;
   memo?: string;
 }
+/** One non-normalizing contract shared by calendar reads, saving and sync. */
+export function isValidInbodyRecord(value: unknown): value is InbodyRecord {
+  const object = (item: unknown): item is Record<string, unknown> => {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)
+      || Object.prototype.toString.call(item) !== '[object Object]') return false;
+    for (const key in item) if (!Object.prototype.hasOwnProperty.call(item, key)) return false;
+    return true;
+  };
+  const reserved = (key: string) => key === '__proto__' || key === 'prototype' || key === 'constructor';
+  if (!object(value)) return false;
+  return Object.entries(value).every(([name, field]) => {
+    if (reserved(name)) return false;
+    if (name === 'measurementTime') return typeof field === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(field);
+    if (['memo', 'bodyShape', 'reportedBodyAgeUnit'].includes(name)) return typeof field === 'string';
+    if (name === 'metricSources') {
+      if (!object(field)) return false;
+      return Object.entries(field).every(([metric, source]) => {
+        if (reserved(metric) || !object(source)) return false;
+        const own = (key: string) => Object.prototype.hasOwnProperty.call(source, key);
+        return own('device') && typeof source.device === 'string' && ['OA Smart Scale PRO', 'OA long report', 'InBody 270S English report'].includes(source.device)
+          && own('originalLabel') && typeof source.originalLabel === 'string'
+          && own('method') && typeof source.method === 'string' && ['ocr', 'ocr-edited'].includes(source.method)
+          && own('mappingVersion') && typeof source.mappingVersion === 'string' && ['oa-pro-v1', 'inbody-270s-en-v1'].includes(source.mappingVersion)
+          && Object.entries(source).every(([key, entry]) =>
+            ['device', 'originalLabel', 'originalUnit', 'originalText', 'method', 'mappingVersion'].includes(key)
+            && typeof entry === 'string');
+      });
+    }
+    // Preserve existing and future numeric metrics without rounding or stripping.
+    return typeof field === 'number' && Number.isFinite(field) && field >= 0;
+  });
+}
 export type InbodyRecordStore = Record<string, InbodyRecord>;
 export type DailyNotesStore = Record<string, string>;
 export type DailyConditionStore = Record<string, DailyConditionRecord>;
@@ -101,6 +134,7 @@ export function readJson<T>(key: string, fallback: T): T {
 
 export function writeJson<T>(key: string, value: T) {
   if (typeof window === 'undefined') return;
+  assertStorageOwnership();
   window.localStorage.setItem(key, JSON.stringify(value));
   notifyRecordsChanged();
 }
@@ -130,7 +164,22 @@ export function saveWeightGoal(goal: WeightGoal) {
   return normalized;
 }
 
-export function readRecordStores(): RecordStores {
+function readBodyRecords<T>(key: string, kind: "weight" | "inbody"): T {
+  if (typeof window === "undefined") return {} as T;
+  const raw = window.localStorage.getItem(key);
+  const value: unknown = raw === null ? {} : JSON.parse(raw);
+  const isObject = (item: unknown): item is Record<string, unknown> =>
+    item !== null && typeof item === "object" && !Array.isArray(item);
+  if (!isObject(value) || !Object.entries(value).every(([date, entry]) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !isObject(entry)) return false;
+    if (kind === "weight") return typeof entry.weight === "number" && Number.isFinite(entry.weight)
+      && entry.weight > 0 && typeof entry.recordedAt === "string";
+    return isValidInbodyRecord(entry);
+  })) throw new Error("기존 체중·인바디 기록 형식을 확인할 수 없습니다.");
+  return value as T;
+}
+
+export function readRecordStores(options: { strictBodyRecords?: boolean } = {}): RecordStores {
   return {
     workouts: readJson<WorkoutCompletionStore>(WORKOUT_COMPLETED_DAYS_KEY, {}),
     diet: readJson<DietCompletedStore>(DIET_COMPLETED_DAYS_KEY, {}),
@@ -140,8 +189,8 @@ export function readRecordStores(): RecordStores {
     lunchCarbs: normalizeLunchCarbStore(readJson<Record<string, unknown>>(LUNCH_CARB_CHOICE_KEY, {})),
     lunchProteins: normalizeLunchProteinStore(readJson<Record<string, unknown>>(LUNCH_PROTEIN_CHOICE_KEY, {})),
     fastingStart: typeof window === 'undefined' ? '' : fastingStartForDay(window.localStorage.getItem(FASTING_START_TIME_KEY) ?? undefined, getLocalDateKey()),
-    weights: readJson<WeightRecordStore>(WEIGHT_RECORDS_KEY, {}),
-    inbody: readJson<InbodyRecordStore>(INBODY_RECORDS_KEY, {}),
+    weights: options.strictBodyRecords ? readBodyRecords<WeightRecordStore>(WEIGHT_RECORDS_KEY, "weight") : readJson<WeightRecordStore>(WEIGHT_RECORDS_KEY, {}),
+    inbody: options.strictBodyRecords ? readBodyRecords<InbodyRecordStore>(INBODY_RECORDS_KEY, "inbody") : readJson<InbodyRecordStore>(INBODY_RECORDS_KEY, {}),
     weightGoal: normalizeWeightGoal(readJson<unknown>(WEIGHT_GOAL_KEY, DEFAULT_WEIGHT_GOAL)),
     notes: readJson<DailyNotesStore>(DAILY_NOTES_KEY, {}),
     recovery: readJson<RecoveryModeStore>(RECOVERY_MODE_DAYS_KEY_FOR_RECORDS, {}),

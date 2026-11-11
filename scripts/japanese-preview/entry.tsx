@@ -3,10 +3,14 @@ import '../../app/language/language.css';
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import LevelLearningWorkspace from '../../components/language/LevelLearningWorkspace';
-import FocusedLesson from '../../components/language/FocusedLesson';
+import LanguageShell from '../../components/language/LanguageShell';
+import HubBottomNav from '../../app/components/HubBottomNav';
+import LanguagePage from '../../app/language/page';
+import LearnPage from '../../app/language/learn/page';
+import ProgressPage from '../../app/language/progress/page';
+import StartPage from '../../app/language/start/page';
+import CalendarPage from '../../app/language/calendar/page';
 import JapaneseChunkPractice from '../../components/language/JapaneseChunkPractice';
-import { CURRICULUM } from '../../data/curriculum';
-import { getLessonStudyLevel, isJapaneseLevel } from '../../data/japaneseLevels';
 import PreviewCatalog from './PreviewCatalog';
 import KanaPage from '../../app/language/kana/page';
 import WordsPage from '../../app/language/words/page';
@@ -37,10 +41,7 @@ function Preview() {
     return () => window.removeEventListener('hashchange', update);
   }, []);
   const route = readPreviewLocation(hash);
-  const lesson = CURRICULUM.find(item => item.id === route.query.get('lesson'));
   const chunk = JAPANESE_CHUNK_LESSONS.find(item => item.lessonId === route.query.get('lesson'));
-  const requestedLevel = route.query.get('level');
-  const studyLevel = lesson && isJapaneseLevel(requestedLevel) && getLessonStudyLevel(lesson.id) === requestedLevel ? requestedLevel : undefined;
   const remount = () => setRevision(value => value + 1);
   const seedReview = () => {
     // Use a fresh in-memory scenario only. No real account, dates or user inputs.
@@ -60,6 +61,10 @@ function Preview() {
     setNotice('초급 선택 + 읽기 오답 2개 + 표현 조각 오답 1개의 가상 예시를 열었어요.'); remount();
   };
   return <>
+    <p className="qa-preview-notice" role="note">가상자료 시험판 · 실제 계정은 연결하지 않아요. 기록은 새로고침하면 사라져요.</p>
+    <LanguageShell>
+    <details className="qa-tools" onToggle={event => { if (!event.currentTarget.open) setAudioPanelOpen(false); }}>
+    <summary>가상 검사 도구 · 범위와 제한</summary>
     <aside className="qa-banner" aria-label="가상 검사 범위">
       <strong>연이 일본어 · 실제 컴포넌트의 가상 화면 검사</strong>
       <p>실제 계정·클라우드·외부 AI는 연결하지 않아요. 일반 수업 음성은 차단하며, 아래 별도 검사에서만 명시 선택한 로컬 일본어 음성을 요청할 수 있어요. 기록은 이 화면의 메모리에만 남고 새로고침하면 사라져요. 실제 영속 저장·기기간 동기화 검증은 아니에요.</p>
@@ -75,19 +80,27 @@ function Preview() {
       {notice && <p role="status">{notice}</p>}
     </aside>
     <details className="qa-audio-probe" open={audioPanelOpen} onToggle={event => setAudioPanelOpen(event.currentTarget.open)}><summary>기기 내 일본어 음성 검사 · 접으면 검사 취소</summary><LocalAudioProbe isOpen={audioPanelOpen} /></details>
-    <div className="language-app-shell"><main className="app-main" key={`${hash}:${revision}`}>
-      {route.pathname === '/language/kana' ? <KanaPage />
+    </details>
+    <main className="app-main" key={`${hash}:${revision}`}>
+      {route.pathname === '/language' ? <LanguagePage />
+        : route.pathname === '/language/learn' ? <LearnPage />
+        : route.pathname === '/language/progress' ? <ProgressPage />
+        : route.pathname === '/language/start' ? <StartPage />
+        : route.pathname === '/language/calendar' ? <CalendarPage />
+        : route.pathname === '/language/kana' ? <KanaPage />
         : route.pathname === '/language/words' ? <WordsPage />
           : route.pathname === '/language/grammar' ? <GrammarPage />
             : route.pathname === '/language/sentences' ? <SentencesPage />
               : route.pathname === '/language/review' ? <ReviewPage />
             : route.pathname === '/language/levels' ? <LevelLearningWorkspace requestedLevel={route.query.get('level')} lessonId={route.query.get('lesson')} reviewOnly={route.query.get('review') === '1'} />
         : route.pathname === '/language/chunk-review' ? <ChunkReviewWorkspace />
-          : route.pathname === '/language/qa-catalog' || (route.pathname === '/language/learn' && !route.query.has('lesson')) ? <PreviewCatalog track={route.query.get('track')} />
-            : route.pathname === '/language/learn' && lesson ? <FocusedLesson lesson={lesson} studyLevel={studyLevel} />
+          : route.pathname === '/language/qa-catalog' ? <PreviewCatalog track={route.query.get('track')} />
               : route.pathname === '/language/qa-chunks' && chunk ? <JapaneseChunkPractice lesson={chunk} closeLabel="닫고 전체 단원 목차로" onClose={() => { location.hash = previewHash('/language/qa-catalog'); }} />
+          : route.pathname === '/language/settings' ? <section className="qa-unsupported"><h1>설정 · 가상자료 시험판</h1><p>학습 분량·모드만 이 화면의 메모리에서 바꿀 수 있어요. 계정·기기 설정, 실제 기록 초기화와 캐릭터·음성 서비스는 연결하지 않았어요.</p><SessionOptions /></section>
           : <section className="qa-unsupported"><h1>이 연결은 이번 가상 검사 범위 밖이거나 단원 ID가 없어요</h1><p>실제 계정 화면으로 이동하지 않았어요. 가상 기록은 그대로예요.</p><a href="#/language/levels">단계 화면으로 돌아가기</a></section>}
-    </main></div>
+    </main>
+    </LanguageShell>
+    <HubBottomNav />
   </>;
 }
 

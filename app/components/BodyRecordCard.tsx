@@ -2,22 +2,19 @@
 
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import {
-  INBODY_RECORDS_KEY,
   InbodyRecord,
   InbodyRecordStore,
   BodyMetricSources,
-  WEIGHT_RECORDS_KEY,
   WeightRecordStore,
   getPreviousWeightRecord,
   isTodayKey,
-  readJson,
 } from "../data/recordStorage";
 import { parseOaReport, type OaDraftMeasurement } from "../lib/oaReportParser";
 import { INBODY_270S_INVENTORY, parseInbody270sReport, type InbodyOcrAssets } from "../lib/inbodyReportParser";
 import { bodyForm, bodyImportOwner, mergeBodyImport, validMeasurementDate } from "../lib/bodyImport";
-import { bodyManualBaseline, deleteBodyManualRecord, mergeBodyManualEdit, readBodyManualStore, type BodyManualDraft } from "../lib/bodyManualEdit";
+import { bodyManualBaseline, deleteBodyManualRecord, mergeBodyManualEdit, type BodyManualDraft } from "../lib/bodyManualEdit";
 import { getLocalDateKey } from "../data/dietPlans";
-import { notifyRecordsChanged, recoverStorageTransaction, writeStorageBatch } from "../data/storageTransaction";
+import { assertBodyRecordUnchanged, commitBodySave, isBodySaveScopeCurrent, readBodySaveScope, readBodySaveSnapshot, type BodySaveScope } from "../data/bodyRecordSave";
 import { useUnsavedChanges } from "../../components/useUnsavedChanges";
 import { OA_REPORT_INVENTORY } from '../lib/oaReportInventory';
 import { oaSourceMeasurements, setOaProMapping, OA_TRUNK_ROWS } from '../lib/oaDraftMapping';
@@ -135,8 +132,11 @@ export default function BodyRecordCard({
   useEffect(() => { onManualDraftChange?.(manualDirty); }, [manualDirty, onManualDraftChange]);
   const [confirmedPro, setConfirmedPro] = useState(false);
   const [reportFormat, setReportFormat] = useState<'oa-long' | 'inbody-270s-en'>('oa-long');
-  const [draft, setDraft] = useState<{ format: 'oa-long' | 'inbody-270s-en'; sourceReviewed: boolean; date: string; patch: Record<string, string>; owner: string; unmappedMeasurements: OaDraftMeasurement[]; sourceMeasurements: OaDraftMeasurement[]; autoMappedKeys: string[]; metricSources: BodyMetricSources } | null>(null);
+  const [draft, setDraft] = useState<{ format: 'oa-long' | 'inbody-270s-en'; sourceReviewed: boolean; scope: BodySaveScope; date: string; patch: Record<string, string>; owner: string; unmappedMeasurements: OaDraftMeasurement[]; sourceMeasurements: OaDraftMeasurement[]; autoMappedKeys: string[]; metricSources: BodyMetricSources } | null>(null);
   useUnsavedChanges(Boolean(draft) || manualDirty);
+  const formScope = useRef<BodySaveScope | null>(null);
+  const invalidatedScope = useRef(false);
+  const [scopeRevision, setScopeRevision] = useState(0);
   const importVersion = useRef(0);
   const activeDate = useRef(dateKey);
   activeDate.current = dateKey;
@@ -153,6 +153,10 @@ export default function BodyRecordCard({
 
   useEffect(() => {
     const invalidate = () => {
+      // Never attach this mounted form's old props or reviewed draft to a new
+      // account, even if its owner/epoch later returns to the previous values.
+      invalidatedScope.current = true;
+      formScope.current = null;
       importVersion.current += 1;
       setDraft(null);
       setConfirmedPro(false);
@@ -161,13 +165,19 @@ export default function BodyRecordCard({
       setForm({});
       setImporting(false);
       setImportMessage("");
+      setRecordMessage("로그인 상태가 바뀌었습니다. 새로고침하여 현재 계정의 기록을 다시 확인해주세요.");
     };
+    const refreshScope = () => setScopeRevision(revision => revision + 1);
     const onStorage = (event: StorageEvent) => {
       if (event.key === null || event.key === 'fitness-cloud-sync-user' || event.key === 'fitness-cloud-sync-epoch') invalidate();
+      else refreshScope();
     };
     // A browser history entry may be cached without React unmounting it.
-    // Revoke pending OCR while retaining already reviewed, unsaved input.
+    // Keep reviewed input in memory, but never revive its ownership on resume.
+    // The root ownership gate requires a full reload after pagehide.
     const onPageHide = () => {
+      invalidatedScope.current = true;
+      formScope.current = null;
       importVersion.current += 1;
       setImporting(false);
       setImportProgress(0);
@@ -175,16 +185,35 @@ export default function BodyRecordCard({
     };
     window.addEventListener("yeoni-cloud-session-changed", invalidate);
     window.addEventListener("storage", onStorage);
+    window.addEventListener("yeoni-records-changed", refreshScope);
     window.addEventListener("pagehide", onPageHide);
     return () => {
       importVersion.current += 1;
       window.removeEventListener("yeoni-cloud-session-changed", invalidate);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("yeoni-records-changed", refreshScope);
       window.removeEventListener("pagehide", onPageHide);
     };
   }, []);
 
   useEffect(() => {
+    if (invalidatedScope.current) return;
+    let scope: BodySaveScope;
+    try {
+      scope = readBodySaveScope(window.localStorage);
+      if (formScope.current && !isBodySaveScopeCurrent(window.localStorage, formScope.current)) {
+        invalidatedScope.current = true;
+        formScope.current = null;
+        importVersion.current += 1;
+        setImporting(false);
+        setRecordMessage("로그인 상태가 바뀌었습니다. 새로고침하여 현재 계정의 기록을 다시 확인해주세요.");
+        return;
+      }
+    } catch {
+      setRecordMessage("기록을 안전하게 읽을 수 없습니다. 새로고침하여 다시 확인해주세요.");
+      return;
+    }
+    if (!formScope.current) formScope.current = scope;
     // A save in another panel refreshes store objects; keep this date's unsaved input.
     if (manualEdit.current.date === dateKey && manualEdit.current.dirty) return;
     manualEdit.current = { date: dateKey, dirty: false, owner: bodyImportOwner(window.localStorage), baseline: bodyManualBaseline(currentWeight, currentInbody), dirtyFields: [] };
@@ -201,7 +230,7 @@ export default function BodyRecordCard({
       next[key] = typeof value === "number" || typeof value === 'string' ? String(value) : "";
     });
     setForm(next);
-  }, [currentInbody, currentWeight, dateKey]);
+  }, [currentInbody, currentWeight, dateKey, scopeRevision]);
   useEffect(() => setRecordMessage(current => current.startsWith(`${dateKey} `) ? current : ""), [dateKey]);
 
   const previous = getPreviousWeightRecord(weights, dateKey);
@@ -216,6 +245,14 @@ export default function BodyRecordCard({
   const reviewInventory = isInbodyDraft ? INBODY_270S_INVENTORY : OA_REPORT_INVENTORY;
   const isOaRecord = draft ? draft.format === 'oa-long' : Object.values(currentInbody?.metricSources || {}).some(source => source?.device === 'OA Smart Scale PRO' || source?.device === 'OA long report');
   const legacyHasValues = ['skeletalMuscleMass', 'bodyFatMass', 'bodyAge'].some(key => Boolean(visibleForm[key]?.trim()));
+
+  const isCurrentBodyScope = (scope: BodySaveScope | null = formScope.current) => {
+    try {
+      return !invalidatedScope.current && scope !== null && formScope.current !== null
+        && scope.owner === formScope.current.owner && scope.epoch === formScope.current.epoch
+        && isBodySaveScopeCurrent(window.localStorage, scope);
+    } catch { return false; }
+  };
 
   const editField = (key: string, value: string) => {
     if (draft) {
@@ -234,32 +271,43 @@ export default function BodyRecordCard({
 
   const saveImport = () => {
     if (!draft) return;
+    let saved: { weights: WeightRecordStore; inbody: InbodyRecordStore };
+    let notified: boolean;
     try {
-      if (draft.owner !== bodyImportOwner(window.localStorage)) throw new Error("계정이 변경되었습니다. 이미지를 다시 선택해 주세요.");
+      if (!isCurrentBodyScope(draft.scope) || draft.owner !== bodyImportOwner(window.localStorage)) throw new Error("계정이 변경되었습니다. 이미지를 다시 선택해 주세요.");
       if (draft.format === 'inbody-270s-en' && !draft.sourceReviewed) throw new Error("InBody 결과지의 항목명·단위·숫자를 대조한 뒤 확인해 주세요.");
-      const latestWeights = readJson<WeightRecordStore>(WEIGHT_RECORDS_KEY, {});
-      const latestInbody = readJson<InbodyRecordStore>(INBODY_RECORDS_KEY, {});
-      const next = mergeBodyImport(latestWeights, latestInbody, draft.date, draft.patch, getLocalDateKey(), draft.metricSources);
-      if ((latestWeights[draft.date] || latestInbody[draft.date]) && !window.confirm(`${draft.date}에 기존 기록이 있습니다. 인식하거나 직접 수정한 항목만 반영할까요? 나머지 수치와 메모는 유지됩니다.`)) return;
-      if (draft.owner !== bodyImportOwner(window.localStorage)) throw new Error("계정이 변경되었습니다. 이미지를 다시 선택해 주세요.");
-      if (JSON.stringify(latestWeights) !== JSON.stringify(readJson(WEIGHT_RECORDS_KEY, {})) || JSON.stringify(latestInbody) !== JSON.stringify(readJson(INBODY_RECORDS_KEY, {}))) throw new Error("기록이 변경되었습니다. 내용을 확인한 뒤 다시 저장해 주세요.");
-      writeStorageBatch(window.localStorage, {
-        [WEIGHT_RECORDS_KEY]: JSON.stringify(next.weights),
-        [INBODY_RECORDS_KEY]: JSON.stringify(next.inbody),
-      });
-      manualEdit.current.dirty = false;
-      setManualDirty(false);
-      notifyRecordsChanged();
-      onChange(next);
-      onDateChange?.(draft.date);
-      setDraft(null);
-      setRecordMessage(`${draft.date} 측정 기록을 저장했습니다.`);
+      const before = readBodySaveSnapshot(window.localStorage, draft.scope);
+      // Validate the date and patch before asking to overwrite an existing row.
+      mergeBodyImport(before.weights, before.inbody, draft.date, draft.patch, getLocalDateKey(), draft.metricSources);
+      if ((before.weights[draft.date] || before.inbody[draft.date]) && !window.confirm(`${draft.date}에 기존 기록이 있습니다. 인식하거나 직접 수정한 항목만 반영할까요? 나머지 수치와 메모는 유지됩니다.`)) return;
+      if (!isCurrentBodyScope(draft.scope)) throw new Error("계정이 변경되었습니다. 이미지를 다시 선택해 주세요.");
+      const snapshot = readBodySaveSnapshot(window.localStorage, draft.scope);
+      assertBodyRecordUnchanged(snapshot, draft.date, before.weights, before.inbody);
+      const next = mergeBodyImport(snapshot.weights, snapshot.inbody, draft.date, draft.patch, getLocalDateKey(), draft.metricSources);
+      if (next.weights[draft.date]) next.weights[draft.date] = { ...snapshot.weights[draft.date], ...next.weights[draft.date] };
+      notified = commitBodySave(window.localStorage, draft.scope, snapshot, next.weights, next.inbody).notified;
+      saved = next;
     } catch (error) {
       setRecordMessage(error instanceof Error ? error.message : "저장하지 못했습니다. 초안을 유지합니다.");
+      return;
     }
+    // Persistence is committed. A failed notification/navigation cannot turn it
+    // into a failed save or invite a duplicate retry.
+    manualEdit.current = { date: draft.date, dirty: false, owner: draft.owner, baseline: bodyManualBaseline(saved.weights[draft.date], saved.inbody[draft.date]), dirtyFields: [] };
+    setManualDirty(false);
+    setDraft(null);
+    try { onChange(saved); } catch { notified = false; }
+    try { onDateChange?.(draft.date); } catch { notified = false; }
+    setRecordMessage(notified
+      ? `${draft.date} 측정 기록을 저장했습니다.`
+      : `${draft.date} 측정 기록을 저장했습니다. 화면 갱신을 마치지 못했습니다. 다시 저장할 필요 없이 새로고침하여 확인해주세요.`);
   };
 
   const save = () => {
+    if (!isCurrentBodyScope()) {
+      setRecordMessage("로그인 상태가 바뀌었습니다. 새로고침하여 현재 계정의 기록을 다시 확인해주세요.");
+      return;
+    }
     const weightInput = (form.weight ?? "").trim();
     const parsedWeight = Math.round(Number(weightInput) * 10) / 10;
     if (
@@ -292,69 +340,59 @@ export default function BodyRecordCard({
       );
       return;
     }
+    let saved: { weights: WeightRecordStore; inbody: InbodyRecordStore };
+    let notified: boolean;
+    const intended = manualEdit.current;
     try {
       const storage = window.localStorage;
-      const draft = manualEdit.current;
-      if (draft.date !== dateKey || draft.owner === null || bodyImportOwner(storage) !== draft.owner) throw new Error("계정 또는 날짜가 변경되었습니다. 날짜를 다시 열어 기록을 확인해 주세요.");
-      if (!validMeasurementDate(dateKey, getLocalDateKey())) throw new Error("실제 측정 날짜를 확인해 주세요. 미래 날짜는 저장할 수 없습니다.");
-      recoverStorageTransaction(storage);
-      const weightSnapshot = storage.getItem(WEIGHT_RECORDS_KEY);
-      const bodySnapshot = storage.getItem(INBODY_RECORDS_KEY);
-      const latestWeights = readBodyManualStore<WeightRecordStore>(weightSnapshot);
-      const latestInbody = readBodyManualStore<InbodyRecordStore>(bodySnapshot);
-      const next = mergeBodyManualEdit(latestWeights, latestInbody, dateKey, draft.baseline, form, draft.dirtyFields, getLocalDateKey());
-      if (bodyImportOwner(storage) !== draft.owner || storage.getItem(WEIGHT_RECORDS_KEY) !== weightSnapshot || storage.getItem(INBODY_RECORDS_KEY) !== bodySnapshot) throw new Error("기록이 변경되었습니다. 입력 내용은 유지합니다. 다시 저장해 주세요.");
-      writeStorageBatch(storage, {
-        [WEIGHT_RECORDS_KEY]: JSON.stringify(next.weights),
-        [INBODY_RECORDS_KEY]: JSON.stringify(next.inbody),
-      });
-      manualEdit.current = { ...draft, dirty: false, dirtyFields: [], baseline: bodyManualBaseline(next.weights[dateKey], next.inbody[dateKey]) };
-      setForm(bodyForm(next.weights, next.inbody, dateKey));
-      setManualDirty(false);
-      notifyRecordsChanged();
-      onChange(next);
+      if (intended.date !== dateKey || activeDate.current !== dateKey || intended.owner === null || bodyImportOwner(storage) !== intended.owner) throw new Error("계정 또는 날짜가 변경되었습니다. 날짜를 다시 열어 기록을 확인해 주세요.");
+      const snapshot = readBodySaveSnapshot(storage, formScope.current);
+      // Keep current field-level conflict handling: disjoint concurrent edits
+      // survive, while changes to an edited field or its provenance are rejected.
+      const next = mergeBodyManualEdit(snapshot.weights, snapshot.inbody, dateKey, intended.baseline, form, intended.dirtyFields, getLocalDateKey());
+      notified = commitBodySave(storage, formScope.current, snapshot, next.weights, next.inbody).notified;
+      saved = next;
     } catch (error) {
       setRecordMessage(error instanceof Error ? `${error.message} 저장하지 못했습니다. 입력 내용은 유지합니다.` : "저장하지 못했습니다. 입력 내용은 유지합니다. 기기 저장 공간을 확인한 뒤 다시 시도해 주세요.");
       return;
     }
-    setRecordMessage(`${dateKey} 체중·인바디 기록을 저장했습니다.`);
+    manualEdit.current = { ...intended, dirty: false, dirtyFields: [], baseline: bodyManualBaseline(saved.weights[dateKey], saved.inbody[dateKey]) };
+    setForm(bodyForm(saved.weights, saved.inbody, dateKey));
+    setManualDirty(false);
+    try { onChange(saved); } catch { notified = false; }
+    setRecordMessage(notified
+      ? `${dateKey} 체중·인바디 기록을 저장했습니다.`
+      : `${dateKey} 체중·인바디 기록을 저장했습니다. 화면 갱신을 마치지 못했습니다. 다시 저장할 필요 없이 새로고침하여 확인해주세요.`);
   };
 
   const remove = () => {
     const intended = manualEdit.current;
-    if (
-      !window.confirm(
-        `${dateKey}의 체중과 인바디 기록을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.`,
-      )
-    ) {
-      return;
-    }
+    let saved: ReturnType<typeof deleteBodyManualRecord>;
+    let notified = true;
     try {
       const storage = window.localStorage;
-      const isCurrent = () => intended.date === dateKey && activeDate.current === dateKey && intended.owner !== null && bodyImportOwner(storage) === intended.owner;
+      const isCurrent = () => isCurrentBodyScope() && intended.date === dateKey && activeDate.current === dateKey && intended.owner !== null && bodyImportOwner(storage) === intended.owner;
       if (!isCurrent()) throw new Error("계정 또는 날짜가 변경되었습니다. 날짜를 다시 열어 기록을 확인해 주세요.");
-      recoverStorageTransaction(storage);
-      const weightSnapshot = storage.getItem(WEIGHT_RECORDS_KEY);
-      const bodySnapshot = storage.getItem(INBODY_RECORDS_KEY);
-      const latestWeights = readBodyManualStore<WeightRecordStore>(weightSnapshot);
-      const latestInbody = readBodyManualStore<InbodyRecordStore>(bodySnapshot);
-      const next = deleteBodyManualRecord(latestWeights, latestInbody, dateKey, intended.baseline);
-      if (!isCurrent() || storage.getItem(WEIGHT_RECORDS_KEY) !== weightSnapshot || storage.getItem(INBODY_RECORDS_KEY) !== bodySnapshot) throw new Error("기록이 변경되었습니다. 삭제하지 않았습니다. 최신 기록을 다시 확인해 주세요.");
-      if (!next.alreadyDeleted) {
-        writeStorageBatch(storage, {
-          [WEIGHT_RECORDS_KEY]: JSON.stringify(next.weights),
-          [INBODY_RECORDS_KEY]: JSON.stringify(next.inbody),
-        });
-        notifyRecordsChanged();
-      }
-      manualEdit.current = { ...intended, dirty: false, dirtyFields: [], baseline: {} };
-      setManualDirty(false);
-      onChange({ weights: next.weights, inbody: next.inbody });
-      setForm({});
-      setRecordMessage(next.alreadyDeleted ? `${dateKey} 기록은 이미 삭제되어 있습니다.` : `${dateKey} 체중·인바디 기록을 삭제했습니다.`);
+      // Validate the exact row the user saw before and after confirmation. A
+      // newly changed row is never silently deleted; other dates remain current.
+      const before = readBodySaveSnapshot(storage, formScope.current);
+      deleteBodyManualRecord(before.weights, before.inbody, dateKey, intended.baseline);
+      if (!window.confirm(`${dateKey}의 체중과 인바디 기록을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+      if (!isCurrent()) throw new Error("계정 또는 날짜가 변경되었습니다. 날짜를 다시 열어 기록을 확인해 주세요.");
+      const snapshot = readBodySaveSnapshot(storage, formScope.current);
+      const next = deleteBodyManualRecord(snapshot.weights, snapshot.inbody, dateKey, intended.baseline);
+      if (!next.alreadyDeleted) notified = commitBodySave(storage, formScope.current, snapshot, next.weights, next.inbody).notified;
+      saved = next;
     } catch (error) {
       setRecordMessage(error instanceof Error ? `${error.message} 삭제하지 못했습니다. 입력 내용은 유지합니다.` : "삭제하지 못했습니다. 입력 내용은 유지합니다. 기기 저장 공간을 확인한 뒤 다시 시도해 주세요.");
+      return;
     }
+    manualEdit.current = { ...intended, dirty: false, dirtyFields: [], baseline: {} };
+    setManualDirty(false);
+    setForm({});
+    try { onChange({ weights: saved.weights, inbody: saved.inbody }); } catch { notified = false; }
+    const message = saved.alreadyDeleted ? `${dateKey} 기록은 이미 삭제되어 있습니다.` : `${dateKey} 체중·인바디 기록을 삭제했습니다.`;
+    setRecordMessage(notified ? message : `${message} 화면 갱신을 마치지 못했습니다. 다시 삭제할 필요 없이 새로고침하여 확인해주세요.`);
   };
 
   const importOaReport = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -366,10 +404,12 @@ export default function BodyRecordCard({
       return;
     }
 
+    const scope = formScope.current;
+    if (!scope || !isCurrentBodyScope(scope)) return;
     const version = ++importVersion.current;
     const owner = bodyImportOwner(window.localStorage);
     const originDate = dateKey;
-    const isCurrent = () => version === importVersion.current && owner === bodyImportOwner(window.localStorage) && originDate === activeDate.current;
+    const isCurrent = () => version === importVersion.current && isCurrentBodyScope(scope) && owner === bodyImportOwner(window.localStorage) && originDate === activeDate.current;
     setImporting(true);
     setImportProgress(0);
     setImportMessage(reportFormat === 'oa-long' ? "오아 보고서 숫자를 읽고 있습니다." : "InBody270S 영문 결과지의 라벨·단위를 읽고 있습니다.");
@@ -388,7 +428,7 @@ export default function BodyRecordCard({
         ? Object.fromEntries(Object.entries(form).filter(([key, value]) => value !== (baseline[key] || "")))
         : {};
       const sourceMeasurements = oaSourceMeasurements(result);
-      setDraft({ format: reportFormat, sourceReviewed: false, date: measuredDate, owner, unmappedMeasurements, sourceMeasurements,
+      setDraft({ format: reportFormat, sourceReviewed: false, date: measuredDate, owner, scope, unmappedMeasurements, sourceMeasurements,
         autoMappedKeys: OA_TRUNK_ROWS.filter(([key]) => result.metricSources?.[key]?.method === 'ocr' && result.values[key] !== undefined).map(([key]) => key),
         metricSources: result.metricSources || {}, patch: { ...sameDayEdits, ...Object.fromEntries(validEntries.map(([key, value]) => [key, String(value)])), ...result.textValues } });
       setRecordMessage("");
@@ -406,7 +446,7 @@ export default function BodyRecordCard({
           : "보고서를 분석하지 못했습니다. 다시 시도해주세요.",
       );
     } finally {
-      if (version === importVersion.current) setImporting(false);
+      if (isCurrent()) setImporting(false);
     }
   };
 
@@ -494,7 +534,7 @@ export default function BodyRecordCard({
         {reportFormat === 'oa-long' && <><label className="mt-3 flex gap-2 text-sm"><input type="checkbox" checked={confirmedPro} disabled={importing} onChange={event => {
           const checked = event.target.checked;
           setConfirmedPro(checked);
-          setDraft(current => current && current.owner === bodyImportOwner(window.localStorage) ? setOaProMapping(current, checked) : null);
+          setDraft(current => current && isCurrentBodyScope(current.scope) && current.owner === bodyImportOwner(window.localStorage) ? setOaProMapping(current, checked) : null);
         }} />사진이 오아 스마트 체중계 PRO의 긴 건강보고서임을 확인했어요.</label>
         <p className="text-xs text-gray-600">부위 배열과 몸통 아이콘에 따른 해석입니다. 확인한 경우에만 원문의 ‘신체 근육량’·‘체지방량’을 몸통 항목으로 저장할 수 있어요. 다른 기기·양식은 선택하지 마세요.</p></>}
         <details className="mt-2 text-xs"><summary>사진 항목 출처·원문 보기</summary><ul aria-label="사진 항목 출처" className="mt-2 text-xs text-gray-600">{Object.entries(draft?.metricSources || currentInbody?.metricSources || {}).map(([key, source]) => <li key={key}>{[...OA_REPORT_INVENTORY, ...INBODY_270S_INVENTORY].find(item => item[0] === key)?.[1] || key} · {source?.device} · 원문: {source?.originalLabel} {source?.originalText} · {source?.method === 'ocr-edited' ? '사진 입력 후 수정' : '사진 입력'}</li>)}</ul></details>

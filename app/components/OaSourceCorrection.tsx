@@ -1,47 +1,80 @@
 'use client';
 
-import { useState } from 'react';
-import { INBODY_RECORDS_KEY, type InbodyRecord, type InbodyRecordStore } from '../data/recordStorage';
-import { bodyImportOwner } from '../lib/bodyImport';
+import { useEffect, useRef, useState } from 'react';
+import { type InbodyRecord, type InbodyRecordStore } from '../data/recordStorage';
 import { correctOaSourceDevice, oaCorrectionKeys, OA_CORRECTION_FIELDS } from '../lib/oaSourceCorrection';
-import { notifyRecordsChanged, recoverStorageTransaction, writeStorageBatch } from '../data/storageTransaction';
+import { commitBodySave, isBodySaveScopeCurrent, readBodySaveScope, readBodySaveSnapshot, type BodySaveScope } from '../data/bodyRecordSave';
 
 export default function OaSourceCorrection({ dateKey, record, onSaved }: {
   dateKey: string; record: InbodyRecord; onSaved: (records: InbodyRecordStore) => void;
 }) {
-  const [review, setReview] = useState<{ owner: string; snapshot: string } | null>(null);
+  const [scope] = useState<BodySaveScope | null>(() => {
+    try { return readBodySaveScope(window.localStorage); } catch { return null; }
+  });
+  const invalidated = useRef(false);
+  const mounted = useRef(true);
+  const [review, setReview] = useState<{ scope: BodySaveScope; snapshot: string } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState('');
+  useEffect(() => {
+    mounted.current = true;
+    const invalidate = () => {
+      invalidated.current = true;
+      setReview(null); setConfirmed(false);
+      setMessage('계정이나 화면 상태가 바뀌었어요. 기록 화면을 새로 열어 주세요.');
+    };
+    const storageChanged = (event: StorageEvent) => {
+      if (event.key === null || event.key === 'fitness-cloud-sync-user' || event.key === 'fitness-cloud-sync-epoch') invalidate();
+    };
+    window.addEventListener('yeoni-cloud-session-changed', invalidate);
+    window.addEventListener('pagehide', invalidate);
+    window.addEventListener('storage', storageChanged);
+    return () => {
+      mounted.current = false;
+      window.removeEventListener('yeoni-cloud-session-changed', invalidate);
+      window.removeEventListener('pagehide', invalidate);
+      window.removeEventListener('storage', storageChanged);
+    };
+  }, []);
   const keys = oaCorrectionKeys(record);
   if (!keys.length) return null;
+  function currentScope() {
+    return mounted.current && !invalidated.current && scope !== null && isBodySaveScopeCurrent(window.localStorage, scope);
+  }
   function openReview() {
     try {
-      const owner = bodyImportOwner(window.localStorage);
+      if (!currentScope() || !scope) throw new Error('scope changed');
+      const stored = readBodySaveSnapshot(window.localStorage, scope);
       const snapshot = JSON.stringify(record);
-      setReview({ owner, snapshot }); setConfirmed(false); setMessage('');
+      if (JSON.stringify(stored.inbody[dateKey]) !== snapshot) throw new Error('record changed');
+      setReview({ scope, snapshot }); setConfirmed(false); setMessage('');
     } catch {
       setReview(null); setConfirmed(false);
-      setMessage('기록을 읽지 못했어요. 기존 기록은 바꾸지 않았어요. 저장 공간 접근을 확인한 뒤 다시 눌러 주세요.');
+      setMessage('기록을 안전하게 확인하지 못했어요. 기존 기록을 지우지 말고 화면을 새로 열어 확인해 주세요.');
     }
   }
   function save() {
     if (!review || !confirmed) return;
+    let next: InbodyRecordStore;
+    let notified: boolean;
     try {
       const storage = window.localStorage;
-      if (review.owner !== bodyImportOwner(storage)) {
+      if (!currentScope() || !isBodySaveScopeCurrent(storage, review.scope)) throw new Error('scope changed');
+      // This helper rejects owner/epoch-changing recovery before any mutation.
+      const snapshot = readBodySaveSnapshot(storage, review.scope);
+      if (JSON.stringify(snapshot.inbody[dateKey]) !== review.snapshot || JSON.stringify(record) !== review.snapshot) {
         setReview(null); setConfirmed(false); setMessage('계정이나 기록이 바뀌었어요. 다시 확인해 주세요.'); return;
       }
-      // Recover interrupted writes before comparing or composing the next snapshot.
-      recoverStorageTransaction(storage);
-      const records = JSON.parse(storage.getItem(INBODY_RECORDS_KEY) || '{}') as InbodyRecordStore;
-      if (review.owner !== bodyImportOwner(storage) || JSON.stringify(records[dateKey]) !== review.snapshot
-        || JSON.stringify(record) !== review.snapshot) {
-        setReview(null); setConfirmed(false); setMessage('계정이나 기록이 바뀌었어요. 다시 확인해 주세요.'); return;
-      }
-      const next = { ...records, [dateKey]: correctOaSourceDevice(records[dateKey]) };
-      writeStorageBatch(storage, { [INBODY_RECORDS_KEY]: JSON.stringify(next) });
-      setReview(null); setConfirmed(false); onSaved(next); notifyRecordsChanged();
-    } catch { setMessage('기기 정보를 저장하지 못했어요. 저장 공간과 기록을 확인한 뒤 다시 시도해 주세요.'); }
+      next = { ...snapshot.inbody, [dateKey]: correctOaSourceDevice(snapshot.inbody[dateKey]) };
+      notified = commitBodySave(storage, review.scope, snapshot, snapshot.weights, next).notified;
+    } catch {
+      setMessage('기기 정보를 저장하지 못했어요. 기존 원문과 검토 내용은 유지했어요. 저장 공간과 계정을 확인한 뒤 다시 시도해 주세요.');
+      return;
+    }
+    setReview(null); setConfirmed(false);
+    try { onSaved(next); } catch { notified = false; }
+    setMessage(notified ? '기기 정보를 저장했습니다. 날짜·수치·메모는 유지했어요.'
+      : '기기 정보를 저장했습니다. 화면 갱신을 마치지 못했어요. 다시 저장하지 말고 새로고침하여 확인해 주세요.');
   }
   return <section aria-label="저장된 OA 기기 정보 정정" className="mt-3 rounded border p-3 text-sm">
     <p>원본이 PRO 보고서인 기록의 기기 정보를 정정할 수 있어요. 날짜·수치·메모는 유지해요.</p>

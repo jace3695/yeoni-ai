@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { Script } from 'node:vm';
 import { build } from 'esbuild';
-import { buildJapanesePreview, forbiddenPreviewInput } from '../scripts/japanese-preview/build.mjs';
+import { buildJapanesePreview, forbiddenPreviewInput, decodePreviewLanguageIcon, languageIconPath, reviewedLanguageIconHash } from '../scripts/japanese-preview/build.mjs';
 import { japanesePreviewEnabled, japanesePreviewResponse } from '../lib/japanese-preview-response.ts';
 import { PreviewMemoryStorage } from '../scripts/japanese-preview/memory-storage.ts';
 import { previewHash, readPreviewLocation } from '../scripts/japanese-preview/navigation.ts';
@@ -65,19 +65,19 @@ test('missing, oversized and HTML-closing payloads fail without redirects or lay
 });
 
 test('all component hrefs remain hash-only including unsupported, hostile and new-tab destinations', () => {
-  assert.equal(previewHash('/language'), '#/language/levels');
+  assert.equal(previewHash('/language'), '#/language');
   assert.equal(previewHash('/language/levels?level=advanced'), '#/language/levels?level=advanced');
   assert.equal(previewHash('/language/levels?lesson=middle-01&review=1'), '#/language/levels?lesson=middle-01&review=1');
   assert.equal(previewHash('/language/chunk-review'), '#/language/chunk-review');
   assert.equal(previewHash('/language/learn?lesson=f01'), '#/language/learn?lesson=f01');
   assert.equal(previewHash('/language/qa-catalog'), '#/language/qa-catalog');
   assert.equal(previewHash('/language/qa-chunks?lesson=upper-mech-06'), '#/language/qa-chunks?lesson=upper-mech-06');
-  for (const name of ['kana', 'words', 'grammar', 'sentences', 'review']) assert.equal(previewHash(`/language/${name}`), `#/language/${name}`);
+  for (const name of ['kana', 'words', 'grammar', 'sentences', 'review', 'progress', 'settings', 'start', 'calendar']) assert.equal(previewHash(`/language/${name}`), `#/language/${name}`);
   for (const href of ['https://example.com', '//example.com', 'javascript:alert(1)', '/language/practice', '/language/conversation', '/language/writing', '/language/kana-writing',
-    '/language/settings', '/language/levels#outside', '/language/levels\\evil', '/language/levels\n']) {
+    '/language/levels#outside', '/language/levels\\evil', '/language/levels\n']) {
     assert.equal(previewHash(href), '#/unsupported');
   }
-  assert.equal(readPreviewLocation('').pathname, '/language/levels');
+  assert.equal(readPreviewLocation('').pathname, '/language');
   assert.equal(readPreviewLocation('#/language/levels?level=intermediate').query.get('level'), 'intermediate');
   assert.equal(readPreviewLocation('#//example.com').pathname, '/unsupported');
 });
@@ -168,7 +168,7 @@ test('built artifact contains actual latest components but no actual services, s
   for (const name of ['FocusedLesson', 'LearningQuestion', 'LearningCompanion', 'LevelLearningWorkspace', 'UpperReadingLesson', 'JapaneseChunkPractice', 'ChunkReviewWorkspace', 'useLevelJourney', 'useChunkReview']) {
     assert.ok(built.inputs.some(path => path.endsWith(`/${name}.tsx`) || path.endsWith(`/${name}.ts`)), name);
   }
-  for (const path of ['app/data/languageStorageLock.ts', 'app/language/kana/page.tsx', 'app/language/words/page.tsx', 'app/language/grammar/page.tsx', 'app/language/sentences/page.tsx', 'app/language/review/page.tsx', 'scripts/japanese-preview/DailyRecordProbe.tsx', 'scripts/japanese-preview/daily-records.ts',
+  for (const path of ['components/language/LanguageShell.tsx', 'components/TopNav.tsx', 'app/components/AppModuleNav.tsx', 'app/components/AppIdentity.tsx', 'app/components/HubBottomNav.tsx', 'app/language/page.tsx', 'app/language/learn/page.tsx', 'app/language/progress/page.tsx', 'app/language/start/page.tsx', 'app/language/calendar/page.tsx', 'components/language/KanaStarter.tsx', 'public/app-icons/language.png', 'app/data/languageStorageLock.ts', 'app/language/kana/page.tsx', 'app/language/words/page.tsx', 'app/language/grammar/page.tsx', 'app/language/sentences/page.tsx', 'app/language/review/page.tsx', 'scripts/japanese-preview/DailyRecordProbe.tsx', 'scripts/japanese-preview/daily-records.ts',
     'components/language/KanaStrokeAnimation.tsx', 'components/WritingPracticePad.tsx', 'public/kana-strokes.json',
     'scripts/japanese-preview/asset-request.ts', 'scripts/japanese-preview/authenticated-headers.ts', 'scripts/japanese-preview/jsx-runtime.ts']) assert.ok(built.inputs.includes(path), path);
   for (const name of ['scripts/japanese-preview/next-navigation.ts', 'scripts/japanese-preview/image.tsx', 'app/globals.css', 'app/language/language.css']) assert.ok(built.inputs.includes(name), name);
@@ -176,7 +176,14 @@ test('built artifact contains actual latest components but no actual services, s
   assert.doesNotMatch(built.payload.script, /createElement\("img"|jsx\)\("img"|jsx\("img"/);
   assert.match(built.payload.styles, /--yeoni-ink:\s*#302a46/);
   assert.doesNotMatch(built.payload.styles, /@tailwind/);
-  assert.ok(built.inputs.some(path => path.startsWith('node_modules/fake-indexeddb/')));
+  for (const selector of ['.app-module-header', '.app-module-nav', '.hub-bottom-nav', '.max-w-4xl', '.text-3xl']) assert.ok(built.payload.styles.includes(selector), selector);
+  assert.ok(built.payload.script.length <= 4_000_000);
+  assert.ok(built.payload.styles.length <= 500_000);
+  const manifest = JSON.parse(await readFile('.generated/japanese-preview/build-manifest.json', 'utf8'));
+  assert.equal(manifest.compiledHashes.styles, createHash('sha256').update(built.payload.styles).digest('hex'));
+  assert.equal(manifest.compiledHashes.script, createHash('sha256').update(built.payload.script).digest('hex'));
+  assert.equal(built.payload.sourceDigest, createHash('sha256').update(JSON.stringify({ inputs: manifest.inputs, compiledHashes: manifest.compiledHashes })).digest('hex'));
+  assert.ok(built.inputs.some(path => /(?:^|\/)node_modules\/fake-indexeddb\//.test(path)));
   assert.ok(built.inputs.every(path => !forbiddenPreviewInput.test(path)));
   for (const forbidden of ['lib/supabase.ts', 'app/layout.tsx', 'app/language/layout.tsx', 'app/data/languageCloudSync.ts',
     'app/lib/supabase.ts', 'app/lib/authenticatedHeaders.ts', 'app/components/AuthGate.tsx', 'app/components/CloudSyncPanel.tsx', 'components/LanguageCloudSync.tsx', 'utils/speakJapanese.ts', 'utils/japaneseTts.ts']) {
@@ -206,4 +213,34 @@ test('route, worker and link source retain the isolation and navigation-cancella
   assert.match(link, /onClick\?\.\(event\)/); assert.match(link, /onNavigate\?\.\(/);
   assert.match(link, /event\.defaultPrevented/); assert.match(link, /event\.ctrlKey.*event\.metaKey/);
   assert.match(link, /target=\{undefined\} download=\{undefined\}/);
+});
+
+
+test('shared product chrome keeps live auth outside and real home/curriculum routes inside the preview', async () => {
+  const read = (path: string) => readFile(path, 'utf8');
+  const [layout, shell, entry, image] = await Promise.all([
+    read('app/language/layout.tsx'), read('components/language/LanguageShell.tsx'),
+    read('scripts/japanese-preview/entry.tsx'), read('scripts/japanese-preview/image.tsx'),
+  ]);
+  assert.match(layout, /<AuthGate>[\s\S]*<LanguageShell>[\s\S]*<LanguageCloudSync>/);
+  assert.match(shell, /<AppIdentity kind="language" title="일본어 학습" \/><TopNav \/>/);
+  assert.doesNotMatch(shell, /AuthGate|CloudSync|supabase|process\.env|localStorage/);
+  for (const component of ['LanguageShell', 'LanguagePage', 'LearnPage', 'ProgressPage', 'HubBottomNav']) assert.ok(entry.includes(`<${component}`), component);
+  assert.match(entry, /<details className="qa-tools" onToggle=/);
+  assert.doesNotMatch(entry, /<details className="qa-tools"[^>]*\bopen(?:=|\s|>)/);
+  assert.match(entry, /if \(!event.currentTarget.open\) setAudioPanelOpen\(false\)/);
+  assert.doesNotMatch(entry, /AuthGate|CloudSync|RecordResetPanel|LanguageCompanion|window\.location\.(?:href|assign)/);
+  assert.match(entry, /계정·기기 설정, 실제 기록 초기화와 캐릭터·음성 서비스는 연결하지 않았어요/);
+  assert.match(image, /putImageData\(new ImageData\(pixels, icon.width, icon.height\), 0, 0\)/);
+  assert.doesNotMatch(image, /new Image\(|createObjectURL|data:|fetch\(|<img|toDataURL/);
+});
+
+test('only reviewed original language icon pixels are embedded, without resampling or network permissions', async () => {
+  const source = await readFile(languageIconPath);
+  assert.equal(createHash('sha256').update(source).digest('hex'), reviewedLanguageIconHash);
+  const icon = await decodePreviewLanguageIcon(source);
+  assert.equal(icon.width, 192); assert.equal(icon.height, 192);
+  const original = await (await import('sharp')).default(source).ensureAlpha().raw().toBuffer();
+  assert.deepEqual(Buffer.from(icon.pixels, 'base64'), original);
+  await assert.rejects(decodePreviewLanguageIcon(Buffer.from('other')), /review required/);
 });

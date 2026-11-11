@@ -2,10 +2,12 @@ import { createClient as createSupabaseClient, type SupabaseClient } from '@supa
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './supabase-config.ts'
 import { getDevSyncQaTrace } from './syncQaTrace.ts'
 import { createBoundaryFetch } from './speech-boundary-transport.ts'
+import { assertStorageOwnership } from '../app/data/storageOwnership.ts'
 
 let browserClient: SupabaseClient | null = null
 
 export function createClient() {
+  if (typeof window !== 'undefined') assertStorageOwnership()
   if (!browserClient) {
     const trace = process.env.NODE_ENV === 'development' ? getDevSyncQaTrace(SUPABASE_URL) : null
     browserClient = createSupabaseClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {

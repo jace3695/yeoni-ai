@@ -1,6 +1,8 @@
+import { isValidInbodyRecord } from './recordStorage.ts';
 import { supabase } from "../lib/supabase.ts";
 import { respectRecordResets } from "./appRecordReset.ts";
 import { notifyRecordsChanged, recoverStorageTransaction, writeStorageBatch } from "./storageTransaction.ts";
+import { assertStorageOwnership, getStorageOwnershipToken } from "./storageOwnership.ts";
 
 const SYNCED_STORAGE_PREFIX = "ai-fitness-";
 const SYNC_BASE_PREFIX = "fitness-cloud-sync-base:";
@@ -21,6 +23,25 @@ function parseStoredValue(raw: string | null) {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Validate without normalizing: corrupt body data must never become a deletion. */
+function validateBodyCloudState(state: CloudState): CloudState {
+  const invalid = () => new Error("체중·인바디 기록 형식을 확인할 수 없어 동기화와 백업 적용을 멈췄습니다. 기존 원문은 보관됩니다.");
+  if (!isPlainObject(state)) throw invalid();
+  for (const [key, kind] of [["ai-fitness-weight-records", "weight"], ["ai-fitness-inbody-records", "inbody"]] as const) {
+    if (!Object.prototype.hasOwnProperty.call(state, key)) continue;
+    const value = state[key];
+    // Keep the same date/entry contract as bodyRecordSave. Missing stores and
+    // empty objects are valid; present null, text and arrays are not empty stores.
+    if (!isPlainObject(value) || !Object.entries(value).every(([date, entry]) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !isPlainObject(entry)) return false;
+      if (kind === "weight") return typeof entry.weight === "number" && Number.isFinite(entry.weight)
+        && entry.weight > 0 && typeof entry.recordedAt === "string";
+      return isValidInbodyRecord(entry);
+    })) throw invalid();
+  }
+  return state;
 }
 
 const MISSING = Symbol("missing");
@@ -79,12 +100,12 @@ export function readLocalCloudState(): CloudState {
     (key): key is string =>
       Boolean(key) && key!.startsWith(SYNCED_STORAGE_PREFIX),
   );
-  return Object.fromEntries(
+  return validateBodyCloudState(Object.fromEntries(
     keys.flatMap((key) => {
       const value = parseStoredValue(window.localStorage.getItem(key));
       return value === undefined ? [] : [[key, value]];
     }),
-  );
+  ));
 }
 
 export function clearLocalCloudState() {
@@ -110,6 +131,9 @@ export function clearLocalCloudState() {
 export function prepareLocalCloudState(userId: string) {
   if (typeof window === "undefined") return;
   const storage = window.localStorage;
+  // Interrupted logout recovery can restore both records and their old owner.
+  // Resolve it before deciding whether this login may reuse the local cache.
+  recoverStorageTransaction(storage);
   const previousUser = storage.getItem(SYNC_USER_KEY);
   if (previousUser && previousUser !== userId) clearLocalCloudState();
   // Older versions left a baseline after logout without any ownership marker.
@@ -122,15 +146,18 @@ export function prepareLocalCloudState(userId: string) {
 }
 
 export function readCloudSyncEpoch() {
+  if (typeof window !== "undefined") assertStorageOwnership();
   return typeof window === "undefined" ? null : window.localStorage.getItem(SYNC_EPOCH_KEY);
 }
 
 export function isCurrentCloudSession(userId: string, epoch: string | null) {
-  return typeof window !== "undefined" && window.localStorage.getItem(SYNC_USER_KEY) === userId
+  return typeof window !== "undefined" && getStorageOwnershipToken() !== null && window.localStorage.getItem(SYNC_USER_KEY) === userId
     && readCloudSyncEpoch() === epoch;
 }
 
 export function mergeCloudState(remote: CloudState, local: CloudState) {
+  validateBodyCloudState(remote);
+  validateBodyCloudState(local);
   const merged: CloudState = { ...remote };
   Object.entries(local).forEach(([key, localValue]) => {
     const remoteValue = remote[key];
@@ -139,7 +166,7 @@ export function mergeCloudState(remote: CloudState, local: CloudState) {
         ? { ...remoteValue, ...localValue }
         : localValue;
   });
-  return respectRecordResets(remote, local, merged);
+  return validateBodyCloudState(respectRecordResets(remote, local, merged));
 }
 
 export function mergeCloudStateFromBase(
@@ -147,7 +174,10 @@ export function mergeCloudStateFromBase(
   remote: CloudState,
   local: CloudState,
 ) {
-  return respectRecordResets(remote, local, mergeValue(base, remote, local) as CloudState);
+  validateBodyCloudState(base);
+  validateBodyCloudState(remote);
+  validateBodyCloudState(local);
+  return validateBodyCloudState(respectRecordResets(remote, local, mergeValue(base, remote, local) as CloudState));
 }
 
 /** An explicit backup restore is a new user action in the current reset generation. */
@@ -163,6 +193,7 @@ export function mergeExplicitCloudBackup(current: CloudState, backup: CloudState
 
 export function readSyncBase(userId: string): CloudState | null {
   if (typeof window === "undefined") return null;
+  assertStorageOwnership();
   try {
     return JSON.parse(window.localStorage.getItem(`${SYNC_BASE_PREFIX}${userId}`) || "null") as CloudState | null;
   } catch {
@@ -173,11 +204,14 @@ export function readSyncBase(userId: string): CloudState | null {
 
 export function saveSyncBase(userId: string, state: CloudState) {
   if (typeof window === "undefined") return;
+  assertStorageOwnership();
+  validateBodyCloudState(state);
   window.localStorage.setItem(`${SYNC_BASE_PREFIX}${userId}`, JSON.stringify(state));
 }
 
 export function applyCloudState(state: CloudState) {
   if (typeof window === "undefined") return;
+  validateBodyCloudState(state);
   const changes: Record<string, string | null> = {};
   for (const key of Object.keys(readLocalCloudState())) if (!(key in state)) changes[key] = null;
   for (const [key, value] of Object.entries(state)) changes[key] = typeof value === "string" ? value : JSON.stringify(value);
@@ -213,12 +247,14 @@ export async function getRemoteState(userId: string, signal?: AbortSignal) {
   const { data, error } = await query.maybeSingle();
   signal?.throwIfAborted();
   if (error) throw error;
+  if (data) validateBodyCloudState(data.state);
   return data as { state: CloudState; updated_at: string } | null;
 }
 
 export async function saveRemoteState(userId: string, state: CloudState, signal?: AbortSignal) {
   if (!supabase) return;
   signal?.throwIfAborted();
+  validateBodyCloudState(state);
   // A competing first sync or reset may have created the row after our read.
   // Insert must fail in that case; upsert would overwrite that newer state.
   const query = supabase.from("user_app_state").insert({
@@ -251,6 +287,7 @@ export async function saveRemoteStateIfUnchanged(
 ) {
   if (!supabase) return false;
   signal?.throwIfAborted();
+  validateBodyCloudState(state);
   const query = supabase
     .from("user_app_state")
     .update({ state, updated_at: new Date().toISOString() })

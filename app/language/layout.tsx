@@ -1,9 +1,8 @@
 import LanguageCompanion from '@/components/language/LanguageCompanion';
 import type { Metadata } from "next";
 import AuthGate from "../components/AuthGate";
-import TopNav from "@/components/TopNav";
+import LanguageShell from "@/components/language/LanguageShell";
 import LanguageCloudSync from "@/components/LanguageCloudSync";
-import AppIdentity from "../components/AppIdentity";
 import "./language.css";
 import DiagnosticIsolation from "../components/DiagnosticIsolation";
 
@@ -15,10 +14,9 @@ export const metadata: Metadata = {
 export default function LanguageLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <DiagnosticIsolation diagnostic={children}><AuthGate>
-      <div className="language-app-shell">
-        <header className="app-module-header"><div className="app-module-header-inner"><AppIdentity kind="language" title="일본어 학습" /><TopNav /></div></header>
+      <LanguageShell>
         <LanguageCloudSync><main className="app-main"><LanguageCompanion />{children}</main></LanguageCloudSync>
-      </div>
+      </LanguageShell>
     </AuthGate></DiagnosticIsolation>
   );
 }

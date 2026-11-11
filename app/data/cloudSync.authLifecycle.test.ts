@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { grantSyntheticStorageOwnership } from '../../tests/storageOwnershipFixture.ts';
+grantSyntheticStorageOwnership();
 import {
-  clearLocalCloudState, isCurrentCloudSession, mergeCloudState, mergeCloudStateFromBase,
+  applyCloudState, clearLocalCloudState, isCurrentCloudSession, mergeCloudState, mergeCloudStateFromBase,
   prepareLocalCloudState, readCloudSyncEpoch, readLocalCloudState, readSyncBase, saveSyncBase,
 } from './cloudSync.ts';
 
@@ -11,21 +13,22 @@ const original = Object.fromEntries(Array.from({ length: 17 }, (_, index) => [
 
 function device(seed = original) {
   const values = new Map(Object.entries(seed).map(([key, value]) => [key, JSON.stringify(value)]));
-  let rejectRemoval: string | undefined;
+  let rejectRemovals: string[] = [];
   const storage = {
     get length() { return values.size; },
     key(index: number) { return [...values.keys()][index] ?? null; },
     getItem(key: string) { return values.get(key) ?? null; },
     setItem(key: string, value: string) { values.set(key, String(value)); },
     removeItem(key: string) {
-      if (key === rejectRemoval) { rejectRemoval = undefined; throw new Error('fixture storage failure'); }
+      if (key === rejectRemovals[0]) { rejectRemovals.shift(); throw new Error('fixture storage failure'); }
       values.delete(key);
     },
   };
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
   Object.defineProperty(globalThis, 'window', { configurable: true, value: Object.assign(new EventTarget(), { localStorage: storage }) });
   return {
-    storage, failRemoval: (key: string) => { rejectRemoval = key; },
+    storage, snapshot: () => Object.fromEntries(values),
+    failRemoval: (...keys: string[]) => { rejectRemovals = keys; },
     restore: () => {
       if (previous) Object.defineProperty(globalThis, 'window', previous);
       else Reflect.deleteProperty(globalThis, 'window');
@@ -102,3 +105,84 @@ test('failed cleanup restores records with their baseline but invalidates pendin
     assert.equal(isCurrentCloudSession('a', epoch), false);
   } finally { local.restore(); }
 });
+
+for (const nextOwner of ['a', 'b']) {
+  test(`login as ${nextOwner} decides ownership after recovering a genuinely interrupted logout`, () => {
+    const local = device();
+    try {
+      prepareLocalCloudState('a'); saveSyncBase('a', original);
+      local.storage.setItem('unrelated-preference', 'keep');
+      const epoch = readCloudSyncEpoch();
+      // Fail the last logout removal and the first rollback removal. This leaves
+      // an actual writeStorageBatch journal with the ownership marker absent.
+      local.failRemoval('fitness-cloud-sync-base:a', 'ai-fitness-fixture-0');
+      assert.throws(() => clearLocalCloudState(), /fixture storage failure/);
+      assert.equal(local.storage.getItem('fitness-cloud-sync-user'), null);
+      assert.equal(local.storage.getItem('ai-fitness-fixture-0'), null);
+      assert.notEqual(local.storage.getItem('yeoni-storage-transaction-v1'), null);
+
+      prepareLocalCloudState(nextOwner);
+      assert.equal(local.storage.getItem('fitness-cloud-sync-user'), nextOwner);
+      assert.deepEqual(readLocalCloudState(), nextOwner === 'a' ? original : {});
+      assert.deepEqual(readSyncBase('a'), nextOwner === 'a' ? original : null);
+      assert.equal(local.storage.getItem('yeoni-storage-transaction-v1'), null);
+      assert.equal(local.storage.getItem('unrelated-preference'), 'keep');
+      assert.equal(isCurrentCloudSession('a', epoch), false);
+      assert.equal(isCurrentCloudSession(nextOwner, readCloudSyncEpoch()), true);
+    } finally { local.restore(); }
+  });
+}
+
+test('failed logout recovery cannot assign another owner and a later login retries safely', () => {
+  const local = device();
+  try {
+    prepareLocalCloudState('a'); saveSyncBase('a', original);
+    local.failRemoval('fitness-cloud-sync-base:a', 'ai-fitness-fixture-0');
+    assert.throws(() => clearLocalCloudState(), /fixture storage failure/);
+    const interrupted = local.snapshot();
+    local.failRemoval('ai-fitness-fixture-0');
+    assert.throws(() => prepareLocalCloudState('b'), /fixture storage failure/);
+    assert.deepEqual(local.snapshot(), interrupted);
+    prepareLocalCloudState('b');
+    assert.deepEqual(readLocalCloudState(), {});
+    assert.equal(readSyncBase('a'), null);
+    assert.equal(local.storage.getItem('fitness-cloud-sync-user'), 'b');
+  } finally { local.restore(); }
+});
+
+for (const owner of [null, 'a', 'b']) {
+  test(`invalid journal preserves raw data and blocks owner preparation with current owner ${owner}`, () => {
+    const local = device();
+    try {
+      if (owner !== null) local.storage.setItem('fitness-cloud-sync-user', owner);
+      saveSyncBase('a', original);
+      local.storage.setItem('yeoni-storage-transaction-v1', JSON.stringify({
+        'ai-fitness-fixture-0': JSON.stringify({ value: 99 }),
+        'ai-fitness-fixture-1': { unexpected: 'object' },
+      }));
+      const before = local.snapshot();
+      assert.throws(() => prepareLocalCloudState('b'), /복구/);
+      assert.deepEqual(local.snapshot(), before);
+    } finally { local.restore(); }
+  });
+}
+
+const cloudOperations = {
+  read: () => readLocalCloudState(),
+  clear: () => clearLocalCloudState(),
+  apply: () => applyCloudState({ 'ai-fitness-fixture-0': { value: 42 } }),
+};
+for (const [name, operation] of Object.entries(cloudOperations)) {
+  test(`cloud ${name} preserves current records, owner, baseline and invalid recovery evidence`, () => {
+    const local = device();
+    try {
+      prepareLocalCloudState('a'); saveSyncBase('a', original);
+      local.storage.setItem('yeoni-storage-transaction-v1', JSON.stringify({
+        'ai-fitness-fixture-0': { unexpected: 'object' },
+      }));
+      const before = local.snapshot();
+      assert.throws(operation, /복구/);
+      assert.deepEqual(local.snapshot(), before);
+    } finally { local.restore(); }
+  });
+}

@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "../../lib/supabase.ts";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -22,6 +23,24 @@ export const isPasswordRecoveryRedirect = Boolean(
   recoveryHashParams?.get("type") === "recovery",
 );
 
-export const supabase = isSupabaseConfigured
-  ? createClient()
+// Importing a route must not initialize authentication in a waiting tab.
+// createClient enforces browser storage-session ownership before SDK creation.
+const boundMethods = new Map<PropertyKey, { source: unknown; value: unknown }>();
+export const supabase: SupabaseClient | null = isSupabaseConfigured
+  ? new Proxy({} as SupabaseClient, {
+      get(_target, property) {
+        // Promise assimilation and inspection must remain side-effect free.
+        if (property === "then" || property === "toJSON") return undefined;
+        if (property === Symbol.toStringTag) return "SupabaseClient";
+        if (typeof property === "symbol") return undefined;
+        const client = createClient();
+        const value: unknown = Reflect.get(client, property, client);
+        if (typeof value !== "function") return value;
+        const previous = boundMethods.get(property);
+        if (previous?.source === value) return previous.value;
+        const bound: unknown = value.bind(client);
+        boundMethods.set(property, { source: value, value: bound });
+        return bound;
+      },
+    })
   : null;

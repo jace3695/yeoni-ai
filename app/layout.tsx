@@ -8,10 +8,11 @@ import SyncQaPanel from './components/SyncQaPanel';
 import CommonCharacterShell from '@/components/yeoni/CommonCharacterShell';
 import { commonCharacterEnabled } from '@/lib/yeoni/common-host-policy';
 import DiagnosticIsolation from './components/DiagnosticIsolation';
+import StorageAccessGate from './components/StorageAccessGate';
 
 export const metadata: Metadata = {
   title: 'AI 연이 | 개인 AI 비서',
-  description: '운동·식단·가계·언어 학습·일정을 하나의 흐름으로 이어주는 Jace님의 개인 AI 비서.',
+  description: '운동·식단·가계·언어 학습·일정을 하나의 흐름으로 이어주는 개인 AI 비서.',
   manifest: '/manifest.json',
   icons: {
     icon: '/favicon.png',
@@ -46,12 +47,14 @@ export default function RootLayout({
       </head>
       <body>
         <DiagnosticIsolation diagnostic={children}>
+        <StorageAccessGate>
         <PwaManager />
         <AiBudgetNotifier />
         <RecordResetListener />
         {process.env.NODE_ENV === 'development' && <SyncQaPanel />}
         {commonCharacterEnabled(process.env) ? <CommonCharacterShell enabled>{children}</CommonCharacterShell> : children}
         <div className="mx-auto w-full max-w-5xl px-4 pb-28"><CloudSyncPanel hideSignedOut /></div>
+        </StorageAccessGate>
         </DiagnosticIsolation>
       </body>
     </html>

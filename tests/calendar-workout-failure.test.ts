@@ -4,17 +4,50 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
+import * as bodyRecordStorage from '../app/data/recordStorage.ts';
+import * as storageOwnership from '../app/data/storageOwnership.ts';
+import { grantSyntheticStorageOwnership } from './storageOwnershipFixture.ts';
+
+// Execute actual snapshot/journal modules in this fixture's synthetic window.
+// The real ownership manager is acquired with synthetic Web Locks, never bypassed.
+function bodySaveFixture(storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>, onNotify = () => {}) {
+  grantSyntheticStorageOwnership();
+  const txModule = { exports: {} };
+  const bodyModule = { exports: {} };
+  const context = vm.createContext({ Error, Event, CustomEvent, window: {
+    localStorage: storage, dispatchEvent: () => { onNotify(); return true; },
+  }, queueMicrotask: (run: () => void) => run() });
+  const load = (name: string, module: { exports: object }, dependencies: Record<string, object>) => {
+    const source = readFileSync(new URL(`../app/data/${name}.ts`, import.meta.url), 'utf8');
+    const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+    vm.runInContext(`(function(require,module,exports){${code}\n})`, context)((name: string) => {
+      const dependency = dependencies[name.replace(/\.ts$/, '')];
+      if (!dependency) throw new Error(`Unexpected dependency: ${name}`);
+      return dependency;
+    }, module, module.exports);
+  };
+  load('storageTransaction', txModule, { './storageOwnership': storageOwnership });
+  load('bodyRecordSave', bodyModule, { './recordStorage': bodyRecordStorage, './storageTransaction': txModule.exports, './storageOwnership': storageOwnership });
+  return { ...bodyModule.exports, ...txModule.exports } as typeof import('../app/data/bodyRecordSave') & typeof import('../app/data/storageTransaction');
+}
+
+
 const source = readFileSync(new URL('../app/components/RecordCalendarView.tsx', import.meta.url), 'utf8');
 function fixture() {
   const initial = { today: { workoutMemo: 'old', cardioDone: true, cardioMinutes: 10 }, other: { workoutMemo: 'keep' } };
   const state = { fail: true, writes: 0, published: 0, editing: true, secondary: 'cardio' as string | null, notice: '', invalid: false, data: structuredClone(initial) as any };
   const recordsLive = { current: true }, workoutWriteLocked = { current: false };
   const events = new Map<string, (e?: any) => void>(); const tasks: (() => void)[] = []; let cleanup: () => void = () => {};
+  const data = new Map([['fitness-cloud-sync-user', 'synthetic-owner'], ['fitness-cloud-sync-epoch', '1']]);
+  const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); }, removeItem: (key: string) => { data.delete(key); } };
+  const body = bodySaveFixture(storage);
   const context = {
+    calendarScope: { current: body.readBodySaveScope(storage) }, calendarInvalidated: { current: false },
+    isBodySaveScopeCurrent: body.isBodySaveScopeCurrent, readBodySaveSnapshot: body.readBodySaveSnapshot, recoverStorageTransaction: body.recoverStorageTransaction, setSessionChanged: () => {}, setReadError: () => {},
     recordsLive, workoutWriteLocked, queueMicrotask: (fn: () => void) => tasks.push(fn),
     useEffect: (fn: () => () => void) => { cleanup = fn(); },
     setSessionInvalid: (v: boolean) => { state.invalid = v; },
-    window: { confirm: () => true, addEventListener: (k: string, fn: () => void) => events.set(k, fn), removeEventListener: (k: string) => events.delete(k) },
+    window: { localStorage: storage, confirm: () => true, addEventListener: (k: string, fn: () => void) => events.set(k, fn), removeEventListener: (k: string) => events.delete(k) },
     selected: 'today', todayKey: 'today', stores: {}, WORKOUT_COMPLETED_DAYS_KEY: 'synthetic', selectedWorkoutRecord: initial.today,
     workoutStatusDraft: 'partial', workoutDifficultyDraft: 'normal', workoutFatigueDraft: 2,
     workoutPainDraft: true, workoutBackStatusDraft: 'pain', workoutNeurologicalDraft: [], workoutPainExerciseDraft: ' synthetic ', workoutPainSetDraft: 1,
@@ -30,9 +63,10 @@ function fixture() {
   const start = source.indexOf('  const writeWorkoutStore ='), end = source.indexOf('\n  return (', start);
   const effectStart = source.indexOf('  useEffect(() => {\n    recordsLive.current = true;');
   const effectEnd = source.indexOf('  }, []);', effectStart) + '  }, []);'.length;
-  const code = ts.transpileModule(source.slice(effectStart, effectEnd) + source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const guard = source.slice(source.indexOf('  const canEditCalendar ='), source.indexOf('  const saveNote ='));
+  const code = ts.transpileModule(guard + source.slice(effectStart, effectEnd) + source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const handlers = vm.runInNewContext(code + '\n({saveWorkoutEdit,saveNewWorkoutRecord,saveSecondaryEdit,deleteWorkoutRecord,deleteSecondaryRecord})', context);
-  return { state, ...handlers, tick: () => { while (tasks.length) tasks.shift()!(); }, invalidate: (name = 'yeoni-cloud-session-changed', event?: any) => events.get(name)?.(event), unmount: () => cleanup() };
+  return { state, data, ...handlers, tick: () => { while (tasks.length) tasks.shift()!(); }, invalidate: (name = 'yeoni-cloud-session-changed', event?: any) => events.get(name)?.(event), unmount: () => cleanup() };
 }
 for (const name of ['saveWorkoutEdit', 'saveNewWorkoutRecord'] as const) test(`${name}: failure keeps draft open; retry preserves other date and cardio`, () => {
   const f = fixture(); const before = JSON.stringify(f.state.data);
