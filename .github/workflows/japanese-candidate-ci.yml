@@ -74,6 +74,9 @@ jobs:
         run: npm run build -- --webpack
       - name: Verify Japanese payload trace and HTTP isolation
         run: node scripts/japanese-preview/http-check.mjs
+      - name: Verify disposable Auth and API persistence privately
+        if: matrix.compiler == 'default'
+        run: node scripts/isolated-auth-api/supervisor.mjs
       - name: Remove disposable fixture
         if: always()
         run: node scripts/e2e-stack.mjs stop
