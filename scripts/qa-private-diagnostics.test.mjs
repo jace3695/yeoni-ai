@@ -108,7 +108,7 @@ test('malformed, stale, extra-field, injected, duplicate and out-of-range journa
     journal([start, { ...begin, source: canary }]),
     journal([start, { ...begin, source: sources.length + 1 }]),
     journal([start, { ...begin, line: 1000001 }]),
-    journal([start, { ...begin, project: 5 }]),
+    journal([start, { ...begin, project: 6 }]),
     journal([start, { ...begin, test: 10001 }]),
     journal([start, { ...begin, source: 0 }]),
     journal([start, { ...begin, column: -1 }]),

@@ -5,7 +5,7 @@ import { sources } from './qa-private-source-ids.mjs';
 const maxBytes = 1024 * 1024, maxCount = 10000, maxInvocations = 32, maxDetails = 20;
 const statuses = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted', 'unknown'];
 const endings = ['passed', 'failed', 'timedout', 'interrupted', 'unknown'];
-const projects = ['chromium', 'webkit-small', 'auth-preservation', 'webkit-diagnostic-denial'];
+const projects = ['chromium', 'webkit-small', 'auth-preservation', 'webkit-diagnostic-denial', 'chromium-app-smoke'];
 const integer = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const exact = (value, keys) => record(value) && Object.keys(value).sort().join(',') === keys.slice().sort().join(',');
@@ -13,6 +13,7 @@ const counts = () => Object.fromEntries(statuses.map(status => [status, 0]));
 
 export function diagnosticInvocations(command) {
   return command.split('\n').filter(line => line === 'npx playwright test --config tests/browser-cloud/playwright.config.ts'
+    || line === 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke'
     || /^node scripts\/qa-playwright\.mjs(?: |$)/.test(line)).length;
 }
 
@@ -59,7 +60,15 @@ export class PrivateDiagnostics {
 // Treat every byte written by the child as untrusted. Validate a finite schema,
 // then construct new output using only constants and bounded numbers. Never
 // forward a JSON fragment or child string, even when the producer is ours.
-export function parseDiagnosticJournal(text, token, expected) {
+export function parseDiagnosticJournal(text, token, expected, inventory) {
+  if (inventory !== undefined && (!Array.isArray(inventory) || inventory.length !== 4 || expected !== 1
+    || inventory.some(item => !exact(item, ['source', 'line', 'column', 'project'])
+      || !integer(item.source, 1, sources.length) || !integer(item.line, 1, 1000000)
+      || !integer(item.column, 1, 1000000) || !integer(item.project, 1, projects.length))
+    || new Set(inventory.map(item => JSON.stringify([item.source, item.line, item.column, item.project]))).size !== inventory.length)) {
+    return { report: 'invalid', invocations: [] };
+  }
+  if (typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token)) return { report: 'invalid', invocations: [] };
   if (Buffer.byteLength(text) > maxBytes || !integer(expected, 1, maxInvocations)) return { report: 'invalid', invocations: [] };
   if (!text) return { report: 'missing', invocations: [] };
   if (!text.endsWith('\n')) return { report: 'invalid', invocations: [] };
@@ -71,7 +80,7 @@ export function parseDiagnosticJournal(text, token, expected) {
       if (!record(entry) || entry.token !== token) throw 0;
       if (entry.event === 'start') {
         if (!exact(entry, ['token', 'event']) || current || invocations.length >= expected) throw 0;
-        current = { status: 'running', counts: counts(), runnerErrors: 0, details: [], omitted: 0, active: new Map(), nextTest: 0 };
+        current = { status: 'running', counts: counts(), runnerErrors: 0, details: [], omitted: 0, active: new Map(), nextTest: 0, seen: new Set() };
         invocations.push(current);
       } else {
         if (!current) throw 0;
@@ -82,6 +91,11 @@ export function parseDiagnosticJournal(text, token, expected) {
             || !integer(entry.line, entry.source ? 1 : 0, entry.source ? 1000000 : 0)
             || !integer(entry.column, entry.source ? 1 : 0, entry.source ? 1000000 : 0)
             || current.active.size >= maxDetails) throw 0;
+          if (inventory) {
+            const index = inventory.findIndex(item => ['source', 'line', 'column', 'project'].every(key => item[key] === entry[key]));
+            if (index < 0 || current.seen.has(index)) throw 0;
+            current.seen.add(index);
+          }
           current.nextTest = entry.test;
           current.active.set(entry.test, { test: entry.test, source: entry.source, line: entry.line,
             column: entry.column, project: entry.project });
@@ -104,6 +118,9 @@ export function parseDiagnosticJournal(text, token, expected) {
           // A nominal pass with unfinished/failing tests is inconsistent.
           if (current.status === 'passed' && (current.active.size || current.runnerErrors
             || current.counts.failed || current.counts.timedOut || current.counts.interrupted || current.counts.unknown)) throw 0;
+          // A narrow smoke lane must complete its exact inventory, including teardown.
+          if (inventory && current.status === 'passed' && (current.seen.size !== inventory.length
+            || current.counts.passed !== inventory.length || current.counts.skipped)) throw 0;
           current = undefined;
         } else throw 0;
       }
@@ -114,14 +131,14 @@ export function parseDiagnosticJournal(text, token, expected) {
       details: item.details, omitted: item.omitted, active: [...item.active.values()] })) };
 }
 
-export async function readDiagnosticJournal(path, token, expected) {
+export async function readDiagnosticJournal(path, token, expected, inventory) {
   let handle;
   try {
     // Bound the actual read, reject symlinks/devices and never follow a child-
     // supplied path. This file was created before spawning the child.
     handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     const stat = await handle.stat();
-    if (!stat.isFile() || stat.size > maxBytes) return { report: 'invalid', invocations: [] };
+    if (!stat.isFile() || (stat.mode & 0o077) !== 0 || stat.size > maxBytes) return { report: 'invalid', invocations: [] };
     const buffer = Buffer.alloc(maxBytes + 1);
     let size = 0;
     while (size < buffer.length) {
@@ -130,13 +147,13 @@ export async function readDiagnosticJournal(path, token, expected) {
       size += bytesRead;
     }
     if (size > maxBytes) return { report: 'invalid', invocations: [] };
-    return parseDiagnosticJournal(buffer.subarray(0, size).toString('utf8'), token, expected);
+    return parseDiagnosticJournal(buffer.subarray(0, size).toString('utf8'), token, expected, inventory);
   } catch { return { report: 'missing', invocations: [] }; }
   finally { await handle?.close(); }
 }
 
-export async function emitDiagnosticJournal({ path, token, expected, stage, termination, emit }) {
-  const report = await readDiagnosticJournal(path, token, expected);
+export async function emitDiagnosticJournal({ path, token, expected, stage, termination, emit, inventory }) {
+  const report = await readDiagnosticJournal(path, token, expected, inventory);
   // stage/termination originate in the supervisor, not in the journal.
   emit(`${stage} diagnostics report=${report.report} expected=${expected} observed=${report.invocations.length} termination=${termination}`);
   for (const [index, item] of report.invocations.entries()) {

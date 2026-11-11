@@ -77,6 +77,9 @@ jobs:
       - name: Verify disposable Auth and API persistence privately
         if: matrix.compiler == 'default'
         run: node scripts/isolated-auth-api/supervisor.mjs
+      - name: Verify four authenticated app flows in Chromium privately
+        if: matrix.compiler == 'default'
+        run: node scripts/isolated-chromium-smoke/supervisor.mjs
       - name: Remove disposable fixture
         if: always()
         run: node scripts/e2e-stack.mjs stop

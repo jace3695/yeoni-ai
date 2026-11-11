@@ -39,11 +39,13 @@ export async function runStages(stages, { cwd, runnerTemp, env = process.env, em
     if ((failed || signal?.aborted) && !stage.cleanup) { failed = true; emit(`${stage.id} not-run`); continue; }
     try {
     const local = join(directory, stage.id);
-    await mkdir(local);
+    await mkdir(local, { mode: 0o700 });
     const childEnv = { ...inherited };
     delete childEnv.QA_PRIVATE_DIAGNOSTIC_FILE;
     delete childEnv.QA_PRIVATE_DIAGNOSTIC_TOKEN;
     const expected = diagnosticInvocations(stage.command);
+    // An exact inventory must never fall back to exit-code-only acceptance.
+    if (stage.diagnosticInventory !== undefined && expected !== 1) throw new Error('Invalid diagnostic invocation');
     const diagnosticPath = join(local, 'diagnostic.jsonl');
     const diagnosticToken = randomBytes(32).toString('hex');
     if (expected) {
@@ -99,7 +101,7 @@ export async function runStages(stages, { cwd, runnerTemp, env = process.env, em
     finally { await writes; await Promise.all(handles.map(handle => handle.close())); }
     if (expected) {
       const report = await emitDiagnosticJournal({ path: diagnosticPath, token: diagnosticToken, expected,
-        stage: stage.id, termination, emit });
+        stage: stage.id, termination, emit, inventory: stage.diagnosticInventory });
       // Diagnostic uncertainty cannot upgrade an exit failure or certify success.
       if (report.report !== 'complete' || report.invocations.some(item => item.status !== 'passed')) code = 1;
     }
