@@ -5,19 +5,19 @@ import { runStages } from '../qa-private-orchestrator.mjs';
 import { terminationGraceMs } from '../qa-private-lifecycle.mjs';
 import { loadContext, childEnvironment } from '../isolated-auth-api/boundary.mjs';
 import { stages, totalTimeoutMs } from './plan.mjs';
-import { checkSystemChrome, officialChromeContext, ChromeContextError } from './system-chrome-readiness.mjs';
+import { checkBundledChromium, bundledChromiumContext, InspectionContextError, BUNDLE_CACHE } from './bundled-readiness.mjs';
 
-const failedLine = 'chromium-app-smoke failed browser=system-google-chrome realBrowser=unverified fixtureCleanup=unverified';
+const failedLine = 'chromium-app-smoke failed browser=playwright-chromium-headless-shell realBrowser=unverified fixtureCleanup=unverified';
 /** @param {{
  * cwd: string, runnerTemp: string, env: NodeJS.ProcessEnv, signal?: AbortSignal,
  * emit?: (line: string) => void, deadlineMs?: number,
- * readiness?: typeof checkSystemChrome,
+ * readiness?: typeof checkBundledChromium,
  * run?: (stages: readonly object[], options: {
  *   cwd: string, runnerTemp: string, env: NodeJS.ProcessEnv,
  *   emit: (line: string) => void, signal: AbortSignal, timeoutMs: number
  * }) => Promise<number>
  * }} options */
-export async function supervise({ cwd, runnerTemp, env, signal, emit = line => console.log(line), run = runStages, readiness = checkSystemChrome,
+export async function supervise({ cwd, runnerTemp, env, signal, emit = line => console.log(line), run = runStages, readiness = checkBundledChromium,
   deadlineMs = totalTimeoutMs }) {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -34,7 +34,7 @@ export async function supervise({ cwd, runnerTemp, env, signal, emit = line => c
     for (const stage of stages) {
       if (failed || controller.signal.aborted) { failed = true; emit(`${stage.id} not-run`); continue; }
       const code = await Promise.race([Promise.resolve().then(() => stage.id === 'stage-02'
-        ? readiness({ env, signal: controller.signal, timeoutMs: stage.timeoutMs,
+        ? readiness({ cwd, env, signal: controller.signal, timeoutMs: stage.timeoutMs,
           emit: line => { if (!finished) emit(line); } })
         : run([stage], {
         cwd, runnerTemp, env, emit: line => { if (!finished) emit(line); },
@@ -43,7 +43,7 @@ export async function supervise({ cwd, runnerTemp, env, signal, emit = line => c
       if (code !== 0 || controller.signal.aborted) failed = true;
     }
     if (failed || controller.signal.aborted) { emit(failedLine); return 1; }
-    emit('chromium-app-smoke passed tests=13 browser=system-google-chrome realBrowser=true fixtureCleanup=passed');
+    emit('chromium-app-smoke passed tests=13 browser=playwright-chromium-headless-shell realBrowser=true fixtureCleanup=passed');
     return 0;
   } catch { emit(failedLine); return 1; }
   finally {
@@ -60,7 +60,7 @@ export function mainFailureLine(phase, error) {
     .find(value => value === phase) ?? 'unexpected';
   if (phase === 'runner-context') {
     try {
-      const errorCategory = error instanceof ChromeContextError ? error.category : undefined;
+      const errorCategory = error instanceof InspectionContextError ? error.category : undefined;
       if (errorCategory !== undefined && ['request', 'runner', 'image', 'repository', 'override'].includes(errorCategory)) {
         category = `context-${errorCategory}`;
       }
@@ -82,10 +82,10 @@ async function main() {
     entryPhase = 'child-environment';
     const childEnv = childEnvironment(process.env);
     entryPhase = 'runner-context';
-    const context = officialChromeContext(process.env);
+    const context = bundledChromiumContext(process.env);
     entryPhase = 'handoff';
     process.exitCode = await supervise({ cwd: process.cwd(), runnerTemp: process.env.RUNNER_TEMP,
-      env: { ...childEnv, ...context, NODE_ENV: 'production' }, signal: controller.signal });
+      env: { ...childEnv, ...context, PLAYWRIGHT_BROWSERS_PATH: BUNDLE_CACHE, NODE_ENV: 'production' }, signal: controller.signal });
   } finally { process.off('SIGTERM', abort); process.off('SIGINT', abort); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -1,9 +1,9 @@
 import { defineConfig } from '@playwright/test';
-import { officialChromeContext } from './scripts/isolated-chromium-smoke/system-chrome-readiness.mjs';
+import { bundledChromiumContext } from './scripts/isolated-chromium-smoke/bundled-readiness.mjs';
 
 // This lane is independent of the full browser configuration and its WebKit guards.
 const env = process.env;
-officialChromeContext(env);
+bundledChromiumContext(env, true);
 const anonymousKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 function validAnonymousKey(key: string | undefined): boolean {
   if (!key || key.length >= 4096 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(key)) return false;
@@ -32,7 +32,6 @@ export default defineConfig({
   outputDir: '.e2e/chromium-smoke-output',
   use: {
     browserName: 'chromium',
-    channel: 'chrome',
     headless: true,
     viewport: { width: 1280, height: 720 },
     baseURL: 'http://127.0.0.1:3000',

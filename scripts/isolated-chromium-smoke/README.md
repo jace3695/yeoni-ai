@@ -1,4 +1,4 @@
-# Bounded SYSTEM GOOGLE CHROME application smoke
+# Bounded pinned Playwright Chromium application smoke
 
 The default compiler's existing inspection job runs this lane after disposable
 Auth/API inspection and before the unconditional stack teardown. It uses the
@@ -88,67 +88,104 @@ stop remains the final fallback.
 
 The standalone configuration contains only the `chromium-app-smoke` project,
 without project dependencies. It does not import the full browser configuration,
-call `qa-playwright.mjs`, or change any WebKit library requirement. The Chromium-family project uses the official installed `chrome` channel. This is
-a SYSTEM GOOGLE CHROME check, distinct from bundled Chromium/headless-shell,
-and not WebKit, iPhone or production certification.
+call `qa-playwright.mjs`, or change any WebKit library requirement. This project
+uses Playwright 1.63.0's pinned Chromium headless shell, revision 1243, browser
+version 153.0.8010.12. The channel is deliberately absent: `channel: chromium`
+would select full Chromium, while `channel: chrome` would select system Chrome.
+No custom executable, launch arguments, sandbox settings or remote browser is used.
+This is PINNED PLAYWRIGHT CHROMIUM, distinct from SYSTEM GOOGLE CHROME
+156.0.8078.79, WebKit, a physical iPhone or production certification.
 
 ## Limits and privacy
 
 The supervisor repeats the existing strict Actions push/ref, disposable loopback,
-anonymous-key and fixture-file checks before readiness or browser work. The workflow
-retains its repository restriction. Stage 02 does not install anything or execute
-the prior `install --with-deps --only-shell chromium` command. No automatic fallback,
-new flags, sandbox setting, package, cache, job, download or persistent storage is added.
+anonymous-key and fixture-file checks before readiness or browser work. It retains
+the exact official GitHub-hosted Linux/X64 `ubuntu24` image `20261101.360.1` and
+repository allowlist. Unknown images require separate review. The pinned image's
+exact CHROME_BIN and SELENIUM_JAR_PATH inventory defaults are tolerated at raw
+entry only, then dropped. Other browser/loader overrides, including npm aliases,
+are rejected. A fixed PLAYWRIGHT_BROWSERS_PATH is injected only after admission;
+caller-supplied paths, skip-validation flags, proxies and preload options are not
+forwarded to the installer/validator child. The browser receives the same fixed
+cache path through the existing allowlisted stage environment.
 
-The separate readiness probe requires the official GitHub-hosted Linux/X64
-`ubuntu24` image `20261101.360.1`, Ubuntu `24.04`, and exactly Google Chrome
-`156.0.8078.79`. This narrow allowlist comes from the verified official image
-inventory, not an inferred major-version compatibility range. Unknown/newer images
-or versions stop and need separate source review. The installed Playwright 1.63.0
-source supports channel `chrome` at the fixed `/opt/google/chrome/chrome` path.
-No executable path or remote browser environment override is accepted.
-The pinned official image exports CHROME_BIN=/usr/bin/google-chrome and
-SELENIUM_JAR_PATH=/usr/share/java/selenium-server.jar as inventory defaults.
-Only those exact nonempty raw values are tolerated after the existing image
-checks; absent/empty values remain unset. Case/path/value variants and all other
-browser, remote-connection and loader overrides still fail closed. Neither
-inventory variable is forwarded to any inspection child or used to select a path.
-The native binary remains fixed at /opt/google/chrome/chrome.
+Stage 02 creates a new owner-only directory at the fixed runner temporary location
+`/home/runner/work/_temp/yeoni-chromium-1-63`. It refuses a preexisting location,
+never repairs permissions and does not borrow an installation-complete or
+validation marker as evidence. It runs the installed official Playwright CLI as
+`node <playwright-core>/cli.js install --only-shell chromium --no-remove`.
+This downloads the pinned headless shell and ffmpeg revision 1011. Unlike older
+apt-based runs, it never requests `--with-deps`, `install-deps`, apt or sudo.
+The no-remove option prevents browser-cache garbage collection. No new workflow,
+job, persistent cache or artifact upload is added. The directory remains within
+the disposable job until runner disposal; a successful probe does not certify
+independent cache deletion or cleanup of escaped descendants.
 
-A caught pre-stage failure now emits one closed admission category before the
-unchanged failure summary: fixture, private-mode, signal-handlers,
-child-environment, runner-context, context-request, context-runner, context-image,
-context-repository, context-override or unexpected. An escaped failure after
-supervisor handoff is labeled supervisor/unexpected instead of admission failure.
-These categories do not include raw environment, paths, messages or exceptions,
-and do not invent a stage result, browser version or successful launch.
+A zero installer exit alone is not readiness: Playwright 1.63.0 prints host
+validation failures as warnings, can reuse a recent DEPENDENCIES_VALIDATED marker,
+and its shell descriptor names `chrome-linux` rather than the actual
+`chrome-headless-shell-linux64` directory. The route therefore pins the installed
+package/CLI/browser-descriptor/core source hashes and exact runtime registry
+identities, versions, URLs and official supported host. After installation it
+requires real owner-owned, non-group/world-writable bundle trees without symlinks,
+nonempty regular executable files and the expected installation markers.
 
-A metadata rejection adds one numeric diagnostic line after the lifecycle line:
-`stage-02 metadata path=N check=N`. Fixed path indices 0 through 7 identify, in
-order, `/`, `/opt`, `/opt/google`, `/opt/google/chrome`, the fixed Chrome binary,
-`/usr`, `/usr/lib` and `/usr/lib/os-release`; 8 is the unknown sentinel.
-Check IDs are 1 metadata read, 2 root owner, 3 root group, 4 no group/world write,
-5 not a symlink, 6 canonical-path read, 7 canonical-path equality, 8 expected file
-or directory kind, 9 executable bits and 10 bounded file size; 0 is unknown.
-Only these closed identities are emitted, never metadata values, paths or errors.
-The line appears only for a metadata preparation failure, not success, timeout
-or cancellation. Every existing acceptance predicate and failure summary remains
-unchanged. Diagnostics do not authorize writable paths, permission repair or a
-browser launch, and official image inventory is not executable-integrity proof.
+The enforced dependency check inspects the actual shell directory, requires the
+main executable in a bounded nonempty candidate set and validates dynamic
+ELF64/x86-64 headers before checking each executable/shared library with fixed
+`/usr/bin/ldd`. Only the known shell directory is supplied as LD_LIBRARY_PATH.
+Each command is bounded; nonzero exit, signal, timeout, spawn failure, stderr,
+empty/malformed/ambiguous output and missing-library records all stop readiness.
+Only recognized missing-library records are reported as missing dependencies;
+command failures and malformed output have separate fixed categories. A normal
+missing-library failure may emit one numeric missingLibrary ID: 1–92 maps to the
+fixed MISSING_LIBRARIES dictionary in bundled-driver.mjs, copied from the pinned
+Ubuntu24 lib2package map; 0 means an unmapped name was present. It identifies at
+most the lowest recognized ID in the first failing ldd result, not every missing
+requirement. No name is inferred from a nonzero command, stderr or timeout. No raw
+library names, paths, output or errors are emitted.
 
-Read-only metadata checks require real root-owned, non-group/world-writable parent
-folders, the regular executable and OS-release file. A direct fixed `--version`
-child uses only fixed locale/PATH values, NODE_ENV=production and the unchanged a0 lifecycle helper.
-Output is bounded to 128 bytes per stream; only one exact approved stdout version
-line and empty stderr pass. Missing, ambiguous, wrong, hostile, failed, cancelled
-or timed-out results stop before stage 03. The public readiness line has only fixed
-categories and approved numeric version/image fields; raw output is never emitted.
-These ordinary metadata/version checks are not cryptographic binary attestation,
-a successful browser launch, or proof that browser dependencies are satisfied.
+The unchanged pinned official registry method then performs host validation on
+the actual shell directory, directly rather than through its skip/cache wrapper.
+Its rejection fails the stage. The driver checks source/tree identities and the
+candidate set again afterward. The fixed source pins and runtime ABI checks make
+this private API dependency explicit; an upstream change fails closed and needs
+review. The installer may write a validation marker, but this route never reads
+it as proof. ffmpeg's pinned installation identity is checked; its no-op native
+validator is not represented as shared-library readiness. Video remains disabled.
+This readiness stage does not launch a browser or prove the thirteen app flows.
+Real launch, runtime dependencies/resources and all flow assertions remain stage
+03 evidence. Missing host requirements stop rather than trigger installation,
+system-Chrome fallback, security changes or a validation bypass.
 
-Official evidence:
-- https://github.com/actions/runner-images/blob/ubuntu24/20261101.360/images/ubuntu/Ubuntu2404-Readme.md
-- https://playwright.dev/docs/browsers
+A caught pre-stage failure emits a closed admission category before the failure
+summary: fixture, private-mode, signal-handlers, child-environment, runner-context,
+context-request, context-runner, context-image, context-repository,
+context-override or unexpected. An escaped failure after supervisor handoff is
+labeled supervisor/unexpected. These categories contain no raw environment,
+paths, messages or exceptions and do not invent stage or launch evidence.
+Installer and native validator output are discarded. Readiness exposes fixed
+engine/revision/version fields only on success, or a closed failure category.
+The prior system-Chrome metadata probe and its tests are recoverably removed
+from this route; their published sources, frozen reports and private backups
+remain separate evidence of the rejected writable `/opt` path. This route never
+executes that rejected image binary and does not relax its trust checks.
+
+Official background: https://playwright.dev/docs/browsers
+The installed Playwright 1.63.0 source is the exact implementation contract.
+
+After the driver leader closes, readiness probes that child's owned process group.
+Only an initially absent group can accompany a successful driver exit. Any
+unexpected member forces readiness failure, even if subsequent termination works.
+The route attempts TERM, waits no longer than the existing five-second grace
+inside the stage budget, then attempts KILL and makes a final bounded probe.
+Denied or uncertain observations remain unverified. When outer timeout or
+cancellation begins, the route keeps its work pending until the unchanged outer
+KILL fence settles, so early leader close cannot cancel that fence. The additional
+ownedGroup diagnostic contains only fixed observation/attempt categories and
+always says processCleanup=unverified. Group disappearance does not prove that
+escaped or privileged descendants stopped; a signal syscall alone proves neither
+absence nor fixture cleanup. No OS setting or shared production lifecycle changes.
 
 Safety, readiness and browser stages retain 60, 240 and 465 second budgets. Private
 preparation and finalization now share each stage budget. The first interruption
@@ -177,7 +214,7 @@ the thirteen exact source coordinates with project ID 5, thirteen passed tests a
 skips, failures, unknown outcomes, active tests or runner errors. Missing, stale,
 partial, duplicate, malformed or oversized reports fail closed, even with exit 0.
 Existing project IDs are unchanged. Public output contains fixed labels and
-validated numeric diagnostics only. A success names system-google-chrome and fixture teardown;
+validated numeric diagnostics only. A success names playwright-chromium-headless-shell and fixture teardown;
 a failure leaves real-browser completion and fixture cleanup unverified.
 
 Only readiness stage-02 emits the separate `lifecycle` line. Legacy
@@ -198,7 +235,12 @@ server-side network sandbox. No paid generation or TTS is requested by these tes
 ## Local checks
 
 The safety suite uses synthetic reports, child processes and list-only test
-collection. It does not start a browser, Auth, a database or the app server. Run `node --test scripts/isolated-chromium-smoke/safety.test.mjs` and
+collection. It includes six finite synthetic native-process cases for inner timeout, outer
+timeout, cancellation, nonzero exit, capture overflow and zero exit with a survivor.
+Only those lightweight helper waits overlap; all actual browser work remains one
+worker. Helpers ignore TERM, have finite lifetimes, and receive finally cleanup
+using PID/start-time identity checks. No running helper or false cleanup claim is
+accepted. It does not start a browser, Auth, a database or the app server. Run `node --test scripts/isolated-chromium-smoke/safety.test.mjs` and
 `node --test scripts/qa-private-orchestrator.test.mjs`, plus focused lint, syntax and
 type checks. These are distinct from real browser execution. The integrated content and remaining-level-flow tests bring the exact unit inventory
 to 345. This integration preserves all eleven prior browser bodies and overlays only the independently reviewed thirteen-file curriculum preservation repair. The seventh receipt scenario includes the separately reviewed fixed-settings
@@ -235,6 +277,6 @@ replace application bodies and do not certify application behavior.
 
 Both new tests use the unchanged fixture, real Auth/DB replies, cleanup and external-origin guard. No successful network reply is faked. Historical synthetic f01 results are not new learning evidence. The corruption test's only direct local storage writer is explicitly labeled fault injection/correction. New outcomes are never seeded. TTS requests must remain zero. Literal test.step phases stay in the owning specs and their numeric attribution has fixtureless controls. Source IDs 53/54 are append-only; earlier definitions and coordinates stay intact.
 
-The complete safety commands are independently derived from both workflow supervisors: `node --test scripts/isolated-auth-api/safety.test.mjs` and `node --test scripts/isolated-chromium-smoke/safety.test.mjs`. The latter includes actual list-only collection and all native fixtureless phase checks. It does not run test bodies, a browser, app server, Auth, database, installer or network. Unit inventory remains 345; all test/time/resource ceilings stay unchanged. The prior installation route is replaced only by the distinct fail-closed system-Chrome readiness route.
+The complete safety commands are independently derived from both workflow supervisors: `node --test scripts/isolated-auth-api/safety.test.mjs` and `node --test scripts/isolated-chromium-smoke/safety.test.mjs`. The latter includes actual list-only collection and all native fixtureless phase checks. It does not run test bodies, a browser, app server, Auth, database, installer or network. Unit inventory remains 345; all test/time/resource ceilings stay unchanged. The prior system-Chrome route is replaced by the distinct fail-closed pinned-bundle installation and enforced host-validation route, with no OS dependency installation.
 
 This candidate does not add browser evidence for corrupt remote rows, key-specific storage read failure, all six reader entry points, stale Kana owner/epoch permutations, overflow extensions, or corrupt-local newer-reset recovery. Those remain synthetic-only repair coverage. Existing genuine reset/receipt scenarios remain byte-identical but do not cover corrupt-local reset recovery. Actual browser timing, execution, same-commit CI and cleanup remain unverified until an authorized bounded run. No audio, physical-device, whole-curriculum, hosted-data or deployment claim is made.

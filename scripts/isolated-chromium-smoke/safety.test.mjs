@@ -1,5 +1,6 @@
 import '../qa-private-lifecycle.test.mjs';
-import './system-chrome-readiness.test.mjs';
+import './bundled-readiness.test.mjs';
+import './bundled-driver.test.mjs';
 // Synthetic processes, reports and collection only. No browser, Auth or DB starts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,7 +23,8 @@ const environment = () => ({ PATH: process.env.PATH, GITHUB_ACTIONS: 'true', RUN
   GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/agent/yeoni-japanese-ci-20261110',
   NEXT_PUBLIC_SUPABASE_URL: STACK_ORIGIN, NEXT_PUBLIC_SUPABASE_ANON_KEY: jwt('anon'), CI: 'true', RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64',
   RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261101.360.1',
-  GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com' });
+  GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com',
+  PLAYWRIGHT_BROWSERS_PATH: '/home/runner/work/_temp/yeoni-chromium-1-63' });
 const journal = events => events.map(event => JSON.stringify({ token, ...event }) + '\n').join('');
 const events = (items = inventory, status = 'passed') => [
   { event: 'start' }, ...items.flatMap((item, index) => [
@@ -79,7 +81,7 @@ test('exact command, fixed project/source inventory, readiness and ceilings stay
     { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }, { source: 51, line: 3, column: 5, project: 5 }, { source: 52, line: 3, column: 5, project: 5 }, { source: 53, line: 3, column: 5, project: 5 }, { source: 54, line: 3, column: 5, project: 5 }]);
   assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts']);
   assert.equal(stages[0].command, 'node --test scripts/isolated-chromium-smoke/safety.test.mjs');
-  assert.equal(stages[1].command, 'system-google-chrome-readiness');
+  assert.equal(stages[1].command, 'pinned-bundled-chromium-readiness');
   assert.equal(stages[1].lifecycleDiagnostics, true);
   assert.ok(stages.filter(stage => stage.lifecycleDiagnostics).every(stage => stage.id === 'stage-02'));
   assert.equal(stages[2].command, browserCommand); assert.equal(stages[2].diagnosticInventory, inventory);
@@ -132,7 +134,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
   assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 345);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
-  const addition = "      - name: Verify thirteen authenticated app flows in SYSTEM GOOGLE CHROME privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
+  const addition = "      - name: Verify thirteen authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
   assert.equal(workflow.split('len(tests) == 345').length, 2);
   assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 345', 'len(tests) == 343')).digest('hex'), workflowHash);
@@ -155,7 +157,7 @@ test('standalone configuration rejects wrong Actions/ref/loopback context before
     env: { PATH: process.env.PATH }, encoding: 'utf8', timeout: 5000,
   });
   assert.equal(result.status, 1); assert.equal(result.stderr, '');
-  assert.equal(result.stdout, 'chromium-app-smoke admission failed category=fixture\nchromium-app-smoke failed browser=system-google-chrome realBrowser=unverified fixtureCleanup=unverified\n');
+  assert.equal(result.stdout, 'chromium-app-smoke admission failed category=fixture\nchromium-app-smoke failed browser=playwright-chromium-headless-shell realBrowser=unverified fixtureCleanup=unverified\n');
 });
 
 test('config contains only Chromium, strict deadlines, private media settings and real loopback Next start', () => {
@@ -169,7 +171,8 @@ test('config contains only Chromium, strict deadlines, private media settings an
   assert.equal(config.fullyParallel, false); assert.equal(config.workers, 1); assert.equal(config.retries, 0);
   assert.equal(config.forbidOnly, true); assert.equal(config.repeatEach, 1); assert.equal(config.timeout, 90000);
   assert.equal(config.expect.timeout, 15000); assert.equal(config.use.browserName, 'chromium'); assert.equal(config.use.headless, true);
-  assert.equal(config.use.channel, 'chrome');
+  assert.equal(config.use.channel, undefined);
+  assert.equal(config.use.executablePath, undefined);
   assert.equal(config.use.launchOptions, undefined);
   assert.equal(config.use.connectOptions, undefined);
   assert.deepEqual(config.use.viewport, { width: 1280, height: 720 });
@@ -354,7 +357,7 @@ test('three-stage sequencing propagates safety/readiness/browser failures, cance
     assert.equal(code, failure < 0 ? 0 : 1); assert.equal(calls.length, failure < 0 ? 3 : failure + 1);
     privateOutput(options.output);
     assert.equal(options.output.at(-1).includes('realBrowser=true'), failure < 0);
-    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=13 browser=system-google-chrome realBrowser=true fixtureCleanup=passed');
+    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=13 browser=playwright-chromium-headless-shell realBrowser=true fixtureCleanup=passed');
   }
   const options = await fresh(), controller = new AbortController(); controller.abort();
   assert.equal(await supervise({ ...options, signal: controller.signal, run: () => { throw new Error(canary); } }), 1);
