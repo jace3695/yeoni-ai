@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useYeoniPreferences } from "@/components/useYeoniPreferences";
 import { CURRICULUM, TRACKS, getTrackLessons } from "@/data/curriculum";
-import { DEFAULT_CURRICULUM_PROGRESS, CURRICULUM_REVIEW_KEY, loadCurriculumProgress } from "@/utils/curriculumProgress";
+import { DEFAULT_CURRICULUM_PROGRESS, CURRICULUM_REVIEW_KEY, curriculumProgressErrorMessage, loadCurriculumProgress } from "@/utils/curriculumProgress";
 import { DEFAULT_INTEGRATED_LEARNING_SETTINGS, loadIntegratedLearningSettings, saveIntegratedLearningSettings, type IntegratedLearningSettings } from "@/utils/integratedLearningSettings";
 import { normalizeLearningSession } from "@/utils/learningSession";
 import LearningCompanion from "./LearningCompanion";
@@ -18,20 +18,26 @@ export default function LearningWelcome() {
   const [progress, setProgress] = useState(DEFAULT_CURRICULUM_PROGRESS);
   const [dueCount, setDueCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  const [readError, setReadError] = useState("");
+  const [readAttempt, setReadAttempt] = useState(0);
   const [error, setError] = useState("");
   useEffect(() => {
-    setSettings(loadIntegratedLearningSettings());
-    setProgress(loadCurriculumProgress());
     try {
-      const raw: unknown = JSON.parse(localStorage.getItem(CURRICULUM_REVIEW_KEY) ?? "[]");
-      if (Array.isArray(raw)) setDueCount(raw.filter((item) => item && typeof item === "object" && (!item.nextReviewAt || Date.parse(item.nextReviewAt) <= Date.now())).length);
-    } catch { /* Keep other entry points available if old review data is damaged. */ }
-    setLoaded(true);
-  }, []);
+      setSettings(loadIntegratedLearningSettings());
+      setProgress(loadCurriculumProgress());
+      try {
+        const raw: unknown = JSON.parse(localStorage.getItem(CURRICULUM_REVIEW_KEY) ?? "[]");
+        if (Array.isArray(raw)) setDueCount(raw.filter((item) => item && typeof item === "object" && (!item.nextReviewAt || Date.parse(item.nextReviewAt) <= Date.now())).length);
+      } catch { /* Keep other entry points available if old review data is damaged. */ }
+      setLoaded(true);
+      setReadError("");
+    } catch (error) { setReadError(curriculumProgressErrorMessage(error, "학습 기록을 읽지 못했어요. 다시 읽어 주세요.")); }
+  }, [readAttempt]);
   const changeSettings = (next: IntegratedLearningSettings) => {
     try { saveIntegratedLearningSettings(next); setSettings(next); setError(""); return true; }
     catch { setError("설정을 저장하지 못했어요. 기기의 저장 공간을 확인해 주세요."); return false; }
   };
+  if (readError) return <section><p role="alert">{readError}</p><button type="button" onClick={() => setReadAttempt(value => value + 1)}>기록 다시 읽기</button></section>;
   if (!loaded) return <section className={styles.welcome} role="status">오늘의 학습을 준비하고 있어요.</section>;
   const firstTime = !settings.hasChosenStart && progress.completedLessonIds.length === 0 && !progress.kanaCompletedGroups?.length && !progress.activeSession;
   const track = progress.completedLessonIds.length ? progress.selectedTrack : settings.preferredTrack;

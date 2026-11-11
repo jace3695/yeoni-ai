@@ -7,7 +7,7 @@ import { WORDS } from "@/data/words";
 import { SENTENCES } from "@/data/sentences";
 import { GRAMMAR_LESSONS, GRAMMAR_PROGRESS_KEY, type GrammarProgressItem } from "@/data/grammar";
 import { CURRICULUM, TRACKS, type CourseTrack } from "@/data/curriculum";
-import { CURRICULUM_REVIEW_KEY, loadCurriculumProgress, type CurriculumProgress } from "@/utils/curriculumProgress";
+import { CURRICULUM_REVIEW_KEY, curriculumProgressErrorMessage, loadCurriculumProgress, type CurriculumProgress } from "@/utils/curriculumProgress";
 import { getLocalDateKey } from "@/utils/dateKey";
 
 function getCurrentStreak(activityDates: string[]): number {
@@ -441,6 +441,7 @@ export default function ProgressPage() {
   const [confusingKanaChars, setConfusingKanaChars] = useState<string[]>([]);
   const [grammarProgress, setGrammarProgress] = useState<GrammarProgressItem[]>([]);
   const [activeProgressTab, setActiveProgressTab] = useState<ProgressTab>("all");
+  const [curriculumError, setCurriculumError] = useState("");
   const [curriculumProgress, setCurriculumProgress] = useState<CurriculumProgress | null>(null);
   const [curriculumReviewCount, setCurriculumReviewCount] = useState(0);
 
@@ -508,7 +509,8 @@ export default function ProgressPage() {
     }
     setData({ wrongKana, wrongWords, wrongSentences });
     setGrammarProgress(grammarItems);
-    setCurriculumProgress(loadCurriculumProgress());
+    try { setCurriculumProgress(loadCurriculumProgress()); setCurriculumError(""); }
+    catch (error) { setCurriculumError(curriculumProgressErrorMessage(error, "학습 기록을 읽지 못했어요. 화면을 다시 열어 주세요.")); }
     setCurriculumReviewCount(loadFromStorage(CURRICULUM_REVIEW_KEY).length);
     const rawConfusingKana = loadFromStorage("wrongKanaChars");
     const rawConfusingKanaLegacy = loadFromStorage("confusingKana");
@@ -819,6 +821,7 @@ export default function ProgressPage() {
 
       <section style={{ marginBottom: "1rem", border: "1px solid #dbeafe", borderRadius: 20, padding: "1rem", background: "#ffffff", boxShadow: "0 6px 20px rgba(148, 163, 184, 0.16)" }}>
         <h2 style={{ fontSize: "1.05rem", margin: "0 0 0.8rem", color: "#1f684c" }}>새 학습 과정</h2>
+        {curriculumError ? <p role="alert">{curriculumError}</p> : <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(105px,1fr))", gap: "0.55rem", marginBottom: "0.7rem" }}>
           <div style={{ padding: "0.7rem", borderRadius: 12, background: "#f3faf6", textAlign: "center" }}><small>연속 학습</small><strong style={{ display: "block", color: "#287a59" }}>{getCurrentStreak(curriculumProgress?.activityDates ?? [])}일</strong></div>
           <div style={{ padding: "0.7rem", borderRadius: 12, background: "#f3faf6", textAlign: "center" }}><small>총 학습일</small><strong style={{ display: "block", color: "#287a59" }}>{curriculumProgress?.activityDates.length ?? 0}일</strong></div>
@@ -833,6 +836,7 @@ export default function ProgressPage() {
           })}
         </div>
         <Link href={curriculumProgress?.lastLessonId ? `/language/learn?lesson=${curriculumProgress.lastLessonId}` : "/language"} style={{ display: "block", marginTop: "0.7rem", padding: "0.65rem", borderRadius: 10, textAlign: "center", textDecoration: "none", color: "#fff", background: "#287a59", fontWeight: 750, fontSize: "0.85rem" }}>{curriculumProgress?.completedLessonIds.length ? "최근 수업 다시 보기" : "학습 시작점 고르기"}</Link>
+        </>}
       </section>
 
       <section style={{ marginBottom: "1rem", border: "1px solid #dbeafe", borderRadius: 20, padding: "1rem", background: "#ffffff", boxShadow: "0 6px 20px rgba(148, 163, 184, 0.16)" }}>

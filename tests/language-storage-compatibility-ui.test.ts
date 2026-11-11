@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import React from 'react';
+import { CurriculumProgressError } from '../utils/curriculumProgress.ts';
 import { LanguageStorageUnavailableError } from '../app/data/languageStorageLock.ts';
 import { memoryStorage } from './fixtures/chunkReviewStorage.ts';
 const require = createRequire(import.meta.url);
@@ -48,6 +49,7 @@ function fixture(options: { prepareFailure?: boolean; initialReadFailure?: boole
   const dependencies: Record<string, unknown> = {
     react: runtime, '@/app/lib/supabase': { supabase: authClient }, '@/app/data/cloudSync': { stableState: JSON.stringify },
     '@/app/data/languageStorageLock': { LanguageStorageUnavailableError },
+    '@/utils/curriculumProgress': { CurriculumProgressError },
     '@/app/lib/unsavedChanges': { requestSafeReload() {} },
     '@/app/data/appRecordReset': { isRecordResetRunning: () => false, RECORD_RESET_EVENT: 'reset' },
     '@/components/yeoni/LocalRecordGuidance': { LanguageRecordReadiness: React.createContext('loading') },

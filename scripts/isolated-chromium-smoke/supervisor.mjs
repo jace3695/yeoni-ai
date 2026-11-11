@@ -5,17 +5,19 @@ import { runStages } from '../qa-private-orchestrator.mjs';
 import { terminationGraceMs } from '../qa-private-lifecycle.mjs';
 import { loadContext, childEnvironment } from '../isolated-auth-api/boundary.mjs';
 import { stages, totalTimeoutMs } from './plan.mjs';
+import { checkSystemChrome, officialChromeContext } from './system-chrome-readiness.mjs';
 
-const failedLine = 'chromium-app-smoke failed browser=chromium realBrowser=unverified fixtureCleanup=unverified';
+const failedLine = 'chromium-app-smoke failed browser=system-google-chrome realBrowser=unverified fixtureCleanup=unverified';
 /** @param {{
  * cwd: string, runnerTemp: string, env: NodeJS.ProcessEnv, signal?: AbortSignal,
  * emit?: (line: string) => void, deadlineMs?: number,
+ * readiness?: typeof checkSystemChrome,
  * run?: (stages: readonly object[], options: {
  *   cwd: string, runnerTemp: string, env: NodeJS.ProcessEnv,
  *   emit: (line: string) => void, signal: AbortSignal, timeoutMs: number
  * }) => Promise<number>
  * }} options */
-export async function supervise({ cwd, runnerTemp, env, signal, emit = line => console.log(line), run = runStages,
+export async function supervise({ cwd, runnerTemp, env, signal, emit = line => console.log(line), run = runStages, readiness = checkSystemChrome,
   deadlineMs = totalTimeoutMs }) {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -31,14 +33,17 @@ export async function supervise({ cwd, runnerTemp, env, signal, emit = line => c
   try {
     for (const stage of stages) {
       if (failed || controller.signal.aborted) { failed = true; emit(`${stage.id} not-run`); continue; }
-      const code = await Promise.race([Promise.resolve().then(() => run([stage], {
+      const code = await Promise.race([Promise.resolve().then(() => stage.id === 'stage-02'
+        ? readiness({ env, signal: controller.signal, timeoutMs: stage.timeoutMs,
+          emit: line => { if (!finished) emit(line); } })
+        : run([stage], {
         cwd, runnerTemp, env, emit: line => { if (!finished) emit(line); },
         signal: controller.signal, timeoutMs: stage.timeoutMs,
       })), fence]);
       if (code !== 0 || controller.signal.aborted) failed = true;
     }
     if (failed || controller.signal.aborted) { emit(failedLine); return 1; }
-    emit('chromium-app-smoke passed tests=11 browser=chromium realBrowser=true fixtureCleanup=passed');
+    emit('chromium-app-smoke passed tests=13 browser=system-google-chrome realBrowser=true fixtureCleanup=passed');
     return 0;
   } catch { emit(failedLine); return 1; }
   finally {
@@ -56,7 +61,7 @@ async function main() {
   process.on('SIGTERM', abort); process.on('SIGINT', abort);
   try {
     process.exitCode = await supervise({ cwd: process.cwd(), runnerTemp: process.env.RUNNER_TEMP,
-      env: { ...childEnvironment(process.env), NODE_ENV: 'production' }, signal: controller.signal });
+      env: { ...childEnvironment(process.env), ...officialChromeContext(process.env), NODE_ENV: 'production' }, signal: controller.signal });
   } finally { process.off('SIGTERM', abort); process.off('SIGINT', abort); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

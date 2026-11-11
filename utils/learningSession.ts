@@ -34,28 +34,31 @@ export function getSessionQuizIndices(lesson: CurriculumLesson, minutes: Learnin
   return indices;
 }
 
-export function normalizeLearningSession(value: unknown, lesson: CurriculumLesson): LearningSession | undefined {
+export function normalizeLearningSession(value: unknown, lesson: CurriculumLesson, preserveStoredFields = false): LearningSession | undefined {
   if (!value || typeof value !== "object") return;
   const draft = value as Partial<LearningSession>;
   if (draft.version !== 1 || draft.lessonId !== lesson.id || ![5, 10, 20].includes(draft.minutes ?? 0)) return;
   if (draft.mode !== "starter" && draft.mode !== "reader") return;
-  const clean = createLearningSession(lesson.id, draft.minutes as LearningMinutes, draft.mode);
+  // The storage reader validates before opting into lossless saved fields.
+  // Other callers retain the existing defensive normalization contract.
+  const clean = { ...(preserveStoredFields ? draft : {}), ...createLearningSession(lesson.id, draft.minutes as LearningMinutes, draft.mode) };
   if (typeof draft.id === "string" && draft.id.length <= 100 && draft.id.length > 0) clean.id = draft.id;
   const bounded = (number: unknown, max: number) => typeof number === "number" && Number.isInteger(number) ? Math.max(0, Math.min(number, max)) : 0;
   clean.stage = bounded(draft.stage, 4);
   clean.wordIndex = bounded(draft.wordIndex, lesson.words.length - 1);
   clean.quizCursor = bounded(draft.quizCursor, getSessionQuizIndices(lesson, clean.minutes).length - 1);
-  const answerMap = (map: unknown): Record<number, boolean> => !map || typeof map !== "object" ? {} : Object.fromEntries(Object.entries(map).filter(([key, result]) => /^\d+$/.test(key) && Number(key) < lesson.quiz.length && typeof result === "boolean"));
+  const answerMap = (map: unknown): Record<number, boolean> => !map || typeof map !== "object" ? {} : Object.fromEntries(Object.entries(map).filter(([key, result]) => /^\d+$/.test(key) && (preserveStoredFields || Number(key) < lesson.quiz.length) && typeof result === "boolean"));
   clean.answers = answerMap(draft.answers);
   clean.firstAnswers = answerMap(draft.firstAnswers);
-  clean.responses = draft.responses && typeof draft.responses === "object" ? Object.fromEntries(Object.entries(draft.responses).filter(([key, result]) => /^\d+$/.test(key) && Number(key) < lesson.quiz.length && typeof result === "string" && result.length < 500)) : {};
-  clean.speakingChecks = Array.from({ length: 3 }, (_, index) => draft.speakingChecks?.[index] === true);
-  if (draft.observations && typeof draft.observations === 'object') clean.observations = Object.fromEntries(Object.entries(draft.observations).filter(([key, item]) => /^\d+$/.test(key) && Number(key) < lesson.quiz.length && item && typeof item === 'object').map(([key, item]) => [key, {
-    responseMs: cleanResponseMs(item.responseMs), neededHelp: item.neededHelp === true,
+  clean.responses = draft.responses && typeof draft.responses === "object" ? Object.fromEntries(Object.entries(draft.responses).filter(([key, result]) => /^\d+$/.test(key) && (preserveStoredFields || Number(key) < lesson.quiz.length) && typeof result === "string" && (preserveStoredFields || result.length < 500))) : {};
+  clean.speakingChecks = Array.from({ length: preserveStoredFields ? Math.max(3, draft.speakingChecks?.length ?? 0) : 3 }, (_, index) => draft.speakingChecks?.[index] === true);
+  if (draft.observations && typeof draft.observations === 'object') clean.observations = Object.fromEntries(Object.entries(draft.observations).filter(([key, item]) => /^\d+$/.test(key) && (preserveStoredFields || Number(key) < lesson.quiz.length) && item && typeof item === 'object').map(([key, item]) => [key, {
+    ...(preserveStoredFields ? item : {}),
+    responseMs: preserveStoredFields ? item.responseMs : cleanResponseMs(item.responseMs), neededHelp: item.neededHelp === true,
     // The saved observation describes the actual answer method. Reader mode
     // used to allow typing; it now uses choices without changing older records.
     modality: item.modality === 'meaning' || item.modality === 'listening' || item.modality === 'typing'
-      ? item.modality : reviewModality(lesson.quiz[Number(key)].kind, clean.mode),
+      ? item.modality : reviewModality(lesson.quiz[Number(key)]?.kind ?? "choice", clean.mode),
   }]));
   return clean;
 }
@@ -66,10 +69,13 @@ export function answerSessionQuestion(session: LearningSession, index: number, c
 }
 
 export function withLearningSessionDraft(progress: CurriculumProgress, session: LearningSession): CurriculumProgress {
-  const drafts = { ...progress.lessonDrafts };
-  // Preserve the original single-draft format when moving to another lesson.
-  if (progress.activeSession?.lessonId) drafts[progress.activeSession.lessonId] = progress.activeSession;
-  drafts[session.lessonId] = session;
+  // Computed own properties preserve IDs such as "__proto__" without invoking
+  // Object.prototype setters when migrating the old single-draft format.
+  const drafts = {
+    ...progress.lessonDrafts,
+    ...(progress.activeSession?.lessonId ? { [progress.activeSession.lessonId]: progress.activeSession } : {}),
+    [session.lessonId]: session,
+  };
   return { ...progress, activeSession: session, lessonDrafts: drafts };
 }
 

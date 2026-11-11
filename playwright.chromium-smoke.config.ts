@@ -1,7 +1,9 @@
 import { defineConfig } from '@playwright/test';
+import { officialChromeContext } from './scripts/isolated-chromium-smoke/system-chrome-readiness.mjs';
 
 // This lane is independent of the full browser configuration and its WebKit guards.
 const env = process.env;
+officialChromeContext(env);
 const anonymousKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 function validAnonymousKey(key: string | undefined): boolean {
   if (!key || key.length >= 4096 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(key)) return false;
@@ -18,7 +20,7 @@ if (env.CI !== 'true' || env.GITHUB_ACTIONS !== 'true' || env.RUNNER_TEMP !== '/
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts'],
+  testMatch: ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts', 'curriculum-corruption.spec.ts', 'curriculum-terminal.spec.ts'],
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -30,6 +32,7 @@ export default defineConfig({
   outputDir: '.e2e/chromium-smoke-output',
   use: {
     browserName: 'chromium',
+    channel: 'chrome',
     headless: true,
     viewport: { width: 1280, height: 720 },
     baseURL: 'http://127.0.0.1:3000',

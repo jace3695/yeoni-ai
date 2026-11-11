@@ -1,4 +1,4 @@
-# Bounded Chromium application smoke
+# Bounded SYSTEM GOOGLE CHROME application smoke
 
 The default compiler's existing inspection job runs this lane after disposable
 Auth/API inspection and before the unconditional stack teardown. It uses the
@@ -80,7 +80,7 @@ traversal: 18 questions and three lessons per unchanged 90-second test, with no
 omitted question or raised timeout. Actual fit in the unchanged overall lane
 remains unverified until a bounded run and fixture cleanup finish.
 
-The receipt test uses two generated owners. These eleven tests use thirteen disposable accounts in total. The existing fixture handles
+The receipt test uses two generated owners. These thirteen tests use fifteen disposable accounts in total. The existing fixture handles
 account creation, route draining, browser closure, deletion and scoped zero-row
 checks. Passing requires completion of all test teardown assertions. Interrupted
 or failed teardown is not certified. The existing unconditional disposable stack
@@ -88,22 +88,41 @@ stop remains the final fallback.
 
 The standalone configuration contains only the `chromium-app-smoke` project,
 without project dependencies. It does not import the full browser configuration,
-call `qa-playwright.mjs`, or change any WebKit library requirement. This is a real
-Chromium-only application check, not WebKit, iPhone or production certification.
+call `qa-playwright.mjs`, or change any WebKit library requirement. The Chromium-family project uses the official installed `chrome` channel. This is
+a SYSTEM GOOGLE CHROME check, distinct from bundled Chromium/headless-shell,
+and not WebKit, iPhone or production certification.
 
 ## Limits and privacy
 
 The supervisor repeats the existing strict Actions push/ref, disposable loopback,
-anonymous-key and fixture-file checks before any installation or browser action.
-The workflow retains its repository restriction. Only the lockfile-installed
-Playwright 1.63.0 CLI installs Chromium's headless shell and official dependencies,
-using `install --with-deps --only-shell chromium`, including its standard ffmpeg
-helper. There is one wrapper invocation, without an added retry loop, mirror, proxy
-override, forced reinstall, extra browser or custom cache. The unmodified installer
-may use its built-in recovery across official download URLs within the same
-four-minute deadline. Playwright test retries remain zero.
+anonymous-key and fixture-file checks before readiness or browser work. The workflow
+retains its repository restriction. Stage 02 does not install anything or execute
+the prior `install --with-deps --only-shell chromium` command. No automatic fallback,
+new flags, sandbox setting, package, cache, job, download or persistent storage is added.
 
-Safety, install and browser stages retain 60, 240 and 465 second budgets. Private
+The separate readiness probe requires the official GitHub-hosted Linux/X64
+`ubuntu24` image `20261101.360.1`, Ubuntu `24.04`, and exactly Google Chrome
+`156.0.8078.79`. This narrow allowlist comes from the verified official image
+inventory, not an inferred major-version compatibility range. Unknown/newer images
+or versions stop and need separate source review. The installed Playwright 1.63.0
+source supports channel `chrome` at the fixed `/opt/google/chrome/chrome` path.
+No executable path or remote browser environment override is accepted.
+
+Read-only metadata checks require real root-owned, non-group/world-writable parent
+folders, the regular executable and OS-release file. A direct fixed `--version`
+child uses only fixed locale/PATH values and the unchanged a0 lifecycle helper.
+Output is bounded to 128 bytes per stream; only one exact approved stdout version
+line and empty stderr pass. Missing, ambiguous, wrong, hostile, failed, cancelled
+or timed-out results stop before stage 03. The public readiness line has only fixed
+categories and approved numeric version/image fields; raw output is never emitted.
+These ordinary metadata/version checks are not cryptographic binary attestation,
+a successful browser launch, or proof that browser dependencies are satisfied.
+
+Official evidence:
+- https://github.com/actions/runner-images/blob/ubuntu24/20261101.360/images/ubuntu/Ubuntu2404-Readme.md
+- https://playwright.dev/docs/browsers
+
+Safety, readiness and browser stages retain 60, 240 and 465 second budgets. Private
 preparation and finalization now share each stage budget. The first interruption
 attempts process-group TERM, then KILL after the existing five-second grace;
 the runner releases its owned capture pipes and settles failure even if a
@@ -126,14 +145,14 @@ rows, URLs, credentials, errors or DOM is forwarded to public output.
 
 The private diagnostic channel has a fresh random token, bounded reads, no-follow
 file access and an exact schema. Acceptance requires one completed invocation,
-the eleven exact source coordinates with project ID 5, eleven passed tests and zero
+the thirteen exact source coordinates with project ID 5, thirteen passed tests and zero
 skips, failures, unknown outcomes, active tests or runner errors. Missing, stale,
 partial, duplicate, malformed or oversized reports fail closed, even with exit 0.
 Existing project IDs are unchanged. Public output contains fixed labels and
-validated numeric diagnostics only. A success names Chromium and fixture teardown;
+validated numeric diagnostics only. A success names system-google-chrome and fixture teardown;
 a failure leaves real-browser completion and fixture cleanup unverified.
 
-Only installer stage-02 opts into a separate `lifecycle` line. Legacy
+Only readiness stage-02 emits the separate `lifecycle` line. Legacy
 `stage-NN passed/failed/not-run` lines and the browser diagnostic journal schema
 are unchanged. The new line contains an allowlisted reason, bounded leader exit
 code/signal, monotonic elapsed/exit/close milliseconds, a duration-cap flag,
@@ -142,7 +161,7 @@ Unknown code/time is -1 and unknown signal is 0. Time fields cap at 780000 with
 `durationCapped=1` when needed. Actual leader exit and pipe closure are separate.
 It always states `processCleanup=unverified`; forced pipe release states
 `capture=abandoned`. A successful signal syscall never certifies descendant
-cleanup. No installer output, messages, stacks, paths, URLs, environment, or
+cleanup. No raw probe output, messages, stacks, paths, URLs, environment, or
 credentials are included. Missing observations are not reconstructed.
 
 The existing fixture blocks external browser origins. This is not a universal
@@ -154,8 +173,7 @@ The safety suite uses synthetic reports, child processes and list-only test
 collection. It does not start a browser, Auth, a database or the app server. Run `node --test scripts/isolated-chromium-smoke/safety.test.mjs` and
 `node --test scripts/qa-private-orchestrator.test.mjs`, plus focused lint, syntax and
 type checks. These are distinct from real browser execution. The integrated content and remaining-level-flow tests bring the exact unit inventory
-to 345. This integration preserves six prior browser tests and every product
-component. The seventh receipt scenario includes the separately reviewed fixed-settings
+to 345. This integration preserves all eleven prior browser bodies and overlays only the independently reviewed thirteen-file curriculum preservation repair. The seventh receipt scenario includes the separately reviewed fixed-settings
 baseline correction. Focused synthetic/list-only checks are not browser execution.
 
 Before publishing to the inspection branch, review the exact diff and preserve a
@@ -165,7 +183,7 @@ same commit. Do not reinterpret a local synthetic pass as application verificati
 The receipt fixture adds only the reviewed replay-receipt migration after the two
 existing reset migrations. Its guard removes exactly that single append line before
 checking the unchanged launcher baseline hash. The schema.sql source, grants, policies, optional
-docs guard and fixture source remain unchanged. Source IDs 1–50 remain stable. Level-choice and overdue-review specs append IDs 51 and 52, respectively, both at line 3, column 5. Unknown pre-upgrade requests, destructive legacy writes,
+docs guard and fixture source remain unchanged. Source IDs 1–52 remain stable. Level-choice and overdue-review specs append IDs 51 and 52, respectively, both at line 3, column 5. Unknown pre-upgrade requests, destructive legacy writes,
 metadata tampering, hosted rollout and ledger performance remain outside this lane.
 
 Reading-specific scope, nonclaims and pending admission are recorded in
@@ -178,6 +196,17 @@ The safety suite exercises all twelve phase-failure cases with a fixtureless nat
 runner and checks that no helper/error/label content reaches numeric output.
 
 The level-choice and overdue-review specs and their shared state helper are
-strictly pinned separately. Eleven additional offline helper-failure injections
+strictly pinned separately. Eleven existing offline helper-failure injections
 check each new literal phase's original source line. These coordinate fixtures
 replace application bodies and do not certify application behavior.
+
+## Curriculum preservation and terminal completion candidate
+
+- `curriculum-corruption.spec.ts:3` (source 53): start with synthetic prior f01 history, an old special-key draft and review sentinel. Real UI answers create a pending f12 draft. Explicit local malformed-JSON fault injection then blocks finish/autosave, preserves exact bytes and the whole remote snapshot, and never reports completion or server success. Normal mount, reread, reload and invalid-shape input remain blocked. Explicit known-valid local fixture correction, not implicit repair, allows a genuine track-choice save with conditional PATCH, confirmation GET and authenticated DB readback. The existing focus-triggered sync callback is exercised; the full 30-second timer interval is not awaited.
+- `curriculum-terminal.spec.ts:3` (source 54): open actual f12, traverse all expression and pattern screens, answer the normal five-minute three-question meaning path, save, reload/relogin, repeat in a new UI session, then explicitly select intermediate. Both completions require distinct actual session IDs, new timestamped attempt history, exact local/remote preservation and real conditional PATCH plus subsequent GET/DB confirmation. Five minutes is the chosen lesson-size setting, not a five-minute wall-clock wait.
+
+Both new tests use the unchanged fixture, real Auth/DB replies, cleanup and external-origin guard. No successful network reply is faked. Historical synthetic f01 results are not new learning evidence. The corruption test's only direct local storage writer is explicitly labeled fault injection/correction. New outcomes are never seeded. TTS requests must remain zero. Literal test.step phases stay in the owning specs and their numeric attribution has fixtureless controls. Source IDs 53/54 are append-only; earlier definitions and coordinates stay intact.
+
+The complete safety commands are independently derived from both workflow supervisors: `node --test scripts/isolated-auth-api/safety.test.mjs` and `node --test scripts/isolated-chromium-smoke/safety.test.mjs`. The latter includes actual list-only collection and all native fixtureless phase checks. It does not run test bodies, a browser, app server, Auth, database, installer or network. Unit inventory remains 345; all test/time/resource ceilings stay unchanged. The prior installation route is replaced only by the distinct fail-closed system-Chrome readiness route.
+
+This candidate does not add browser evidence for corrupt remote rows, key-specific storage read failure, all six reader entry points, stale Kana owner/epoch permutations, overflow extensions, or corrupt-local newer-reset recovery. Those remain synthetic-only repair coverage. Existing genuine reset/receipt scenarios remain byte-identical but do not cover corrupt-local reset recovery. Actual browser timing, execution, same-commit CI and cleanup remain unverified until an authorized bounded run. No audio, physical-device, whole-curriculum, hosted-data or deployment claim is made.

@@ -1,4 +1,5 @@
 import '../qa-private-lifecycle.test.mjs';
+import './system-chrome-readiness.test.mjs';
 // Synthetic processes, reports and collection only. No browser, Auth or DB starts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,7 +20,9 @@ const canary = 'SYNTHETIC_PRIVATE_eyJtoken.sb_secret_FAKE.https://private.invali
 const jwt = role => `e30.${Buffer.from(JSON.stringify({ role })).toString('base64url')}.synthetic`;
 const environment = () => ({ PATH: process.env.PATH, GITHUB_ACTIONS: 'true', RUNNER_TEMP, YEONI_E2E: '1',
   GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/agent/yeoni-japanese-ci-20261110',
-  NEXT_PUBLIC_SUPABASE_URL: STACK_ORIGIN, NEXT_PUBLIC_SUPABASE_ANON_KEY: jwt('anon'), CI: 'true' });
+  NEXT_PUBLIC_SUPABASE_URL: STACK_ORIGIN, NEXT_PUBLIC_SUPABASE_ANON_KEY: jwt('anon'), CI: 'true', RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64',
+  RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261101.360.1',
+  GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com' });
 const journal = events => events.map(event => JSON.stringify({ token, ...event }) + '\n').join('');
 const events = (items = inventory, status = 'passed') => [
   { event: 'start' }, ...items.flatMap((item, index) => [
@@ -70,13 +73,13 @@ const levelFlowHashes = {
 };
 const workflowHash = 'c65190845968db7077198840dbdeb9d9a42ae4e57038f1dcfbcdcbc3bd0e5bf6';
 
-test('exact command, fixed project/source inventory, installer and ceilings stay narrow', async () => {
-  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 tests/e2e/japanese-middle-reading.spec.ts:3 tests/e2e/japanese-upper-reading.spec.ts:3 tests/e2e/japanese-level-choice.spec.ts:3 tests/e2e/japanese-due-review.spec.ts:3 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
+test('exact command, fixed project/source inventory, readiness and ceilings stay narrow', async () => {
+  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 tests/e2e/japanese-middle-reading.spec.ts:3 tests/e2e/japanese-upper-reading.spec.ts:3 tests/e2e/japanese-level-choice.spec.ts:3 tests/e2e/japanese-due-review.spec.ts:3 tests/e2e/curriculum-corruption.spec.ts:3 tests/e2e/curriculum-terminal.spec.ts:3 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
   assert.deepEqual(inventory, [{ source: 19, line: 3, column: 5, project: 5 }, { source: 38, line: 3, column: 5, project: 5 },
-    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }, { source: 51, line: 3, column: 5, project: 5 }, { source: 52, line: 3, column: 5, project: 5 }]);
-  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts']);
+    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }, { source: 51, line: 3, column: 5, project: 5 }, { source: 52, line: 3, column: 5, project: 5 }, { source: 53, line: 3, column: 5, project: 5 }, { source: 54, line: 3, column: 5, project: 5 }]);
+  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts']);
   assert.equal(stages[0].command, 'node --test scripts/isolated-chromium-smoke/safety.test.mjs');
-  assert.equal(stages[1].command, 'node node_modules/@playwright/test/cli.js install --with-deps --only-shell chromium');
+  assert.equal(stages[1].command, 'system-google-chrome-readiness');
   assert.equal(stages[1].lifecycleDiagnostics, true);
   assert.ok(stages.filter(stage => stage.lifecycleDiagnostics).every(stage => stage.id === 'stage-02'));
   assert.equal(stages[2].command, browserCommand); assert.equal(stages[2].diagnosticInventory, inventory);
@@ -87,7 +90,7 @@ test('exact command, fixed project/source inventory, installer and ceilings stay
   assert.equal(lock.packages['node_modules/@playwright/test'].version, '1.63.0');
   assert.equal(lock.packages['node_modules/playwright'].version, '1.63.0');
   assert.equal(diagnosticInvocations(browserCommand), 1);
-  for (const changed of [browserCommand.replace('tests/e2e/japanese-level-choice.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-due-review.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-middle-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-upper-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
+  for (const changed of [browserCommand.replace('tests/e2e/curriculum-corruption.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/curriculum-terminal.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-level-choice.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-due-review.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-middle-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-upper-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
     browserCommand.replace('--project chromium-app-smoke', '--project chromium'), stages[1].command, 'echo ' + browserCommand]) {
     assert.equal(diagnosticInvocations(changed), 0);
   }
@@ -111,7 +114,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
     }
     if (path === 'scripts/qa-private-source-ids.mjs') {
       let text = bytes.toString('utf8');
-      for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n", "  'tests/e2e/language-reset-receipts.spec.ts', // 48\n", "  'tests/e2e/japanese-middle-reading.spec.ts', // 49\n", "  'tests/e2e/japanese-upper-reading.spec.ts', // 50\n", "  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", "  'tests/e2e/japanese-due-review.spec.ts', // 52\n"]) {
+      for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n", "  'tests/e2e/language-reset-receipts.spec.ts', // 48\n", "  'tests/e2e/japanese-middle-reading.spec.ts', // 49\n", "  'tests/e2e/japanese-upper-reading.spec.ts', // 50\n", "  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", "  'tests/e2e/japanese-due-review.spec.ts', // 52\n", "  'tests/e2e/curriculum-corruption.spec.ts', // 53\n", "  'tests/e2e/curriculum-terminal.spec.ts', // 54\n"]) {
         assert.equal(text.split(addition).length, 2); text = text.replace(addition, '');
       }
       bytes = Buffer.from(text);
@@ -129,7 +132,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
   assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 345);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
-  const addition = "      - name: Verify eleven authenticated app flows in Chromium privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
+  const addition = "      - name: Verify thirteen authenticated app flows in SYSTEM GOOGLE CHROME privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
   assert.equal(workflow.split('len(tests) == 345').length, 2);
   assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 345', 'len(tests) == 343')).digest('hex'), workflowHash);
@@ -152,7 +155,7 @@ test('standalone configuration rejects wrong Actions/ref/loopback context before
     env: { PATH: process.env.PATH }, encoding: 'utf8', timeout: 5000,
   });
   assert.equal(result.status, 1); assert.equal(result.stderr, '');
-  assert.equal(result.stdout, 'chromium-app-smoke failed browser=chromium realBrowser=unverified fixtureCleanup=unverified\n');
+  assert.equal(result.stdout, 'chromium-app-smoke failed browser=system-google-chrome realBrowser=unverified fixtureCleanup=unverified\n');
 });
 
 test('config contains only Chromium, strict deadlines, private media settings and real loopback Next start', () => {
@@ -162,10 +165,13 @@ test('config contains only Chromium, strict deadlines, private media settings an
   });
   assert.equal(result.status, 0); const config = JSON.parse(result.stdout);
   assert.deepEqual(config.projects, [{ name: 'chromium-app-smoke' }]);
-  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts']);
+  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts', 'curriculum-corruption.spec.ts', 'curriculum-terminal.spec.ts']);
   assert.equal(config.fullyParallel, false); assert.equal(config.workers, 1); assert.equal(config.retries, 0);
   assert.equal(config.forbidOnly, true); assert.equal(config.repeatEach, 1); assert.equal(config.timeout, 90000);
   assert.equal(config.expect.timeout, 15000); assert.equal(config.use.browserName, 'chromium'); assert.equal(config.use.headless, true);
+  assert.equal(config.use.channel, 'chrome');
+  assert.equal(config.use.launchOptions, undefined);
+  assert.equal(config.use.connectOptions, undefined);
   assert.deepEqual(config.use.viewport, { width: 1280, height: 720 });
   assert.equal(config.use.actionTimeout, 15000); assert.equal(config.use.navigationTimeout, 30000);
   assert.equal(config.use.baseURL, 'http://127.0.0.1:3000'); assert.equal(config.use.locale, 'ko-KR');
@@ -176,7 +182,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
     url: 'http://127.0.0.1:3000/diet/settings', reuseExistingServer: false, timeout: 120000 });
 });
 
-test('Playwright list-only collection resolves exactly eleven titles and coordinates without fixtures', () => {
+test('Playwright list-only collection resolves exactly thirteen titles and coordinates without fixtures', () => {
   // --list does not start webServer, browsers, test bodies or fixture hooks.
   const args = browserCommand.split(' ').slice(1).concat(['--list', '--reporter=json']);
   const result = spawnSync(process.execPath, args, { env: environment(), encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
@@ -184,7 +190,7 @@ test('Playwright list-only collection resolves exactly eleven titles and coordin
   assert.deepEqual(report.errors, []);
   const specs = suite => [...(suite.specs ?? []), ...(suite.suites ?? []).flatMap(specs)];
   const selected = report.suites.flatMap(specs);
-  assert.equal(selected.length, 11);
+  assert.equal(selected.length, 13);
   const expected = new Map([
     ['auth.spec.ts:3', 'login, logout and same-account relogin preserve all 17 original keys without PATCH'],
     ['sync.spec.ts:3', 'first GET delivery delayed while a real form saves: originals and new input survive'],
@@ -197,6 +203,8 @@ test('Playwright list-only collection resolves exactly eleven titles and coordin
     ['japanese-upper-reading.spec.ts:3', 'all 18 new advanced reading answers and three completion stamps persist through real UI, reload and relogin'],
     ['japanese-level-choice.spec.ts:3', 'explicit Japanese level choices and preview backtracking preserve earlier records through real save, reload and relogin'],
     ['japanese-due-review.spec.ts:3', 'synthetic overdue reading subset keeps its queue and saves helped repeats without completing the full unit'],
+    ['curriculum-corruption.spec.ts:3', 'corrupt curriculum bytes survive attempted UI writes and reload until explicit synthetic fixture correction'],
+    ['curriculum-terminal.spec.ts:3', 'terminal beginner f12 completes twice through silent meaning UI with real saves and manual intermediate choice'],
   ]);
   for (const spec of selected) {
     const key = `${spec.file}:${spec.line}`;
@@ -238,7 +246,7 @@ test('reports reject stale/missing tokens, malformed schema, injection, oversize
   }
   assert.equal(parseDiagnosticJournal('', token, 1, inventory).report, 'missing');
   for (const invalid of ['', undefined, canary]) assert.equal(parseDiagnosticJournal(journal(events()), invalid, 1, inventory).report, 'invalid');
-  for (const invalid of [[], {}, inventory.slice(0, 7), inventory.slice(0, 8), inventory.slice(0, 9), inventory.slice(0, 10), [...inventory, inventory[0]], inventory.map(() => inventory[0]),
+  for (const invalid of [[], {}, inventory.slice(0, 7), inventory.slice(0, 8), inventory.slice(0, 9), inventory.slice(0, 10), inventory.slice(0, 11), inventory.slice(0, 12), [...inventory, inventory[0]], inventory.map(() => inventory[0]),
     inventory.map(item => ({ ...item, extra: canary })), inventory.map(item => ({ ...item, project: 0 }))]) {
     assert.equal(parseDiagnosticJournal(journal(events()), token, 1, invalid).report, 'invalid');
   }
@@ -333,17 +341,20 @@ test('deadline and cancellation remain failed, preserve cleanup, and never certi
   assert.deepEqual(options.output, ['stage-01 failed', 'stage-02 failed']);
 });
 
-test('three-stage sequencing propagates safety/install/browser failures, cancellation and exact timeout settings', async () => {
+test('three-stage sequencing propagates safety/readiness/browser failures, cancellation and exact timeout settings', async () => {
   for (const failure of [-1, 0, 1, 2]) {
     const options = await fresh(), calls = [];
-    const code = await supervise({ ...options, run: async (items, config) => {
+    const code = await supervise({ ...options, readiness: async config => {
+      calls.push('stage-02'); assert.equal(config.timeoutMs, 240000);
+      return calls.length - 1 === failure ? 1 : 0;
+    }, run: async (items, config) => {
       const stage = items[0]; calls.push(stage.id); assert.equal(config.timeoutMs, stage.timeoutMs);
       return calls.length - 1 === failure ? 1 : 0;
     } });
     assert.equal(code, failure < 0 ? 0 : 1); assert.equal(calls.length, failure < 0 ? 3 : failure + 1);
     privateOutput(options.output);
     assert.equal(options.output.at(-1).includes('realBrowser=true'), failure < 0);
-    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=11 browser=chromium realBrowser=true fixtureCleanup=passed');
+    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=13 browser=system-google-chrome realBrowser=true fixtureCleanup=passed');
   }
   const options = await fresh(), controller = new AbortController(); controller.abort();
   assert.equal(await supervise({ ...options, signal: controller.signal, run: () => { throw new Error(canary); } }), 1);
@@ -395,10 +406,10 @@ test('sixth test requires the real notice fix and three distinct saved reviews w
 test('independently reviewed seventh receipt scenario is pinned while IDs 49–52 append reading, level choice and review coverage', async () => {
   assert.equal(createHash('sha256').update(await readFile('tests/e2e/language-reset-receipts.spec.ts')).digest('hex'), receiptTestHash);
   const sourceMap = await readFile('scripts/qa-private-source-ids.mjs', 'utf8');
-  const originalMap = sourceMap.replace("  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", '').replace("  'tests/e2e/japanese-due-review.spec.ts', // 52\n", '');
+  const originalMap = sourceMap.replace("  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", '').replace("  'tests/e2e/japanese-due-review.spec.ts', // 52\n", '').replace("  'tests/e2e/curriculum-corruption.spec.ts', // 53\n", '').replace("  'tests/e2e/curriculum-terminal.spec.ts', // 54\n", '');
   assert.equal(createHash('sha256').update(originalMap).digest('hex'), 'eadd83cc376147d355cf907670980a94166d57f16daf3365dda367e1a9d141c5');
-  assert.equal(sources.length, 52);
-  assert.deepEqual(sources.slice(48), ['tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts']);
+  assert.equal(sources.length, 54);
+  assert.deepEqual(sources.slice(48), ['tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts']);
 });
 
 test('reading scenarios retain all 36 source-mapped questions, UI writes and exact local-before-DB confirmation', async () => {
@@ -532,6 +543,8 @@ test('each new literal phase maps external helper failure only to its exact priv
   for (const [file, sourceId, expectedLines] of [
     ['japanese-level-choice.spec.ts', 51, [33, 41, 50, 58, 84]],
     ['japanese-due-review.spec.ts', 52, [66, 76, 87, 97, 98, 102]],
+    ['curriculum-corruption.spec.ts', 53, [22, 28, 41, 46]],
+    ['curriculum-terminal.spec.ts', 54, [12, 17, 21, 30, 37]],
   ]) {
     const root = await mkdtemp(join(tmpdir(), 'level-native-phase-'));
     try {
@@ -615,4 +628,137 @@ test('repeat assertion accepts the real saver timestamp and rejects stale future
     { updatedAt: new Date(repeated.at + 1).toISOString() }, { selectedLevel: 'advanced' },
     { practicedUnits: { unexpected: now.toISOString() } }, { answers: beforeRepeat.journey.answers },
   ]) assert.throws(() => check(expect, { ...repeated, journey: { ...repeated.journey, ...changes } }, beforeRepeat, expectedAnswers, now.getTime()));
+});
+
+
+test('reviewed curriculum repair and bounded real-UI scenarios retain exact source contracts', async () => {
+  const hashes = {
+  "app/data/japaneseLearningStorage.test.ts": "b387b4c3110708c0d851425c896c40f5c37e8529d839cfe534141882d85a9d86",
+  "app/data/languageCloudSync.ts": "d42082e3ead11e14059a325bc3cef12b9ad74e51e03320824734e6d309f1f48b",
+  "app/language/learn/page.tsx": "8bd9a15aa3ff4fa271646ac1257291691d8e092159268632e835142e9a9ee3b0",
+  "app/language/progress/page.tsx": "0face1d240b8c6fc3d799ba32f89142040ecf6c0a798229ad9d08fdb426b6773",
+  "components/LanguageCloudSync.tsx": "530ad50e9ade9673ab565a0b8a67f5b0ebe4577480bc24a236cd7a0a2b8ad6db",
+  "components/language/FocusedLesson.tsx": "638447ef4f8592a5571ea1656f079d8b5a8488a001ebcff222048a207739e8e6",
+  "components/language/KanaStarter.tsx": "5bf3defa4650c2ad80f0318402bb2a9308ea3e22e72b2f6e966585175aaf2e62",
+  "components/language/LearningWelcome.tsx": "c695eb46ce075faceb1d9298593863dc8195bde8f2bd8a746ee93aa63085aa4e",
+  "components/language/LevelLearningWorkspace.tsx": "3c725ef37d35b10c17d8962897f25ee756cb0b9090000706a6b1b366bbf412b2",
+  "tests/fixtures/curriculumUiHarness.ts": "cc0b1bedc39e32cf82232e6a630f85cd9e87aa8e17e9ee0ff5774e4df0a521ce",
+  "tests/language-storage-compatibility-ui.test.ts": "bf9db8fc45832aafb8c1480fab71a7bab6ef530625a35dca1ef30ccdb9aa83c5",
+  "utils/curriculumProgress.ts": "c9ce21e1c5e3be1deb15fe97f681169fc6a5a1364c766cc44c1940514b1912ef",
+  "utils/learningSession.ts": "b672566336eca17ce5ba4017b6c32a25cd0a50a8c191a93b431fc113c1eef528",
+  "tests/e2e/curriculum-corruption.spec.ts": "77d9bcccc9f3bf3e285dc2f97a5cda9ff2af9c01eb7dfbf342fb9225ac0f91af",
+  "tests/e2e/curriculum-terminal.spec.ts": "9d7becc76a7cb1fceb07475368b68987b7d3247149d1902dd66d2d4b44cac908",
+  "tests/e2e/curriculum-browser-state.ts": "276908fe0cc7b095cf34ad530b4cfa04c51271c3ee8402a885caca42fe3d0a7b"
+};
+  for (const [path, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash, path);
+  const helper = await readFile('tests/e2e/curriculum-browser-state.ts', 'utf8');
+  const corruption = await readFile('tests/e2e/curriculum-corruption.spec.ts', 'utf8');
+  const terminal = await readFile('tests/e2e/curriculum-terminal.spec.ts', 'utf8');
+  for (const source of [helper, corruption, terminal]) for (const forbidden of ['page.route', 'route.fulfill', 'addInitScript', 'waitForTimeout', 'test.setTimeout', 'test.skip', 'test.fixme', 'audio.play', 'speakJapanese', 'qa.createAccount(', 'process.env.']) assert.ok(!source.includes(forbidden), forbidden);
+  for (const source of [helper, terminal]) assert.ok(!source.includes('localStorage.setItem'));
+  assert.equal(helper.match(/client\.from\('language_user_state'\)\.update/g)?.length, 1);
+  assert.equal(corruption.match(/localStorage\.setItem/g)?.length, 1);
+  for (const source of [corruption, terminal]) { assert.equal(source.match(/test\('/g)?.length, 1); assert.ok(source.split('\n')[2].startsWith('test(')); }
+  for (const required of ['await answerTerminal(page)', 'await preserved(malformed)', 'await preserved(invalidShape)', 'await fixtureReplace(saved[CURRICULUM_PROGRESS_KEY] as string)', "expect(progress.completedLessonIds).toEqual(['f01'])", 'expect(writeCount(qa)).toBe(writes)', 'await persisted(page, qa, saved, fitness)']) assert.ok(corruption.includes(required), required);
+  for (const required of ['terminalPath', 'await answerTerminal(page)', 'sessions.push(completed.sessionId)', 'new Set(sessions).size).toBe(2)', "name: '중급 선택하기'", 'await persisted(page, qa, saved, fitness)', "name: '로그아웃'"]) assert.ok(terminal.includes(required), required);
+  for (const required of ['getSessionQuizIndices(terminal, 5)', 'for (const [index, word] of terminal.words.entries())', 'for (const [cursor, index] of indices.entries())', "not.toBe('listening')", "name: '오늘 연습 저장하기'", '...priorAttempts, { score: 100, completedAt: attempt.completedAt, sessionId: draft.id }', "lastModality: 'meaning'", 'await persisted(page, qa, saved, fitness)', 'historicalDraft', 'historicalReview']) assert.ok(helper.includes(required), required);
+});
+
+// Execute the exact terminal assertion function, not a hand-copied equivalent.
+// Synthetic wrappers test assertion sensitivity only; they never run the app,
+// browser, Auth, database, server, network, installation or a successful reply.
+test('terminal assertions reject prior-history loss and require independently bounded Seoul activity dates', async () => {
+  const ts = (await import('typescript')).default;
+  const { expect: realExpect } = await import('@playwright/test');
+  const { CURRICULUM } = await import('../../data/curriculum.ts');
+  const { getSessionQuizIndices } = await import('../../utils/learningSession.ts');
+  const source = await readFile('tests/e2e/curriculum-browser-state.ts', 'utf8');
+  const toJs = text => ts.transpileModule(text.replaceAll('export ', ''), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  const oldTime = '2001-01-02T00:00:00.000Z';
+  const values = new Function('oldTime', toJs(source.slice(source.indexOf('export const historicalDraft'),
+    source.indexOf('export async function seedCurriculum'))) + '; return { historicalDraft, historicalProgress, historicalReview };')(oldTime);
+  const { historicalDraft, historicalProgress, historicalReview } = values;
+  const ids = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002'];
+  const indices = getSessionQuizIndices(CURRICULUM.find(item => item.id === 'f12'), 5);
+  assert.deepEqual(indices, [2, 4, 6]);
+  const progressKey = 'japaneseCurriculumProgressV1', reviewKey = 'japaneseCurriculumReviewV1', journeyKey = 'japaneseLevelJourneyV1';
+  const canonical = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+  const clone = value => JSON.parse(JSON.stringify(value));
+  const expect = value => value?.syntheticLocator ? {
+    async toBeVisible() { assert.equal(value.count, 1); },
+    async toHaveCount(count) { assert.equal(value.count, count); },
+    async toHaveAttribute(name, expected) { assert.equal(value[name], expected); },
+  } : realExpect(value);
+  const functionSource = toJs(source.slice(source.indexOf('export async function completeTerminal')));
+  async function run(mutate = () => {}, options = {}) {
+    const { repeat = false, start = Date.parse('2026-11-12T01:00:00.000Z'), end = start + 10,
+      day = '2026-11-12', completion = start + 1 } = options;
+    const previousIds = repeat ? [ids[0]] : [], id = repeat ? ids[1] : ids[0];
+    const beforeProgress = clone(historicalProgress);
+    if (repeat) {
+      beforeProgress.completedLessonIds.push('f12');
+      beforeProgress.lessonAttempts.f12 = [{ score: 100, completedAt: new Date(start - 60_000).toISOString(), sessionId: ids[0] }];
+      beforeProgress.activityDates.push('2026-11-12');
+    }
+    const fitness = { synthetic: 'unrelated-fitness' }, before = { unrelated: 'synthetic-language',
+      [progressKey]: JSON.stringify(beforeProgress), [journeyKey]: JSON.stringify({ selectedLevel: 'beginner', practicedUnits: { 'retired-unit': oldTime } }) };
+    const progress = { ...clone(beforeProgress), completedLessonIds: ['f01', 'f12'], quizScores: { f01: 67, f12: 100 },
+      lessonAttempts: { f01: clone(beforeProgress.lessonAttempts.f01),
+        f12: [...clone(beforeProgress.lessonAttempts.f12 ?? []), { score: 100, completedAt: new Date(completion).toISOString(), sessionId: id }] },
+      lessonDrafts: { [historicalDraft.lessonId]: clone(historicalDraft) }, activeSession: clone(historicalDraft),
+      activityDates: [...new Set([...beforeProgress.activityDates, day])].sort() };
+    const reviews = [clone(historicalReview), ...indices.map(index => ({ id: `f12:${index}`, lessonId: 'f12',
+      lastSessionId: id, lastSessionResult: true, wrongCount: 0, lastModality: 'meaning' }))];
+    mutate(progress, reviews);
+    let savedClicked = false, persistedCalls = 0;
+    const page = { evaluate: async () => start, getByRole: (role, options) => ({ syntheticLocator: true,
+      count: role === 'link' && options.name === '다음 수업 보기' ? 0 : 1, href: '/language/levels?level=beginner',
+      click: async () => { assert.equal(options.name, '오늘 연습 저장하기'); savedClicked = true; } }),
+      getByText: () => ({ syntheticLocator: true, count: 1 }) };
+    const curriculumSnapshot = async () => ({ raw: JSON.stringify(savedClicked ? progress : { activeSession: { id } }),
+      reviewRaw: JSON.stringify(reviews), at: end });
+    const persisted = async (_page, _qa, saved, givenFitness) => {
+      assert.equal(savedClicked, true); assert.equal(givenFitness, fitness); persistedCalls++;
+      assert.equal(canonical(saved), canonical({ ...before, [progressKey]: JSON.stringify(progress), [reviewKey]: JSON.stringify(reviews) }));
+    };
+    const names = ['expect', 'curriculumSnapshot', 'CURRICULUM_PROGRESS_KEY', 'CURRICULUM_REVIEW_KEY', 'LEVEL_JOURNEY_KEY',
+      'historicalProgress', 'historicalDraft', 'historicalReview', 'indices', 'uuid', 'persisted', 'canonical'];
+    const verify = new Function(...names, functionSource + '; return completeTerminal;')(expect, curriculumSnapshot,
+      progressKey, reviewKey, journeyKey, historicalProgress, historicalDraft, historicalReview, indices,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, persisted, canonical);
+    try { await verify(page, { read: async () => fitness }, before, fitness, previousIds); }
+    catch (error) { assert.equal(persistedCalls, 0, 'Invalid local evidence must fail before persistence confirmation'); throw error; }
+    assert.equal(persistedCalls, 1);
+  }
+  const midnight = Date.parse('2026-11-12T14:59:59.995Z');
+  for (const [name, options] of [
+    ['first completion', {}], ['repeat completion', { repeat: true }],
+    ['Seoul day differs from UTC', { start: Date.parse('2026-11-12T16:00:00.000Z'), day: '2026-11-13' }],
+    ['midnight save before boundary', { start: midnight, day: '2026-11-12' }],
+    ['midnight save after boundary', { start: midnight, day: '2026-11-13', completion: midnight + 7 }],
+    ['repeat crosses midnight', { repeat: true, start: midnight, day: '2026-11-13', completion: midnight + 7 }],
+  ]) await assert.doesNotReject(() => run(undefined, options), name);
+  for (const [name, mutate, options = {}] of [
+    ['old f01 attempt loss', progress => { progress.lessonAttempts.f01 = []; }],
+    ['wrong new score', progress => { progress.lessonAttempts.f12.at(-1).score = 0; }],
+    ['stale completion time', progress => { progress.lessonAttempts.f12.at(-1).completedAt = oldTime; }],
+    ['future completion time', progress => { progress.lessonAttempts.f12.at(-1).completedAt = '2099-01-01T00:00:00.000Z'; }],
+    ['lost special own-key draft', progress => { progress.lessonDrafts = {}; }],
+    ['lost extension', progress => { delete progress.extension; }],
+    ['changed unrelated review', (_progress, reviews) => { reviews[0].wrongCount = 99; }],
+    ['lost historical activity date', progress => { progress.activityDates = ['2026-11-12']; }],
+    ['changed prior f12 score', progress => { progress.lessonAttempts.f12[0].score = 0; }, { repeat: true }],
+    ['changed prior f12 timestamp', progress => { progress.lessonAttempts.f12[0].completedAt = oldTime; }, { repeat: true }],
+    ['lost prior f12 attempt', progress => { progress.lessonAttempts.f12.shift(); }, { repeat: true }],
+    ['missing current local day', progress => { progress.activityDates = ['2001-01-02']; }],
+    ['duplicated current day', progress => { progress.activityDates.push('2026-11-12'); }],
+    ['unrelated future date', progress => { progress.activityDates.push('2099-01-01'); }],
+    ['UTC date substituted for Seoul', progress => { progress.activityDates = ['2001-01-02', '2026-11-12']; },
+      { start: Date.parse('2026-11-12T16:00:00.000Z'), day: '2026-11-13' }],
+    ['both boundary days added', progress => { progress.activityDates = ['2001-01-02', '2026-11-12', '2026-11-13']; }, { start: midnight }],
+    ['unexpected new attempt field', progress => { progress.lessonAttempts.f12.at(-1).syntheticExtra = true; }],
+  ]) await assert.rejects(() => run(mutate, options), undefined, name);
 });

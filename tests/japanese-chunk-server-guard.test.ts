@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import { setTimeout as delay } from 'node:timers/promises';
 import { before, after, test } from 'node:test';
 import type { PGlite } from '@electric-sql/pglite';
 import { stableState } from '../app/data/cloudSync.ts';
@@ -11,7 +13,7 @@ import {
 } from './fixtures/japanese-chunk-server-guard/fixture.ts';
 
 let db: PGlite;
-const names = ['legacy','upsert','monotonic','collision','unknown','malformed','capacity','bytes','reset','oldreset','explicit','order1','order2','rollback','other','migration','shape','replay','retry','time'] as const;
+const names = ['legacy','upsert','monotonic','collision','unknown','malformed','capacity','bytes','reset','oldreset','explicit','order1','order2','rollback','other','migration','shape','replay','retry','time','clocktie'] as const;
 const owners = Object.fromEntries(names.map(name => [name, randomUUID()])) as Record<typeof names[number], string>;
 const initial: State = { [key]: review(['a']), japaneseAppSettings: '{"goal":1}' };
 let beforeAccess: Awaited<ReturnType<typeof accessSnapshot>>;
@@ -29,6 +31,38 @@ async function rejectUnchanged(owner: string, state: State, error: RegExp) {
   const before = await row();
   await assert.rejects(writeState(db, owner, state), error);
   assert.deepEqual(await row(), before);
+}
+
+type ResetClock = { read: () => Promise<string>; now: () => number; pause: () => Promise<void> };
+const fixtureClock: ResetClock = {
+  read: async () => (await db.query<{ clock: string }>(
+    `select to_char(clock_timestamp() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as clock`,
+  )).rows[0].clock,
+  now: () => performance.now(),
+  pause: () => delay(1),
+};
+
+// PGlite's wall clock can give adjacent RPCs the same timestamp. The historical
+// late-replay control requires a later generation, not a lucky random UUID tie.
+// Poll only the clock, never retry a destructive RPC or alter global Date.now.
+async function waitForResetClockAfter(marker: string, clock: ResetClock = fixtureClock) {
+  const previous = Date.parse(marker.split('|')[0]);
+  if (!Number.isFinite(previous)) throw new Error('Invalid prior reset clock marker');
+  const start = clock.now();
+  const checkDeadline = () => {
+    const elapsed = clock.now() - start;
+    if (!Number.isFinite(elapsed) || elapsed < 0) throw new Error('Invalid monotonic reset clock deadline');
+    if (elapsed >= 1_000) throw new Error('Reset clock precondition did not advance within 1000 ms');
+  };
+  for (let polls = 0; polls < 1_000; polls++) {
+    checkDeadline();
+    const observed = Date.parse(await clock.read());
+    checkDeadline();
+    if (!Number.isFinite(observed)) throw new Error('Invalid fixture reset clock');
+    if (observed > previous) return observed;
+    await clock.pause();
+  }
+  throw new Error('Reset clock precondition did not advance within 1000 reads');
 }
 
 test('prototype is docs-only, invoker-only, guarded, and leaves existing ACL/RLS/reset body and data unchanged', async (t) => {
@@ -195,12 +229,19 @@ test('automatic merge would fail existing whole-state verification; rejection ne
 
 test('known residual risk: replaying an old reset request after another reset executes again in unchanged RPC', async () => {
   const owner = owners.replay, first = randomUUID(), second = randomUUID();
+  const reset = async (request: string) => (await db.query<{ receipt: { marker: string } }>(
+    "select public.reset_my_app_records('language',$1,'초기화') as receipt", [request],
+  )).rows[0].receipt;
   await asUser(db,owner);
-  await db.query("select public.reset_my_app_records('language',$1,'초기화')",[first]);
-  await db.query("select public.reset_my_app_records('language',$1,'초기화')",[second]);
+  const firstReceipt = await reset(first);
+  await waitForResetClockAfter(firstReceipt.marker);
+  const secondReceipt = await reset(second);
+  assert.ok(Date.parse(secondReceipt.marker.split('|')[0]) > Date.parse(firstReceipt.marker.split('|')[0]));
   const current = (await readState(db,owner))!;
   await writeState(db,owner,{...current,[key]:review(['after-second'],current[resetKey] as string)});
-  await db.query("select public.reset_my_app_records('language',$1,'초기화')",[first]);
+  await waitForResetClockAfter(secondReceipt.marker);
+  const replayReceipt = await reset(first);
+  assert.ok(Date.parse(replayReceipt.marker.split('|')[0]) > Date.parse(secondReceipt.marker.split('|')[0]));
   const replayed = (await readState(db,owner))!;
   assert.equal(replayed[key],undefined);
   assert.ok((replayed[resetKey] as string).endsWith(first));
@@ -215,6 +256,74 @@ test('millisecond marker ordering matches current JS tie breaker, not microsecon
   await writeState(db,owner,{[resetKey]:earlier});
   await writeState(db,owner,{[resetKey]:later});
   await rejectUnchanged(owner,{[resetKey]:earlier},/RESET_ROLLBACK/);
+});
+
+test('identical reset timestamps use UUID order and reject a descending marker without clearing new work', async () => {
+  const owner = owners.clocktie;
+  const lower = '2026-11-07T00:00:00.000000Z|00000000-0000-4000-8000-000000000001';
+  const higher = '2026-11-07T00:00:00.000000Z|ffffffff-ffff-4fff-8fff-ffffffffffff';
+  await asUser(db,owner);
+  await writeState(db,owner,{[resetKey]:lower});
+  await writeState(db,owner,{[resetKey]:higher});
+  await writeState(db,owner,{[resetKey]:higher,[key]:review(['after-second'],higher)});
+  // Explicit snapshot ordering is separate from the historical RPC replay test.
+  // Keeping the guard's tied-clock rejection does not repair that old RPC.
+  await rejectUnchanged(owner,{[resetKey]:lower},/RESET_ROLLBACK/);
+});
+
+test('historical replay clock precondition is bounded with local inputs and never changes global time', async (t) => {
+  const originalNow = Date.now;
+  const prior = '2026-11-07T00:00:00.000000Z|ffffffff-ffff-4fff-8fff-ffffffffffff';
+  const at = (offset: number) => new Date(Date.parse(prior.split('|')[0]) + offset).toISOString();
+  const model = (offsets: number[], step = 100) => {
+    let reads = 0, pauses = 0, elapsed = 0;
+    return {
+      clock: {
+        read: async () => at(offsets[Math.min(reads++, offsets.length - 1)]),
+        now: () => elapsed,
+        pause: async () => { pauses++; elapsed += step; },
+      },
+      counts: () => ({ reads, pauses }),
+    };
+  };
+  try {
+    await t.test('an equal clock must advance before success', async () => {
+      const input = model([0, 1]);
+      assert.equal(await waitForResetClockAfter(prior,input.clock),Date.parse(at(1)));
+      assert.deepEqual(input.counts(),{reads:2,pauses:1});
+    });
+    await t.test('stalled and backward clocks fail at the deadline', async () => {
+      for (const offset of [0, -1]) {
+        const input = model([offset]);
+        await assert.rejects(waitForResetClockAfter(prior,input.clock),/within 1000 ms/);
+        assert.deepEqual(input.counts(),{reads:10,pauses:10});
+      }
+    });
+    await t.test('a stalled deadline still has a finite read bound', async () => {
+      const input = model([0],0);
+      await assert.rejects(waitForResetClockAfter(prior,input.clock),/within 1000 reads/);
+      assert.deepEqual(input.counts(),{reads:1000,pauses:1000});
+    });
+    await t.test('invalid clock evidence and read failures are not retried', async () => {
+      const input = model([0]);
+      await assert.rejects(waitForResetClockAfter('invalid',input.clock),/Invalid prior/);
+      assert.deepEqual(input.counts(),{reads:0,pauses:0});
+      await assert.rejects(waitForResetClockAfter(prior,{...input.clock,read:async () => 'invalid'}),/Invalid fixture/);
+      const failure = new Error('synthetic clock read failure');
+      await assert.rejects(waitForResetClockAfter(prior,{...input.clock,read:async () => { throw failure; }}),error => error === failure);
+      assert.deepEqual(input.counts(),{reads:0,pauses:0});
+    });
+    await t.test('independent concurrent helper calls do not share timing state', async () => {
+      const first = model([0,1]), second = model([-1,0,2]);
+      assert.deepEqual(await Promise.all([
+        waitForResetClockAfter(prior,first.clock),waitForResetClockAfter(prior,second.clock),
+      ]),[Date.parse(at(1)),Date.parse(at(2))]);
+      assert.deepEqual(first.counts(),{reads:2,pauses:1});
+      assert.deepEqual(second.counts(),{reads:3,pauses:2});
+    });
+  } finally {
+    assert.equal(Date.now,originalNow);
+  }
 });
 
 

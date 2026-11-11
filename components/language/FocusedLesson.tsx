@@ -5,7 +5,7 @@ import { useYeoniPreferences } from "@/components/useYeoniPreferences";
 import { useEffect, useRef, useState } from "react";
 import { TRACKS, getTrackLessons, type CurriculumLesson } from "@/data/curriculum";
 import { toKoreanPronunciation } from "@/data/learningDataExpansion";
-import { CURRICULUM_REVIEW_KEY, loadCurriculumProgress, saveCurriculumProgress, type CurriculumReviewItem } from "@/utils/curriculumProgress";
+import { CURRICULUM_REVIEW_KEY, assertCurriculumProgressCurrent, curriculumProgressErrorMessage, CurriculumProgressError, type CurriculumProgress, loadCurriculumProgress, saveCurriculumProgress, type CurriculumReviewItem } from "@/utils/curriculumProgress";
 import { DEFAULT_INTEGRATED_LEARNING_SETTINGS, loadIntegratedLearningSettings } from "@/utils/integratedLearningSettings";
 import { answerSessionQuestion, createLearningSession, getSessionQuizIndices, getSessionResult, normalizeLearningSession, retrySessionQuestion, updateSessionReviews, withLearningSessionDraft, withoutLearningSessionDraft } from "@/utils/learningSession";
 import { getLocalDateKey } from "@/utils/dateKey";
@@ -25,6 +25,9 @@ export default function FocusedLesson({ lesson, studyLevel }: { lesson: Curricul
   const [settings, setSettings] = useState(DEFAULT_INTEGRATED_LEARNING_SETTINGS);
   const [session, setSession] = useState(() => createLearningSession(lesson.id, 10, "starter"));
   const [loaded, setLoaded] = useState(false);
+  const [readError, setReadError] = useState("");
+  const [readAttempt, setReadAttempt] = useState(0);
+  const progressRef = useRef<CurriculumProgress | null>(null);
   const [resumed, setResumed] = useState(false);
   const [finished, setFinished] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -44,26 +47,34 @@ export default function FocusedLesson({ lesson, studyLevel }: { lesson: Curricul
   const nextHref = nextLesson ? `/language/learn?lesson=${nextLesson.id}${studyLevel ? `&level=${studyLevel}` : ""}` : courseHref;
 
   useEffect(() => {
-    const storedSettings = loadIntegratedLearningSettings();
-    const progress = loadCurriculumProgress();
-    const draft = normalizeLearningSession(progress.lessonDrafts?.[lesson.id] ?? progress.activeSession, lesson);
-    setSettings(storedSettings);
-    const restored = draft ?? createLearningSession(lesson.id, storedSettings.dailyMinutes, storedSettings.learnerMode);
-    if (restored.stage === 2 || restored.stage === 3) restored.stage = 4;
-    setSession(restored);
-    setResumed(Boolean(draft));
-    setLoaded(true);
-    setChunkPracticeOpen(false);
-  }, [lesson]);
+    setLoaded(false);
+    progressRef.current = null;
+    try {
+      const storedSettings = loadIntegratedLearningSettings();
+      const progress = loadCurriculumProgress();
+      progressRef.current = progress;
+      const draft = normalizeLearningSession(progress.lessonDrafts?.[lesson.id] ?? progress.activeSession, lesson, true);
+      setSettings(storedSettings);
+      const restored = draft ?? createLearningSession(lesson.id, storedSettings.dailyMinutes, storedSettings.learnerMode);
+      if (restored.stage === 2 || restored.stage === 3) restored.stage = 4;
+      setSession(restored);
+      setResumed(Boolean(draft));
+      setLoaded(true);
+      setChunkPracticeOpen(false);
+      setReadError("");
+    } catch (error) {
+      setReadError(curriculumProgressErrorMessage(error, "학습 기록을 불러오지 못했어요. 저장소 설정을 확인한 뒤 다시 읽어 주세요."));
+    }
+  }, [lesson, readAttempt]);
 
   useEffect(() => {
     if (!loaded || finished || finishing.current) return;
     try {
-      const latest = loadCurriculumProgress();
-      saveCurriculumProgress(withLearningSessionDraft(latest, session));
+      if (!progressRef.current) return;
+      progressRef.current = saveCurriculumProgress(withLearningSessionDraft(progressRef.current, session));
       setSaveError("");
-    } catch {
-      setSaveError("이 기기에 이어할 내용을 저장하지 못했어요. 저장 공간이나 비공개 브라우징 설정을 확인해 주세요.");
+    } catch (error) {
+      setSaveError(curriculumProgressErrorMessage(error, "이 기기에 이어할 내용을 저장하지 못했어요. 저장 공간이나 비공개 브라우징 설정을 확인해 주세요."));
     }
   }, [loaded, finished, session]);
 
@@ -80,14 +91,16 @@ export default function FocusedLesson({ lesson, studyLevel }: { lesson: Curricul
     stop();
     try {
       const now = new Date();
-      const latest = loadCurriculumProgress();
+      const latest = progressRef.current;
+      if (!latest) throw new CurriculumProgressError("read");
+      assertCurriculumProgressCurrent(latest);
       const raw = localStorage.getItem(CURRICULUM_REVIEW_KEY);
       const parsed: unknown = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(parsed)) throw new Error("Review data is not an array");
       const previousReviews = parsed.filter((item): item is CurriculumReviewItem => Boolean(item && typeof item === "object" && typeof item.id === "string"));
       const reviews = updateSessionReviews(previousReviews, lesson, session, now);
       localStorage.setItem(CURRICULUM_REVIEW_KEY, JSON.stringify(reviews));
-      saveCurriculumProgress({
+      progressRef.current = saveCurriculumProgress({
         ...withoutLearningSessionDraft(latest, session), selectedTrack: lesson.track, lastLessonId: lesson.id,
         completedLessonIds: [...new Set([...latest.completedLessonIds, lesson.id])],
         quizScores: { ...latest.quizScores, [lesson.id]: result.score },
@@ -96,12 +109,13 @@ export default function FocusedLesson({ lesson, studyLevel }: { lesson: Curricul
       });
       setSaveError("");
       setFinished(true);
-    } catch {
-      setSaveError("학습 결과를 저장하지 못했어요. 이 화면을 닫지 말고 저장을 다시 시도해 주세요. 기존 기록은 초기화하지 않습니다.");
+    } catch (error) {
+      setSaveError(curriculumProgressErrorMessage(error, "학습 결과를 저장하지 못했어요. 이 화면을 닫지 말고 저장을 다시 시도해 주세요. 기존 기록은 초기화하지 않습니다."));
       finishing.current = false;
     }
   };
 
+  if (readError) return <section className={styles.focus}><p role="alert">{readError}</p><button type="button" onClick={() => setReadAttempt(value => value + 1)}>기록 다시 읽기</button><Link href={courseHref}>과정으로</Link></section>;
   if (!loaded) return <div className={styles.focus} role="status">이어할 학습을 준비하고 있어요.</div>;
   const stagePosition = visibleStages.indexOf(session.stage);
   const next = () => {

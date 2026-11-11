@@ -157,7 +157,7 @@ test('outer supervisor independently settles a noncooperative runner and ignores
     run: (_items, options) => { calls++; lateEmit = options.emit; return new Promise(resolve => { lateResolve = resolve; }); } });
   result.then(() => { settled = true; }); await flush(); await c.tick(20); await c.tick(4999); assert.equal(settled, false);
   await c.tick(1); assert.equal(await result, 1); assert.equal(calls, 1);
-  assert.deepEqual(output, ['stage-02 not-run', 'stage-03 not-run', 'chromium-app-smoke failed browser=chromium realBrowser=unverified fixtureCleanup=unverified']);
+  assert.deepEqual(output, ['stage-02 not-run', 'stage-03 not-run', 'chromium-app-smoke failed browser=system-google-chrome realBrowser=unverified fixtureCleanup=unverified']);
   lateEmit(canary); lateResolve(0); controller.abort(); await c.tick(100000);
   assert.equal(output.length, 3); assert.equal(c.pending.size, 0); assert.equal(getEventListeners(controller.signal, 'abort').length, 0);
 });

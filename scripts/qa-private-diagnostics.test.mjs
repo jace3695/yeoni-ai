@@ -354,7 +354,7 @@ test('journal revalidation rejects forged extra fields, categories, numeric boun
 });
 
 test('appended level-choice and due-review IDs retain private same-spec failure coordinates', async () => {
-  for (const [file, source] of [['tests/e2e/japanese-level-choice.spec.ts', 51], ['tests/e2e/japanese-due-review.spec.ts', 52]]) {
+  for (const [file, source] of [['tests/e2e/japanese-level-choice.spec.ts', 51], ['tests/e2e/japanese-due-review.spec.ts', 52], ['tests/e2e/curriculum-corruption.spec.ts', 53], ['tests/e2e/curriculum-terminal.spec.ts', 54]]) {
     const fixture = await fresh(), reporter = new PrivateDiagnostics(fixture);
     const definition = { file, line: 3, column: 5 };
     const at = { file, line: 8, column: 11 };

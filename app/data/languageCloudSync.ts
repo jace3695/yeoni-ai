@@ -1,3 +1,4 @@
+import { CURRICULUM_PROGRESS_KEY, CurriculumProgressError, parseCurriculumProgress } from "../../utils/curriculumProgress.ts";
 import { mergeCloudState, mergeCloudStateFromBase, type CloudState } from "./cloudSync.ts";
 import { CHUNK_REVIEW_EVENT, CHUNK_REVIEW_KEY, compareChunkGenerations, emptyChunkReview, mergeChunkReviewSnapshots, parseChunkReview, readChunkReview } from "../../utils/japaneseChunkReview.ts";
 import { respectRecordResets } from "./appRecordReset.ts";
@@ -11,7 +12,7 @@ const LANGUAGE_LAST_USER_KEY = "language-cloud-sync-user";
 
 export type LanguageState = Record<string, string>;
 
-export function readLanguageState(): LanguageState {
+function collectLanguageState(): LanguageState {
   if (typeof window === "undefined") return {};
   assertLanguageStorageReadable(window.localStorage);
   const state: LanguageState = {};
@@ -20,6 +21,12 @@ export function readLanguageState(): LanguageState {
     if (value !== null) state[key] = value;
   }
   if (state[CHUNK_REVIEW_KEY] !== undefined) state[CHUNK_REVIEW_KEY] = JSON.stringify(readChunkReview(window.localStorage));
+  return state;
+}
+
+export function readLanguageState(): LanguageState {
+  const state = collectLanguageState();
+  if (state[CURRICULUM_PROGRESS_KEY] !== undefined) parseCurriculumProgress(state[CURRICULUM_PROGRESS_KEY]);
   return state;
 }
 
@@ -41,33 +48,66 @@ function notifyChunkReview() {
 
 export async function applyLanguageState(state: CloudState, base?: CloudState, check?: () => void) {
   if (typeof window === "undefined") return;
-  return withLanguageRecordLock(() => {
-    check?.();
-    recoverLanguageStorage(window.localStorage);
-    const previousJourney = window.localStorage.getItem(LEVEL_JOURNEY_KEY);
-    const previousCurriculum = window.localStorage.getItem("japaneseCurriculumProgressV1");
-    const previousChunk = window.localStorage.getItem(CHUNK_REVIEW_KEY);
-    const previousReset = window.localStorage.getItem("languageRecordResetV1");
-    // A version that does not know this optional key cannot delete its history.
-    // Validate and union before touching ANY existing language record.
-    const local: CloudState = Object.fromEntries(LANGUAGE_STORAGE_KEYS.flatMap(key => {
-      const value = window.localStorage.getItem(key);
-      return value === null ? [] : [[key, value]];
-    }));
-    // Reading here, after acquiring the lock, also preserves curriculum/level
-    // edits made while this remote response waited for another tab's answer.
-    const reconciled = base ? mergeLanguageStateFromBase(base, state, local) : state;
-    const protectedState = mergeChunkReviews({}, reconciled, local, reconciled);
-    check?.();
-    const changes: Record<string, string | null> = {};
-    for (const key of LANGUAGE_STORAGE_KEYS) {
-      const value = protectedState[key];
-      changes[key] = typeof value === "string" ? value : null;
-    }
-    writeLanguageStorageBatch(window.localStorage, changes);
-    if ((previousJourney !== window.localStorage.getItem(LEVEL_JOURNEY_KEY) || previousCurriculum !== window.localStorage.getItem("japaneseCurriculumProgressV1")) && typeof window.dispatchEvent === 'function') window.dispatchEvent(new Event(LEVEL_JOURNEY_EVENT));
-    if (previousChunk !== window.localStorage.getItem(CHUNK_REVIEW_KEY) || previousReset !== window.localStorage.getItem("languageRecordResetV1")) notifyChunkReview();
+  return withLanguageRecordLock(() => applyLanguageStateUnderLock(state, base, check));
+}
 
+/** Caller holds the common language gate. */
+function applyLanguageStateUnderLock(state: CloudState, base?: CloudState, check?: () => void) {
+  check?.();
+  recoverLanguageStorage(window.localStorage);
+  const previousJourney = window.localStorage.getItem(LEVEL_JOURNEY_KEY);
+  const previousCurriculum = window.localStorage.getItem("japaneseCurriculumProgressV1");
+  const previousChunk = window.localStorage.getItem(CHUNK_REVIEW_KEY);
+  const previousReset = window.localStorage.getItem("languageRecordResetV1");
+  // A version that does not know this optional key cannot delete its history.
+  // Validate and union before touching ANY existing language record.
+  const local: CloudState = Object.fromEntries(LANGUAGE_STORAGE_KEYS.flatMap(key => {
+    const value = window.localStorage.getItem(key);
+    return value === null ? [] : [[key, value]];
+  }));
+  // Reading here, after acquiring the lock, also preserves curriculum/level
+  // edits made while this remote response waited for another tab's answer.
+  validateCurriculumStates([...(base ? [base] : []), state, local]);
+  const reconciled = base ? mergeLanguageStateFromBase(base, state, local) : state;
+  const protectedState = mergeChunkReviews({}, reconciled, local, reconciled);
+  check?.();
+  const changes: Record<string, string | null> = {};
+  for (const key of LANGUAGE_STORAGE_KEYS) {
+    const value = protectedState[key];
+    changes[key] = typeof value === "string" ? value : null;
+  }
+  writeLanguageStorageBatch(window.localStorage, changes);
+  if ((previousJourney !== window.localStorage.getItem(LEVEL_JOURNEY_KEY) || previousCurriculum !== window.localStorage.getItem("japaneseCurriculumProgressV1")) && typeof window.dispatchEvent === 'function') window.dispatchEvent(new Event(LEVEL_JOURNEY_EVENT));
+  if (previousChunk !== window.localStorage.getItem(CHUNK_REVIEW_KEY) || previousReset !== window.localStorage.getItem("languageRecordResetV1")) notifyChunkReview();
+}
+
+/** Only an authenticated server row with a strictly later explicit reset may
+ * supersede corrupt local curriculum. Never return the corrupt raw for upload.
+ * Recheck owner/epoch/reset cancellation under the existing language gate. */
+export async function applyNewerResetToCorruptCurriculum(state: CloudState, userId: string, check: () => void): Promise<boolean> {
+  return withLanguageRecordLock(() => {
+    check();
+    recoverLanguageStorage(window.localStorage);
+    const fitnessOwner = window.localStorage.getItem('fitness-cloud-sync-user');
+    if (!userId || window.localStorage.getItem(LANGUAGE_LAST_USER_KEY) !== userId
+      || fitnessOwner && fitnessOwner !== userId) throw new Error('계정이 바뀌어 초기화 기록 확인을 멈췄어요.');
+    const local = collectLanguageState();
+    try { parseCurriculumProgress(local[CURRICULUM_PROGRESS_KEY] ?? null); return false; }
+    catch (error) {
+      if (!(error instanceof CurriculumProgressError) || error.reason !== 'invalid') throw error;
+      const base = readLanguageSyncBase(userId) ?? {};
+      if (!state || typeof state !== 'object' || Array.isArray(state)
+        || Object.values(state).some(value => typeof value !== 'string')
+        || typeof state.languageRecordResetV1 !== 'string'
+        || resetTime(state) <= Math.max(resetTime(local), resetTime(base))) throw error;
+      // Existing generation merge validates the replacement curriculum/chunk
+      // data and preserves non-reset settings. No corrupt local is sent remote.
+      const merged = mergeLanguageStateFromBase(base, state, local);
+      check();
+      applyLanguageStateUnderLock(merged, local, check);
+      check();
+      return true;
+    }
   });
 }
 
@@ -106,6 +146,20 @@ function mergeChunkReviews(base: CloudState, remote: CloudState, local: CloudSta
   return result;
 }
 
+/** Do not let ordinary sync replace or publish unreadable current-generation
+ * progress. Older generations remain governed by the explicit reset policy. */
+function validateCurriculumStates(sources: CloudState[]) {
+  const latest = [...sources].sort((a, b) => resetTime(a) - resetTime(b)
+    || (String(a.languageRecordResetV1 ?? '') < String(b.languageRecordResetV1 ?? '') ? -1 : String(a.languageRecordResetV1 ?? '') > String(b.languageRecordResetV1 ?? '') ? 1 : 0)).at(-1)!;
+  for (const source of sources) {
+    if (source.languageRecordResetV1 !== latest.languageRecordResetV1
+      || !Object.prototype.hasOwnProperty.call(source, CURRICULUM_PROGRESS_KEY)) continue;
+    const raw = source[CURRICULUM_PROGRESS_KEY];
+    // Cloud snapshots contain storage strings, not decoded objects or null.
+    parseCurriculumProgress(typeof raw === 'string' ? raw : 'null');
+  }
+}
+
 function mergeJourney(base: CloudState, remote: CloudState, local: CloudState, merged: CloudState): CloudState {
   // The existing reset-generation policy wins over all older question records.
   if (remote.languageRecordResetV1 !== local.languageRecordResetV1) return merged;
@@ -115,10 +169,12 @@ function mergeJourney(base: CloudState, remote: CloudState, local: CloudState, m
 }
 
 export function mergeLanguageState(remote: CloudState, local: CloudState): CloudState {
+  validateCurriculumStates([remote, local]);
   return mergeChunkReviews({}, remote, local, mergeJourney({}, remote, local, mergeCloudState(remote, local)));
 }
 
 export function mergeLanguageStateFromBase(base: CloudState, remote: CloudState, local: CloudState): CloudState {
+  validateCurriculumStates([base, remote, local]);
   return mergeChunkReviews(base, remote, local, mergeJourney(base, remote, local, mergeCloudStateFromBase(base, remote, local)));
 }
 
@@ -188,7 +244,7 @@ export function readLanguageCacheOverview(storage: Pick<Storage, 'getItem'>, use
   const snapshot = readOwnedLanguageCacheSnapshot(storage, ['japaneseCurriculumProgressV1', 'dailyLearningHistory', 'savedWords', LEVEL_JOURNEY_KEY], userId);
   if (!snapshot) return null;
   const parse = (key: string): unknown => snapshot[key] === null ? null : JSON.parse(snapshot[key]!);
-  const curriculum = parse('japaneseCurriculumProgressV1');
+  const curriculum = parseCurriculumProgress(snapshot[CURRICULUM_PROGRESS_KEY]);
   const history = parse('dailyLearningHistory');
   const words = parse('savedWords');
   const journey = parse(LEVEL_JOURNEY_KEY);

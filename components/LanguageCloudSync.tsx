@@ -5,6 +5,7 @@ import { supabase } from "@/app/lib/supabase";
 import { stableState } from "@/app/data/cloudSync";
 import {
   applyLanguageState,
+  applyNewerResetToCorruptCurriculum,
   prepareLanguageLocalState,
   readLanguageCacheOverview,
   readLanguageStateSafely,
@@ -13,6 +14,7 @@ import {
   mergeLanguageState,
   mergeLanguageStateFromBase,
 } from "@/app/data/languageCloudSync";
+import { CurriculumProgressError } from "@/utils/curriculumProgress";
 import { LanguageStorageUnavailableError } from "@/app/data/languageStorageLock";
 import { requestSafeReload } from "@/app/lib/unsavedChanges";
 import { isRecordResetRunning, RECORD_RESET_EVENT } from "@/app/data/appRecordReset";
@@ -117,9 +119,15 @@ export default function LanguageCloudSync({ children }: { children?: ReactNode }
       const sessionEpoch = window.localStorage.getItem("language-cloud-sync-epoch");
       const fitnessEpoch = window.localStorage.getItem("fitness-cloud-sync-epoch");
       const fitnessOwner = window.localStorage.getItem("fitness-cloud-sync-user");
-      observedLocal = stableState(await readLanguageStateSafely(() => {
-        if (!active || window.localStorage.getItem("language-cloud-sync-user") !== userId) throw new Error("학습 기록 요청이 종료됐어요.");
-      }));
+      try {
+        observedLocal = stableState(await readLanguageStateSafely(() => {
+          if (!active || window.localStorage.getItem("language-cloud-sync-user") !== userId) throw new Error("학습 기록 요청이 종료됐어요.");
+        }));
+      } catch (error) {
+        // Keep corrupt bytes blocked, but let the authenticated sync below
+        // check whether a genuinely newer explicit reset already exists.
+        if (!(error instanceof CurriculumProgressError) || error.reason !== 'invalid') throw error;
+      }
       if (!active) return;
 
       const isOwner = () => {
@@ -186,7 +194,17 @@ export default function LanguageCloudSync({ children }: { children?: ReactNode }
         setStatus("syncing");
         setMessage("");
         try {
-          let local = await readLanguageStateSafely(check);
+          let local;
+          try { local = await readLanguageStateSafely(check); }
+          catch (error) {
+            if (!(error instanceof CurriculumProgressError) || error.reason !== 'invalid') throw error;
+            const resetRow = await getRemote(check);
+            if (!resetRow) throw error;
+            const applied = await applyNewerResetToCorruptCurriculum(resetRow.state, userId, check);
+            check();
+            if (applied) requestSafeReload();
+            local = await readLanguageStateSafely(check);
+          }
           let remoteRow = await getRemote(check);
           if (cancelled()) return;
           local = await readLanguageStateSafely(check);

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CURRICULUM, TRACKS, getTrackLessons, type CourseTrack } from "@/data/curriculum";
-import { DEFAULT_CURRICULUM_PROGRESS, loadCurriculumProgress, saveCurriculumProgress } from "@/utils/curriculumProgress";
+import { DEFAULT_CURRICULUM_PROGRESS, curriculumProgressErrorMessage, loadCurriculumProgress, saveCurriculumProgress } from "@/utils/curriculumProgress";
 import { DEFAULT_INTEGRATED_LEARNING_SETTINGS, loadIntegratedLearningSettings } from "@/utils/integratedLearningSettings";
 import { getLessonStudyLevel, isJapaneseLevel } from "@/data/japaneseLevels";
 import FocusedLesson from "@/components/language/FocusedLesson";
@@ -17,12 +17,17 @@ function CurriculumContent() {
   const [progress, setProgress] = useState(DEFAULT_CURRICULUM_PROGRESS);
   const [settings, setSettings] = useState(DEFAULT_INTEGRATED_LEARNING_SETTINGS);
   const [loaded, setLoaded] = useState(false);
+  const [readError, setReadError] = useState("");
+  const [readAttempt, setReadAttempt] = useState(0);
   const [error, setError] = useState("");
   useEffect(() => {
-    setProgress(loadCurriculumProgress());
-    setSettings(loadIntegratedLearningSettings());
-    setLoaded(true);
-  }, []);
+    try {
+      setProgress(loadCurriculumProgress());
+      setSettings(loadIntegratedLearningSettings());
+      setLoaded(true);
+      setReadError("");
+    } catch (error) { setReadError(curriculumProgressErrorMessage(error, "학습 기록을 읽지 못했어요. 다시 읽어 주세요.")); }
+  }, [readAttempt]);
   const selectedTrack: CourseTrack = trackOrder.includes(requestedTrack as CourseTrack) ? requestedTrack as CourseTrack : progress.selectedTrack;
   const lessons = getTrackLessons(selectedTrack);
   const chooseTrack = (track: CourseTrack) => {
@@ -31,8 +36,9 @@ function CurriculumContent() {
       saveCurriculumProgress(latest);
       setProgress(latest);
       setError("");
-    } catch { setError("과정 선택을 저장하지 못했어요. 수업은 계속 볼 수 있어요."); }
+    } catch (error) { setError(curriculumProgressErrorMessage(error, "과정 선택을 저장하지 못했어요. 수업은 계속 볼 수 있어요.")); }
   };
+  if (readError) return <section><p role="alert">{readError}</p><button type="button" onClick={() => setReadAttempt(value => value + 1)}>기록 다시 읽기</button></section>;
   if (!loaded) return <div className="learn-loading" role="status">학습 기록을 불러오는 중이에요.</div>;
   return <section className="curriculum-page">
     <header className="curriculum-hero">
