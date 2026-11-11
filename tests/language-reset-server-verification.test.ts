@@ -17,23 +17,28 @@ const owner = { 'language-cloud-sync-user': 'A', 'fitness-cloud-sync-user': 'A' 
 type Scenario = {
   remote?: unknown; readError?: unknown; localMarker?: string; nextUser?: string;
   afterRead?: (entries: Map<string, string>) => void;
+  rpcError?: { message: string; code?: string }; rpcMarker?: string; firstUser?: string;
 };
 async function run(scenario: Scenario, check: (result: {
   reset: () => Promise<unknown>; entries: Map<string, string>; session: ReturnType<typeof memoryStorage>;
-  reads: string[]; idb: { trace: string[] };
+  reads: string[]; idb: { trace: string[] }; events: string[]; rpcRequests: string[]; uuidCalls: () => number;
 }) => Promise<void>) {
-  return withChunkBrowser(async ({ api, entries, idb, locks }) => {
+  return withChunkBrowser(async ({ api, entries, idb, locks, events }) => {
     const navigator = { onLine: true, locks };
     const session = memoryStorage();
-    let authCalls = 0;
+    let authCalls = 0, uuidCalls = 0;
+    const rpcRequests: string[] = [];
     const reads: string[] = [];
     const modules: Record<string, unknown> = {
       '../../utils/japaneseChunkReview': { compareChunkGenerations },
       '../data/languageStorageLock': languageGate, '../data/appRecordReset': resetData,
       '../data/growthRoutines': {}, '../budget/lib/pending-save': {},
       './supabase': { supabase: {
-        auth: { getUser: async () => ({ data: { user: { id: ++authCalls > 1 ? scenario.nextUser ?? 'A' : 'A' } }, error: null }) },
-        rpc: async () => ({ data: { app: 'language', user_id: 'A', marker }, error: null }),
+        auth: { getUser: async () => ({ data: { user: { id: ++authCalls > 1 ? scenario.nextUser ?? 'A' : scenario.firstUser ?? 'A' } }, error: null }) },
+        rpc: async (_name: string, params: { p_request_id: string }) => {
+          rpcRequests.push(params.p_request_id);
+          return { data: { app: 'language', user_id: 'A', marker: scenario.rpcMarker ?? marker }, error: scenario.rpcError ?? null };
+        },
         from: (table: string) => { reads.push(table); return { select: (fields: string) => {
           reads.push(fields); return { eq: (field: string, value: string) => {
             reads.push(`${field}:${value}`); return { maybeSingle: async () => {
@@ -45,7 +50,7 @@ async function run(scenario: Scenario, check: (result: {
       } },
     };
     const exports: { resetAppRecords?: (app: string, requestId: string, expectedUser: string) => Promise<unknown> } = {};
-    vm.runInNewContext(code, { exports, navigator, window: { localStorage: api, sessionStorage: session.api }, require: (name: string) => {
+    vm.runInNewContext(code, { exports, navigator, crypto: { randomUUID: () => { uuidCalls++; return 'unexpected-rotation'; } }, window: { localStorage: api, sessionStorage: session.api }, require: (name: string) => {
       assert.ok(name in modules, `unexpected import ${name}`); return modules[name];
     } });
     entries.set('savedWords', '["synthetic"]');
@@ -53,7 +58,7 @@ async function run(scenario: Scenario, check: (result: {
     entries.set('japaneseChunkReviewV1', '{"synthetic":"chunk"}');
     entries.set('japaneseAppSettings', '{"volume":1}');
     if (scenario.localMarker) entries.set('languageRecordResetV1', scenario.localMarker);
-    await check({ reset: () => exports.resetAppRecords!('language', 'synthetic-reset', 'A'), entries, session, reads, idb });
+    await check({ reset: () => exports.resetAppRecords!('language', 'synthetic-reset', 'A'), entries, session, reads, idb, events, rpcRequests, uuidCalls: () => uuidCalls });
   }, owner);
 }
 
@@ -147,3 +152,52 @@ test('session epoch change during readback stops local deletion', async () => ru
   assert.equal(entries.get('japaneseLevelJourneyV1'), '{"synthetic":"level"}');
   assert.equal(session.api.length, 0);
 }));
+
+
+for (const [name, scenario, expected] of [
+  ['superseded UUID', { rpcError: { message: 'YEONI_RESET_REQUEST_SUPERSEDED', code: '22023' } }, /더 최근의 일본어 초기화/],
+  ['wrong receipt UUID despite matching remote marker', { rpcMarker: '2026-11-10T12:00:00.000Z|unrelated', remote: { languageRecordResetV1: '2026-11-10T12:00:00.000Z|unrelated' } }, /이 요청과 일치하지 않아/],
+  ['extra receipt separator', { rpcMarker: `${marker}|extra` }, /이 요청과 일치하지 않아/],
+  ['older same-request marker than local', { localMarker: '2026-11-11T00:00:00.000Z|newer' }, /더 최근의 일본어 초기화/],
+  ['account changed during readback', { nextUser: 'B' }, /계정이 바뀌었어요/],
+  ['account changed before RPC', { firstUser: 'B' }, /계정이 바뀌었어요/],
+] as const) {
+  test(`${name}: no clearing, receipt, reset event, UUID rotation or automatic retry`, async () => run(scenario, async ({ reset, entries, session, events, rpcRequests, uuidCalls }) => {
+    const before = new Map(entries);
+    await assert.rejects(reset(), expected);
+    assert.deepEqual(entries, before);
+    assert.equal(entries.has(resetData.RECORD_RESET_STORAGE_EVENT), false);
+    assert.equal(session.api.length, 0); assert.deepEqual(events, []);
+    assert.equal(uuidCalls(), 0);
+    assert.deepEqual(rpcRequests, 'firstUser' in scenario && scenario.firstUser === 'B' ? [] : ['synthetic-reset']);
+  }));
+}
+test('superseded request retains its ID for a manual retry without presenting success', async () => run({
+  rpcError: { message: 'YEONI_RESET_REQUEST_SUPERSEDED', code: '22023' },
+}, async ({ reset, entries, session, rpcRequests, uuidCalls }) => {
+  const before = new Map(entries);
+  for (let index = 0; index < 2; index++) await assert.rejects(reset(), (error: unknown) => {
+    const message = (error as Error).message;
+    assert.match(message, /이 요청으로 서버나 이 기기의 기록을 지우지 않았습니다/);
+    assert.match(message, /화면을 새로고침/); assert.match(message, /체크박스와 ‘초기화’ 입력/);
+    assert.match(message, /이후에 만든 기록도 모두 삭제/);
+    assert.doesNotMatch(message, /같은 버튼/); return true;
+  });
+  assert.deepEqual(entries, before); assert.equal(session.api.length, 0);
+  assert.deepEqual(rpcRequests, ['synthetic-reset', 'synthetic-reset']); assert.equal(uuidCalls(), 0);
+}));
+test('other RPC errors retain the existing generic retry guidance', async () => run({
+  rpcError: { message: 'synthetic unrecognized server error' },
+}, async ({ reset, entries, session }) => {
+  const before = new Map(entries);
+  await assert.rejects(reset(), /초기화 완료 여부를 확인하지 못했어요. 같은 버튼/);
+  assert.deepEqual(entries, before); assert.equal(session.api.length, 0);
+}));
+test('reset panel error path does not rotate request IDs, retry automatically or reload', () => {
+  const source = readFileSync(new URL('../app/components/RecordResetPanel.tsx', import.meta.url), 'utf8');
+  const submit = source.slice(source.indexOf('  const reset = async () =>'), source.indexOf('  return <section'));
+  const errorPath = submit.slice(submit.indexOf('    } catch (error)'));
+  assert.match(submit, /requestId.current \|\|= crypto.randomUUID\(\)/);
+  assert.equal((submit.match(/resetAppRecords\(/g) ?? []).length, 1);
+  assert.doesNotMatch(errorPath, /requestId.current\s*=|randomUUID|resetAppRecords|location.reload|receipt|localStorage/);
+});

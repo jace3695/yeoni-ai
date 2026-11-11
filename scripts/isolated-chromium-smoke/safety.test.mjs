@@ -59,10 +59,10 @@ const reviewTestHash = 'd8e4e91ba78a95f26e4576f1f500f3d21097550298f7268993fc323a
 const workflowHash = 'c65190845968db7077198840dbdeb9d9a42ae4e57038f1dcfbcdcbc3bd0e5bf6';
 
 test('exact command, fixed project/source inventory, installer and ceilings stay narrow', async () => {
-  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
+  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
   assert.deepEqual(inventory, [{ source: 19, line: 3, column: 5, project: 5 }, { source: 38, line: 3, column: 5, project: 5 },
-    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }]);
-  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts']);
+    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }]);
+  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts']);
   assert.equal(stages[0].command, 'node --test scripts/isolated-chromium-smoke/safety.test.mjs');
   assert.equal(stages[1].command, 'node node_modules/@playwright/test/cli.js install --with-deps --only-shell chromium');
   assert.equal(stages[2].command, browserCommand); assert.equal(stages[2].diagnosticInventory, inventory);
@@ -73,7 +73,7 @@ test('exact command, fixed project/source inventory, installer and ceilings stay
   assert.equal(lock.packages['node_modules/@playwright/test'].version, '1.63.0');
   assert.equal(lock.packages['node_modules/playwright'].version, '1.63.0');
   assert.equal(diagnosticInvocations(browserCommand), 1);
-  for (const changed of [browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
+  for (const changed of [browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
     browserCommand.replace('--project chromium-app-smoke', '--project chromium'), stages[1].command, 'echo ' + browserCommand]) {
     assert.equal(diagnosticInvocations(changed), 0);
   }
@@ -84,10 +84,16 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
     let bytes = await readFile(path);
     if (path === 'scripts/qa-private-source-ids.mjs') {
       let text = bytes.toString('utf8');
-      for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n"]) {
+      for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n", "  'tests/e2e/language-reset-receipts.spec.ts', // 48\n"]) {
         assert.equal(text.split(addition).length, 2); text = text.replace(addition, '');
       }
       bytes = Buffer.from(text);
+    }
+    if (path === 'scripts/e2e-stack.mjs') {
+      const addition = "    appendFileSync(`${workdir}/supabase/seed.sql`, '\\n' + readFileSync('supabase/migrations/20261111000000_add_language_reset_replay_receipts.sql', 'utf8'));\n";
+      const text = bytes.toString('utf8');
+      assert.equal(text.split(addition).length, 2);
+      bytes = Buffer.from(text.replace(addition, ''));
     }
     assert.equal(createHash('sha256').update(bytes).digest('hex'), hash, `Preserved source changed: ${path}`);
   }
@@ -96,7 +102,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
   assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 344);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
-  const addition = "      - name: Verify six authenticated app flows in Chromium privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
+  const addition = "      - name: Verify seven authenticated app flows in Chromium privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
   assert.equal(workflow.split('len(tests) == 344').length, 2);
   assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 344', 'len(tests) == 343')).digest('hex'), workflowHash);
@@ -129,7 +135,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
   });
   assert.equal(result.status, 0); const config = JSON.parse(result.stdout);
   assert.deepEqual(config.projects, [{ name: 'chromium-app-smoke' }]);
-  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts']);
+  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts']);
   assert.equal(config.fullyParallel, false); assert.equal(config.workers, 1); assert.equal(config.retries, 0);
   assert.equal(config.forbidOnly, true); assert.equal(config.repeatEach, 1); assert.equal(config.timeout, 90000);
   assert.equal(config.expect.timeout, 15000); assert.equal(config.use.browserName, 'chromium'); assert.equal(config.use.headless, true);
@@ -143,7 +149,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
     url: 'http://127.0.0.1:3000/diet/settings', reuseExistingServer: false, timeout: 120000 });
 });
 
-test('Playwright list-only collection resolves exactly six titles and coordinates without fixtures', () => {
+test('Playwright list-only collection resolves exactly seven titles and coordinates without fixtures', () => {
   // --list does not start webServer, browsers, test bodies or fixture hooks.
   const args = browserCommand.split(' ').slice(1).concat(['--list', '--reporter=json']);
   const result = spawnSync(process.execPath, args, { env: environment(), encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
@@ -151,7 +157,7 @@ test('Playwright list-only collection resolves exactly six titles and coordinate
   assert.deepEqual(report.errors, []);
   const specs = suite => [...(suite.specs ?? []), ...(suite.suites ?? []).flatMap(specs)];
   const selected = report.suites.flatMap(specs);
-  assert.equal(selected.length, 6);
+  assert.equal(selected.length, 7);
   const expected = new Map([
     ['auth.spec.ts:3', 'login, logout and same-account relogin preserve all 17 original keys without PATCH'],
     ['sync.spec.ts:3', 'first GET delivery delayed while a real form saves: originals and new input survive'],
@@ -159,6 +165,7 @@ test('Playwright list-only collection resolves exactly six titles and coordinate
     ['language-reset.spec.ts:39', 'Japanese reset uses the real settings UI, clears both new keys and preserves settings and another owner after reload and relogin'],
     ['japanese-answer-persistence.spec.ts:8', 'seven Japanese chunk answers persist through real preparation UI, reload and relogin without changing unrelated records'],
     ['daily-review-completion.spec.ts:3', 'three distinct reviews save one daily completion and hide the stale warning across reload and relogin'],
+    ['language-reset-receipts.spec.ts:9', 'Japanese reset receipts survive genuine HTTP omission writes, concurrent retries and lost-response supersession with a new answer'],
   ]);
   for (const spec of selected) {
     const key = `${spec.file}:${spec.line}`;
@@ -180,7 +187,7 @@ test('child allowlist excludes all command-file inputs, provider secrets, proxie
 
 test('exact successful inventory is required in any order; zero, partial, skipped, wrong or duplicated tests fail', () => {
   for (const items of [inventory, [...inventory].reverse()]) assert.equal(parse(events(items)).report, 'complete');
-  for (const entries of [events([]), events(inventory.slice(0, 5)), events(inventory, 'skipped'), events([...inventory, inventory[0]]),
+  for (const entries of [events([]), ...inventory.map((_, omitted) => events(inventory.filter((_, index) => index !== omitted))), events(inventory, 'skipped'), events([...inventory, inventory[0]]),
     events([inventory[0], inventory[0], ...inventory.slice(2)]),
     events(inventory.map((item, index) => index ? item : { ...item, project: 1 })),
     events(inventory.map((item, index) => index ? item : { ...item, source: 0, line: 0, column: 0 })),
@@ -200,7 +207,7 @@ test('reports reject stale/missing tokens, malformed schema, injection, oversize
   }
   assert.equal(parseDiagnosticJournal('', token, 1, inventory).report, 'missing');
   for (const invalid of ['', undefined, canary]) assert.equal(parseDiagnosticJournal(journal(events()), invalid, 1, inventory).report, 'invalid');
-  for (const invalid of [[], {}, inventory.slice(0, 5), [...inventory, inventory[0]], inventory.map(() => inventory[0]),
+  for (const invalid of [[], {}, inventory.slice(0, 6), [...inventory, inventory[0]], inventory.map(() => inventory[0]),
     inventory.map(item => ({ ...item, extra: canary })), inventory.map(item => ({ ...item, project: 0 }))]) {
     assert.equal(parseDiagnosticJournal(journal(events()), token, 1, invalid).report, 'invalid');
   }
@@ -305,6 +312,7 @@ test('three-stage sequencing propagates safety/install/browser failures, cancell
     assert.equal(code, failure < 0 ? 0 : 1); assert.equal(calls.length, failure < 0 ? 3 : failure + 1);
     privateOutput(options.output);
     assert.equal(options.output.at(-1).includes('realBrowser=true'), failure < 0);
+    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=7 browser=chromium realBrowser=true fixtureCleanup=passed');
   }
   const options = await fresh(), controller = new AbortController(); controller.abort();
   assert.equal(await supervise({ ...options, signal: controller.signal, run: () => { throw new Error(canary); } }), 1);

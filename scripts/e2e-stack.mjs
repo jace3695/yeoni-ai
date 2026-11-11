@@ -67,6 +67,7 @@ try {
     // Extend the existing invoker reset after its prerequisite schema and ACL.
     appendFileSync(`${workdir}/supabase/seed.sql`, '\n' + readFileSync('supabase/migrations/20261108040658_add_japanese_level_reset_key.sql', 'utf8'));
     appendFileSync(`${workdir}/supabase/seed.sql`, '\n' + readFileSync('supabase/migrations/20261108132759_add_japanese_chunk_review_reset_key.sql', 'utf8'));
+    appendFileSync(`${workdir}/supabase/seed.sql`, '\n' + readFileSync('supabase/migrations/20261111000000_add_language_reset_replay_receipts.sql', 'utf8'));
     console.log('Starting isolated Auth, PostgREST, Storage and Postgres…');
     run('start', '--exclude', 'studio,imgproxy,realtime,edge-runtime,logflare,vector,supavisor');
     const status = JSON.parse(run('status', '--output', 'json'));

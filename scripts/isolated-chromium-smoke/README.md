@@ -3,13 +3,14 @@
 The default compiler's existing inspection job runs this lane after disposable
 Auth/API inspection and before the unconditional stack teardown. It uses the
 already compiled app and the existing disposable Supabase fixture. The webpack
-matrix entry is unchanged. No deployment, new trigger, artifact upload, cache, schema, dependency, job limit
-or repository permission changes. The exact unit inventory increases to 344 for
+matrix entry is unchanged. No deployment, new workflow trigger, artifact upload, cache, dependency, job limit
+or repository permission changes. The receipt migration is appended only to the
+disposable fixture initialization; tests/e2e/schema.sql stays unchanged. The exact unit inventory increases to 344 for
 the separately integrated content test. Product changes remain separately reviewed.
 
 ## Exact coverage
 
-The explicit CLI selects four unchanged tests, an answer-persistence test and a daily-review test by source line:
+The explicit CLI preserves six tests and adds one receipt test by source line:
 
 - `auth.spec.ts:3`: login, logout, re-login and reload preserve 17 original keys
   without an unintended PATCH.
@@ -38,7 +39,16 @@ The explicit CLI selects four unchanged tests, an answer-persistence test and a 
   Real database confirmation, reload and re-login must preserve completedIds review,
   completedCount 1 and totalCount 5 without extra completion. No daily result is seeded.
 
-These tests use seven disposable accounts in total. The existing fixture handles
+- `language-reset-receipts.spec.ts:9`: require genuine PostgREST reset replay,
+  concurrent same-ID requests, state-only PATCH and three SDK conflict UPSERT shapes.
+  At 320px, lose committed A responses, complete B in a separate same-owner browser
+  context, then save a real preparation-assisted chunk answer. Manual late-A retries
+  must return the genuine superseded error without changing server or local records.
+  Reload and re-login must restore B's answer; a second owner and anonymous caller
+  must remain isolated. Holds and routes drain and extra contexts close before teardown.
+  Concurrent HTTP observations do not prove deterministic database lock scheduling.
+
+The added test uses two generated owners. These tests use nine disposable accounts in total. The existing fixture handles
 account creation, route draining, browser closure, deletion and scoped zero-row
 checks. Passing requires completion of all test teardown assertions. Interrupted
 or failed teardown is not certified. The existing unconditional disposable stack
@@ -77,7 +87,7 @@ rows, URLs, credentials, errors or DOM is forwarded to public output.
 
 The private diagnostic channel has a fresh random token, bounded reads, no-follow
 file access and an exact schema. Acceptance requires one completed invocation,
-the six exact source coordinates with project ID 5, six passed tests and zero
+the seven exact source coordinates with project ID 5, seven passed tests and zero
 skips, failures, unknown outcomes, active tests or runner errors. Missing, stale,
 partial, duplicate, malformed or oversized reports fail closed, even with exit 0.
 Existing project IDs are unchanged. Public output contains fixed labels and
@@ -93,9 +103,16 @@ The safety suite uses synthetic reports, child processes and list-only test
 collection. It does not start a browser, Auth, a database or the app server. Run `node --test scripts/isolated-chromium-smoke/safety.test.mjs` and
 `node --test scripts/qa-private-orchestrator.test.mjs`, plus focused lint, syntax and
 type checks. These are distinct from real browser execution. The integrated content expansion adds one unit test, so the exact unit inventory
-is 344. This lane changes neither the four original browser tests nor product
+is 344. This lane preserves all six prior browser tests and product
 components; the separate content and notice changes are verified together.
 
 Before publishing to the inspection branch, review the exact diff and preserve a
 private backup. Require the existing workflow and this bounded lane to pass on the
 same commit. Do not reinterpret a local synthetic pass as application verification.
+
+The receipt fixture adds only the reviewed replay-receipt migration after the two
+existing reset migrations. Its guard removes exactly that single append line before
+checking the unchanged launcher baseline hash. The schema.sql source, grants, policies, optional
+docs guard and fixture source remain unchanged. Source IDs 1–47 remain stable; the
+receipt spec appends ID 48. Unknown pre-upgrade requests, destructive legacy writes,
+metadata tampering, hosted rollout and ledger performance remain outside this lane.

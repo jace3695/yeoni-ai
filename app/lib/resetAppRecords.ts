@@ -35,10 +35,19 @@ async function performReset(app: RecordResetApp, requestId: string, expectedUser
   const userId = auth.user.id;
   if (!expectedUserId || userId !== expectedUserId) throw new Error("계정이 바뀌었어요. 초기화할 계정을 다시 확인해 주세요.");
   const { data, error } = await supabase.rpc("reset_my_app_records", { p_app: app, p_request_id: requestId, p_confirmation: "초기화" });
+  if (app === "language" && error?.message === "YEONI_RESET_REQUEST_SUPERSEDED") {
+    throw new Error("더 최근의 일본어 초기화가 있어 이전 요청을 중단했어요. 이 요청으로 서버나 이 기기의 기록을 지우지 않았습니다. 화면을 새로고침해 현재 기록을 확인해 주세요. 다시 초기화하려면 필요한 기록을 먼저 보관하고, 다른 기기와 탭의 학습을 끝낸 뒤 체크박스와 ‘초기화’ 입력으로 새 삭제 요청을 확인해 주세요. 새 요청은 이후에 만든 기록도 모두 삭제합니다.");
+  }
   if (error || data?.app !== app || data?.user_id !== userId || typeof data?.marker !== "string") {
     throw new Error("초기화 완료 여부를 확인하지 못했어요. 같은 버튼을 눌러 다시 확인해 주세요.");
   }
   if (app === "language") {
+    // A receipt for a different request must never authorize local deletion,
+    // even when the remote readback contains that same unrelated marker.
+    const markerParts = data.marker.split("|");
+    if (markerParts.length !== 2 || markerParts[1] !== requestId) {
+      throw new Error("일본어 초기화 응답이 이 요청과 일치하지 않아 확인을 멈췄어요. 이 기기의 기록은 지우지 않았습니다. 화면을 새로고침해 현재 기록을 확인해 주세요.");
+    }
     // A valid receipt from an older server does not prove that newly added
     // record keys were removed. Verify before clearing this device's copy.
     const { data: remote, error: readError } = await supabase.from("language_user_state")

@@ -13,7 +13,7 @@ const counts = () => Object.fromEntries(statuses.map(status => [status, 0]));
 
 export function diagnosticInvocations(command) {
   return command.split('\n').filter(line => line === 'npx playwright test --config tests/browser-cloud/playwright.config.ts'
-    || line === 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke'
+    || line === 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke'
     || /^node scripts\/qa-playwright\.mjs(?: |$)/.test(line)).length;
 }
 
@@ -61,7 +61,7 @@ export class PrivateDiagnostics {
 // then construct new output using only constants and bounded numbers. Never
 // forward a JSON fragment or child string, even when the producer is ours.
 export function parseDiagnosticJournal(text, token, expected, inventory) {
-  if (inventory !== undefined && (!Array.isArray(inventory) || inventory.length !== 6 || expected !== 1
+  if (inventory !== undefined && (!Array.isArray(inventory) || inventory.length !== 7 || expected !== 1
     || inventory.some(item => !exact(item, ['source', 'line', 'column', 'project'])
       || !integer(item.source, 1, sources.length) || !integer(item.line, 1, 1000000)
       || !integer(item.column, 1, 1000000) || !integer(item.project, 1, projects.length))

@@ -48,4 +48,5 @@ export const sources = Object.freeze([
   'tests/e2e/zephyr-playback.spec.ts', // 45
   'tests/e2e/japanese-answer-persistence.spec.ts', // 46
   'tests/e2e/daily-review-completion.spec.ts', // 47
+  'tests/e2e/language-reset-receipts.spec.ts', // 48
 ]);
