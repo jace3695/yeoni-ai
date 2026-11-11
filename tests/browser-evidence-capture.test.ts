@@ -73,7 +73,7 @@ test('reporter emits only bounded fixed phase enums and never raw assertions, er
   const exports: { default?: new () => { onStepEnd: (...args: unknown[]) => void; onTestEnd: (...args: unknown[]) => void; onEnd: (...args: unknown[]) => void } } = {};
   vm.runInNewContext(js, { exports, require: (name: string) => {
     if (name === '../../scripts/qa-private-diagnostics.mjs') return {
-      PrivateDiagnostics: class extends PrivateDiagnostics { constructor() { super({ env: {} }); } },
+      PrivateDiagnostics: class extends PrivateDiagnostics { constructor() { super({ env: { NODE_ENV: 'test' } }); } },
     };
     assert.equal(name, 'node:fs');
     return { mkdirSync: () => {}, writeFileSync: (path: string, text: string) => { output[path] = text; }, appendFileSync: () => {} };

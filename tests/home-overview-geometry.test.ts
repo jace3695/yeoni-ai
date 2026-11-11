@@ -107,7 +107,7 @@ function reporterFixture() {
     process: { env: { QA_HEAD_SHA: 'synthetic-commit' } }, console: { log() {} },
   })(exports, (name: string) => {
     if (name === '../../scripts/qa-private-diagnostics.mjs') return {
-      PrivateDiagnostics: class extends PrivateDiagnostics { constructor() { super({ env: {} }); } },
+      PrivateDiagnostics: class extends PrivateDiagnostics { constructor() { super({ env: { NODE_ENV: 'test' } }); } },
     };
     assert.equal(name, 'node:fs');
     return { mkdirSync() {}, appendFileSync() { assert.fail('No summary path configured'); },

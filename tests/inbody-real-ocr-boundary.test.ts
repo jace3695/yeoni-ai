@@ -110,7 +110,7 @@ test('actual reporter accepts only four fixed B3 real phases, strips diagnostics
   const exports: { default?: new () => Reporter } = {}; let output = '';
   vm.runInNewContext(`(function(exports, require){${code}\n})`, { process: { env: {} }, console: { log() {} } })(exports, (name: string) => {
     if (name === '../../scripts/qa-private-diagnostics.mjs') return {
-      PrivateDiagnostics: class extends PrivateDiagnostics { constructor() { super({ env: {} }); } },
+      PrivateDiagnostics: class extends PrivateDiagnostics { constructor() { super({ env: { NODE_ENV: 'test' } }); } },
     };
     assert.equal(name, 'node:fs'); return { mkdirSync() {}, appendFileSync() { assert.fail('No summary configured'); }, writeFileSync(_path: string, value: string) { output = value; } };
   });
