@@ -29,6 +29,8 @@ export function bundledChromiumContext(env, allowCache = false) {
     const value = env[name];
     if (!value) return false;
     if (allowCache && name === 'PLAYWRIGHT_BROWSERS_PATH') return value !== BUNDLE_CACHE;
+    // Set by the pinned Playwright runner before worker config reload, never an external admission override.
+    if (allowCache && name === 'PLAYWRIGHT_TEST') return value !== '1';
     if (Object.hasOwn(imageInventoryDefaults, name)) return value !== imageInventoryDefaults[name];
     const normalized = name.replace(/^npm_(?:package_)?config_/i, '').toUpperCase();
     return /^(?:PLAYWRIGHT_|PW_|PWTEST_|CHROME_|CHROMIUM_|SELENIUM_|LD_|DYLD_)/.test(normalized);

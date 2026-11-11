@@ -105,6 +105,11 @@ repository allowlist. Unknown images require separate review. The pinned image's
 exact CHROME_BIN and SELENIUM_JAR_PATH inventory defaults are tolerated at raw
 entry only, then dropped. Other browser/loader overrides, including npm aliases,
 are rejected. A fixed PLAYWRIGHT_BROWSERS_PATH is injected only after admission;
+the exact PLAYWRIGHT_TEST=1 marker set by Playwright 1.63.0 before worker config
+reload is accepted only in this sanitized config context. Raw supervisor admission
+still rejects that marker, and the fixed installer/validator environment never
+receives it. Wrong values, case variants and npm aliases remain rejected. This
+marker selects no executable, address, permission or browser option. In addition,
 caller-supplied paths, skip-validation flags, proxies and preload options are not
 forwarded to the installer/validator child. The browser receives the same fixed
 cache path through the existing allowlisted stage environment.
@@ -235,7 +240,10 @@ server-side network sandbox. No paid generation or TTS is requested by these tes
 ## Local checks
 
 The safety suite uses synthetic reports, child processes and list-only test
-collection. It includes six finite synthetic native-process cases for inner timeout, outer
+collection. A separate finite fixtureless worker check imports the actual config
+and lets Playwright set its own marker before worker reload, with webServer
+disabled and no browser/page/context/qa fixtures requested. Collection alone
+cannot prove that worker-entry contract. It includes six finite synthetic native-process cases for inner timeout, outer
 timeout, cancellation, nonzero exit, capture overflow and zero exit with a survivor.
 Only those lightweight helper waits overlap; all actual browser work remains one
 worker. Helpers ignore TERM, have finite lifetimes, and receive finally cleanup

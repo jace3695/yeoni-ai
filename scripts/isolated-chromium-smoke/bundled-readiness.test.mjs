@@ -81,6 +81,23 @@ test('bundled context rejects skip, host, platform, remote, loader and npm alias
   }
 });
 
+test('only the exact Playwright worker marker is accepted in sanitized config context and never forwarded', async () => {
+  const sanitized = { ...environment(), PLAYWRIGHT_TEST: '1' };
+  const accepted = bundledChromiumContext(sanitized, true);
+  assert.ok(!Object.hasOwn(accepted, 'PLAYWRIGHT_TEST'));
+  const raw = { ...sanitized }; delete raw.PLAYWRIGHT_BROWSERS_PATH;
+  assert.throws(() => bundledChromiumContext(raw), error => error instanceof InspectionContextError && error.category === 'override');
+  for (const value of ['0', 'true', '01', '1 ', '1\n', canary]) {
+    assert.throws(() => bundledChromiumContext({ ...environment(), PLAYWRIGHT_TEST: value }, true));
+  }
+  for (const key of ['playwright_test', 'Playwright_Test', 'npm_config_playwright_test', 'npm_package_config_playwright_test']) {
+    assert.throws(() => bundledChromiumContext({ ...environment(), [key]: '1' }, true));
+  }
+  const state = fixture(0, { env: sanitized });
+  assert.equal(await checkBundledChromium(state.options), 0);
+  assert.ok(!Object.hasOwn(state.launches[0].config.env, 'PLAYWRIGHT_TEST')); safeOutput(state.output);
+});
+
 test('installation, missing-library and uncertain driver outcomes stop the actual browser stage and suppress raw failure content', async () => {
   for (const code of [DRIVER_EXIT_CODES.contract, DRIVER_EXIT_CODES.cache, DRIVER_EXIT_CODES.install, DRIVER_EXIT_CODES.bundle, DRIVER_EXIT_CODES.dependencies, DRIVER_EXIT_CODES.dependencyTool, DRIVER_EXIT_CODES.dependencyOutput, DRIVER_EXIT_CODES.validation, DRIVER_EXIT_CODES.unexpected, 63, 156, 255, ...MISSING_LIBRARIES.map(entry => 63 + entry.id), null]) {
     const state = fixture(code); const calls = [];
@@ -451,4 +468,44 @@ test('actual native adapter finite descendant regressions share one fixed grace 
     .map(scenario => runFiniteNativeAdapterRegression(scenario)));
   // Await every finally cleanup even when one case fails.
   for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
+});
+
+// Unlike --list, this finite test actually forks a Playwright worker and reloads
+// the production config. It requests no browser/page/context/qa fixtures.
+test('actual fixtureless Playwright worker reloads the production config with its own fixed marker', { timeout: 12000 }, async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const directory = await mkdtemp(join(tmpdir(), 'yeoni-worker-contract-'));
+  try {
+    const api = join(process.cwd(), 'node_modules/@playwright/test/index.mjs');
+    const config = `import { defineConfig } from ${JSON.stringify(api)};
+import actual from ${JSON.stringify(join(process.cwd(), 'playwright.chromium-smoke.config.ts'))};
+export default defineConfig({ ...actual, testDir: ${JSON.stringify(directory)}, testMatch: ['worker-entry.spec.ts'], workers: 1, retries: 0, timeout: 1000, reporter: 'json', webServer: undefined, projects: [{ name: 'synthetic-worker-entry' }], outputDir: ${JSON.stringify(join(directory, 'output'))} });
+`;
+    const spec = `import { test, expect } from ${JSON.stringify(api)};
+test('finite worker entry without browser fixtures', async () => {
+  expect(process.env.PLAYWRIGHT_TEST).toBe('1');
+  expect(process.env.PLAYWRIGHT_BROWSERS_PATH).toBe(${JSON.stringify(BUNDLE_CACHE)});
+});
+`;
+    await writeFile(join(directory, 'config.ts'), config, { mode: 0o600 });
+    await writeFile(join(directory, 'worker-entry.spec.ts'), spec, { mode: 0o600 });
+    const jwt = `e30.${Buffer.from(JSON.stringify({ role: 'anon' })).toString('base64url')}.synthetic`;
+    const env = { ...environment(), PATH: process.env.PATH, NODE_ENV: 'production',
+      RUNNER_TEMP: '/home/runner/work/_temp', YEONI_E2E: '1',
+      NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321', NEXT_PUBLIC_SUPABASE_ANON_KEY: jwt };
+    assert.ok(!Object.hasOwn(env, 'PLAYWRIGHT_TEST'));
+    const result = spawnSync(process.execPath, [join(process.cwd(), 'node_modules/@playwright/test/cli.js'),
+      'test', '--config', join(directory, 'config.ts')], { cwd: process.cwd(), env,
+      encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 });
+    assert.equal(result.status, 0); assert.equal(result.signal, null); assert.equal(result.error, undefined);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.stats.expected, 1); assert.equal(report.stats.unexpected, 0);
+    assert.equal(report.stats.skipped, 0); assert.equal(report.stats.flaky, 0);
+    assert.equal(report.errors.length, 0);
+    const selected = report.suites.flatMap(suite => suite.specs ?? []).flatMap(spec => spec.tests ?? []);
+    assert.equal(selected.length, 1); assert.equal(selected[0].results.length, 1);
+    assert.equal(selected[0].results[0].status, 'passed');
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
