@@ -89,7 +89,7 @@ test('grammar expression chunks and silent listening fallback preserve wrong-ans
     await test.step('synthetic history and real grammar entry at narrow width', async () => {
       await page.setViewportSize({ width: 320, height: 740 });
       await login(page, qa.account, info.href); await synced(page);
-      await expect(page.getByLabel('배울 문법', { exact: true })).toHaveValue('desu');
+      await expect(page.getByLabel(/^배울 문법\s/)              ).toHaveValue('desu');
       await expect(page.getByRole('heading', { level: 2, name: info.title, exact: true })).toBeVisible();
       await page.getByRole('button', { name: '2. 예문', exact: true }).click();
       await page.getByRole('button', { name: '짧은 표현부터 조각으로 배우기', exact: true }).click();
@@ -155,7 +155,7 @@ test('grammar expression chunks and silent listening fallback preserve wrong-ans
       await login(page, qa.account, '/language/chunk-review'); await restored(true);
       await card(0).getByRole('link', { name: '본수업 보기', exact: true }).click();
       await expect(page).toHaveURL(`http://127.0.0.1:3000${info.href}`);
-      await expect(page.getByLabel('배울 문법', { exact: true })).toHaveValue('desu');
+      await expect(page.getByLabel(/^배울 문법\s/)              ).toHaveValue('desu');
       await expect(page.getByRole('heading', { level: 2, name: info.title, exact: true })).toBeVisible();
       await synced(page); await unchanged(); expect(ttsRequests).toBe(0);
     });

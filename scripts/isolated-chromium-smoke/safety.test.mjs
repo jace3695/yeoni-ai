@@ -1263,7 +1263,7 @@ test('grammar source 56 preserves the actual route graph and failure-only audio 
   "utils/japaneseChunkReview.ts": "f125c626a286263c9925e72fdd080872008fd0af9e129cca2061b07e45c05ec2",
   "utils/japaneseChunkCatalog.ts": "d09cdd6b62d9c63d1f7d7c2dea0d4319d11f779bec1f1e8ef27c8f851a000007",
   "data/japaneseGrammarFoundationChunks.ts": "f47b509fb083148281d9b2a6828e2f257a987f0361d21981d20900481e913a80",
-  "tests/e2e/japanese-grammar-chunk.spec.ts": "21e0866bf0c72a5ca1197326316e3a2fb106de0aa1373d2ab334697d0db6e8d2",
+  "tests/e2e/japanese-grammar-chunk.spec.ts": "cfcfd38d5ed696def47a55f6a2c99ed1205637dbba74070b9744566387db17bb",
   "tests/e2e/japanese-grammar-chunk-state.ts": "f12507f7c772f9f3f32b37127904206f7994f272f5b80b097aa57bdcca7cb51e"
 };
   for (const [path, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash, path);
@@ -1591,7 +1591,7 @@ test('reference source 57 pins the finite route graph and six exact source mutat
   "components/AppCompanion.tsx": "d1c667c4c06fa5a2684f67ba4ad945f04e28cf3c397873860a334e6945f4e1b6",
   "tests/e2e/reporter.ts": "21a52f1e73ca9e116284cd578bf0ea5a3a67900d5ba0b5ec3c1dd3e7be7faeef",
   "tests/e2e/japanese-reference-routine-state.ts": "a246c11b04511ff598e532c1e9f6ee0bc1463ae37d3dc24e9f20ae30028a504a",
-  "tests/e2e/japanese-reference-routine.spec.ts": "ef05bf85996cffcc55e68226c3cbb6d59958fbff8242d5cc4bae6e04e178b5fe"
+  "tests/e2e/japanese-reference-routine.spec.ts": "ce0e5594eb4713f4735ebce21eb0445ce634635834839f9e72e096410df6f042"
 };
   for (const [file, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(file)).digest('hex'), hash, file);
   const spec = await readFile('tests/e2e/japanese-reference-routine.spec.ts', 'utf8');
@@ -1606,7 +1606,7 @@ const checks = [
  ['reference-real-ack', s => s.includes('await confirmed(page, qa, saved, fitness, since)')],
  ['reference-invalidation', s => s.includes("window.dispatchEvent(new Event('ai-yeoni-record-reset'))") && s.includes('await unchanged(page, qa, saved, fitness, snapshot, writes)')],
  ['reference-relogin', s => s.includes("await login(page, qa.account, '/language/words'); await restored()")],
- ['reference-speech-cleanup', s => s.includes('finally { await silence.restore(); }')],
+ ['reference-speech-cleanup', s => s.includes("finally { await test.step('reference silent guard restoration', () => silence.restore()); }")],
 ];
 for (const [stage, check] of checks) assert(check(spec), stage);
 let negatives = 0;
@@ -1616,7 +1616,7 @@ for (const [stage, token] of [
  ['reference-retry-ui', 'await retryButton(page).click()'],
  ['reference-independent-delta', 'saved = assertDailyDelta(saved, current, id, day, started, observed)'],
  ['reference-real-ack', 'await confirmed(page, qa, saved, fitness, since)'],
- ['reference-speech-cleanup', 'finally { await silence.restore(); }'],
+ ['reference-speech-cleanup', "finally { await test.step('reference silent guard restoration', () => silence.restore()); }"],
 ]) {
  const altered = spec.replace(token, 'REMOVED_FOR_PRIVATE_NEGATIVE_CONTROL');
  const failed = checks.filter(([, check]) => !check(altered)).map(([name]) => name);
@@ -1744,19 +1744,19 @@ assert.equal(positives, 7); assert.equal(negatives, 17);
 
 });
 
-// Six distinct source positions, NOT a claim of six real-browser phases.
-// The actual kana/words loop repeats its first three literals: nine runtime phases.
-test('reference six literal phases retain source 57 numeric native attribution without fixtures', async () => {
+// Thirteen distinct source positions, NOT proof of assignment/finally execution.
+// Whitespace-only prefixes prove native call attribution; actual browser CI remains required.
+test('reference thirteen literal phases retain source 57 numeric native attribution without fixtures', async () => {
   const repository = process.cwd(), root = await mkdtemp(join(tmpdir(), 'reference-native-phases-'));
   const file = 'tests/e2e/japanese-reference-routine.spec.ts';
-  const expectedCoordinates = [
-    { source: 57, line: 12, column: 7 },
-    { source: 57, line: 32, column: 7 },
-    { source: 57, line: 64, column: 7 },
-    { source: 57, line: 82, column: 26 },
-    { source: 57, line: 87, column: 5 },
-    { source: 57, line: 98, column: 5 },
-  ];
+  const expectedCoordinates = [{"source": 57, "line": 4, "column": 19}, {"source": 57, "line": 6, "column": 33}, {"source": 57, "line": 7, "column": 5}, {"source": 57, "line": 8, "column": 5}, {"source": 57, "line": 9, "column": 5}, {"source": 57, "line": 10, "column": 27}, {"source": 57, "line": 12, "column": 7}, {"source": 57, "line": 32, "column": 7}, {"source": 57, "line": 64, "column": 7}, {"source": 57, "line": 82, "column": 26}, {"source": 57, "line": 87, "column": 5}, {"source": 57, "line": 98, "column": 5}, {"source": 57, "line": 116, "column": 15}];
+
+
+
+
+
+
+
   try {
     assert.equal(sources[56], file); assert.equal(sources.length, 57);
     const source = await readFile(file, 'utf8'), lines = source.split('\n');
@@ -1764,13 +1764,13 @@ test('reference six literal phases retain source 57 numeric native attribution w
       ? [{ source: 57, line: index + 1, column: line.indexOf('await test.step(') + 1 }] : []);
     assert.deepEqual(positions, expectedCoordinates);
     const synthetic = Array(lines.length).fill('');
-    // Keep every original prefix (including the line82 if/await columns).
-    // `id` only supplies the literal labels and the kana-only branch. None of
+    // Match every original await column using inert whitespace, not source prefixes.
+    // Synthetic labels and sequential calls do not execute assignment/finally control flow. None of
     // the real case body/helper/fixture, page/context/qa or services is imported.
-    synthetic[0] = `import { test } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))}; import { fail } from './offline-reference-helper'; const id = 'kana'; for (let phase = 0; phase < 6; phase++) {`;
+    synthetic[0] = `import { test } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))}; import { fail } from './offline-reference-helper'; for (let phase = 0; phase < 13; phase++) {`;
     synthetic[2] = "test('synthetic reference phase ' + phase, async () => {";
     for (const [index, position] of positions.entries()) {
-      const prefix = lines[position.line - 1].split('async () => {')[0];
+      const prefix = ' '.repeat(position.column - 1) + `await test.step('synthetic phase ${index}', `;
       assert.equal(prefix.indexOf('await test.step(') + 1, position.column);
       synthetic[position.line - 1] = `${prefix}async () => { await fail(phase, ${index}); });`;
     }
@@ -1788,17 +1788,17 @@ test('reference six literal phases retain source 57 numeric native attribution w
     // Safe boolean actuals cannot serialize a raw spawn Error or stream.
     assert.equal(child.error === undefined, true, 'reference-native-child-error');
     assert.equal(child.signal === null, true, 'reference-native-child-signal');
-    assert.equal(child.status === 1, true, 'reference-native-six-intended-failures');
+    assert.equal(child.status === 1, true, 'reference-native-thirteen-intended-failures');
     const output = [];
-    // One diagnostic-only invocation containing six intentional failures.
+    // One diagnostic-only invocation containing thirteen intentional failures.
     // It is unrelated to the actual sixteen-case application lane inventory.
     const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
     assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
     const invocation = report.invocations[0];
-    assert.deepEqual(invocation.counts, { passed: 0, failed: 6, timedOut: 0, skipped: 0, interrupted: 0, unknown: 0 });
+    assert.deepEqual(invocation.counts, { passed: 0, failed: 13, timedOut: 0, skipped: 0, interrupted: 0, unknown: 0 });
     assert.equal(invocation.status, 'failed'); assert.deepEqual(invocation.active, []); assert.equal(invocation.omitted, 0);
-    assert.equal(invocation.runnerErrors, 0); assert.equal(invocation.details.length, 6);
-    assert.deepEqual(invocation.details.map(detail => detail.test), [1, 2, 3, 4, 5, 6]);
+    assert.equal(invocation.runnerErrors, 0); assert.equal(invocation.details.length, 13);
+    assert.deepEqual(invocation.details.map(detail => detail.test), Array.from({ length: 13 }, (_, index) => index + 1));
     const actual = [];
     for (const [index, detail] of invocation.details.entries()) {
       assert.equal(detail.source, 57); assert.equal(detail.line, 3); assert.equal(detail.column, 5); assert.equal(detail.project, 5);
@@ -1806,7 +1806,7 @@ test('reference six literal phases retain source 57 numeric native attribution w
       assert.deepEqual(detail.failure.failedSteps, [expectedCoordinates[index]]);
       assert.equal(detail.failure.stepScanTruncated, 0); actual.push(detail.failure.failedSteps[0]);
     }
-    assert.equal(new Set(actual.map(item => `${item.line}:${item.column}`)).size, 6);
+    assert.equal(new Set(actual.map(item => `${item.line}:${item.column}`)).size, 13);
     assert.deepEqual(actual, expectedCoordinates); privateOutput(output);
     // Raw child streams are private lifecycle capture, not public diagnostic output.
     const { SafetyEventCollector } = await import('../qa-private-safety-diagnostics.mjs');

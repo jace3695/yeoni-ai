@@ -1,13 +1,13 @@
 import { test, expect, login, today } from './fixture';
 import { dailyKeys, journalKey, saveFailure, scopeFailure, localSuccess, retryButton, nextButton, seedReferenceState, referenceSnapshot, equalRecords, languageWrites, unchanged, confirmed, assertDailyDelta, installJournalHarness, journalStats, restoreJournal, kanaAnswers, correctChoice, score, silentGuard, boardCheck, noOverflow, noApplicationAlerts, settingsState, synced } from './japanese-reference-routine-state';
 test('kana and word ordinary quizzes retry exact daily completion once and preserve records through invalidation boards settings and relogin', async ({ page, context, qa }) => {
-  const silence = await silentGuard(page, context);
+  const silence = await test.step('reference silent guard setup', () => silentGuard(page, context));
   try {
-    const fitness = await qa.read(); let saved = await seedReferenceState(qa);
-    await page.setViewportSize({ width: 320, height: 740 });
-    await login(page, qa.account, '/language/kana'); await synced(page);
-    equalRecords(await settingsState(page), saved, 'reference-initial-local-state');
-    const day = today(); const kana = await kanaAnswers(page);
+    const { fitness, seeded } = await test.step('reference initial reads and seed', async () => { const fitness = await qa.read(); const seeded = await seedReferenceState(qa); return { fitness, seeded }; }); let saved = seeded;
+    await test.step('reference narrow viewport setup', () => page.setViewportSize({ width: 320, height: 740 }));
+    await test.step('reference initial login and acknowledgement', async () => { await login(page, qa.account, '/language/kana'); await synced(page); });
+    await test.step('reference initial local state preservation', async () => { equalRecords(await settingsState(page), saved, 'reference-initial-local-state'); });
+    const { day, kana } = await test.step('reference visible kana answer source', async () => { const day = today(); const kana = await kanaAnswers(page); return { day, kana }; });
     for (const id of ['kana', 'words'] as const) {
       await test.step(`${id}: four ordinary correct answers have no daily completion`, async () => {
         if (id === 'words') {
@@ -113,5 +113,5 @@ test('kana and word ordinary quizzes retry exact daily completion once and prese
       expect(qa.traffic.blockedOrigins.size, 'reference-no-external-origin-attempts').toBe(0);
       await silence.check(); await noApplicationAlerts(page);
     });
-  } finally { await silence.restore(); }
+  } finally { await test.step('reference silent guard restoration', () => silence.restore()); }
 });
