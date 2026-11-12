@@ -461,16 +461,15 @@ process.exitCode = result.overflow ? 28 : result.timedOut || result.error || res
   }
 }
 
-test('actual native adapter finite descendant regressions share one fixed grace interval', { skip: process.platform !== 'linux', timeout: 90000 }, async t => {
-  // Six independent synthetic cases run sequentially. Each original scenario,
-  // native deadline, single cleanup grace and finally assertion stays unchanged.
-  // Awaiting t.test includes its finally cleanup; a failed child is recorded by
-  // node:test without preventing subsequent independent cases from running.
+test('actual native adapter finite descendant regressions share one fixed grace interval', { skip: process.platform !== 'linux', timeout: 90000 }, async () => {
+  // Keep all six scenarios top-level in the strict reporter; await each finally.
+  const outcomes = [];
   for (const scenario of ['inner-timeout', 'outer-timeout', 'cancelled', 'nonzero', 'overflow', 'zero-with-descendant']) {
-    await t.test(scenario, { timeout: 12000 }, async () => {
-      await runFiniteNativeAdapterRegression(scenario);
-    });
+    try { await runFiniteNativeAdapterRegression(scenario); outcomes.push({ status: 'fulfilled' }); }
+    catch (reason) { outcomes.push({ status: 'rejected', reason }); }
   }
+  assert.equal(outcomes.length, 6);
+  for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
 });
 
 // Unlike --list, this finite test actually forks a Playwright worker and reloads

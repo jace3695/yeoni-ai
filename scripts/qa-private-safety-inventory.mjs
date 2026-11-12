@@ -31,7 +31,7 @@ export const safetyInventory = Object.freeze([
   Object.freeze({"source": 2, "line": 178, "column": 1, "count": 1}),
   Object.freeze({"source": 2, "line": 196, "column": 1, "count": 1}),
   Object.freeze({"source": 2, "line": 464, "column": 1, "count": 1}),
-  Object.freeze({"source": 2, "line": 475, "column": 1, "count": 1}),
+  Object.freeze({"source": 2, "line": 477, "column": 1, "count": 1}),
   Object.freeze({"source": 3, "line": 168, "column": 1, "count": 1}),
   Object.freeze({"source": 3, "line": 224, "column": 3, "count": 47}),
   Object.freeze({"source": 3, "line": 232, "column": 3, "count": 4}),

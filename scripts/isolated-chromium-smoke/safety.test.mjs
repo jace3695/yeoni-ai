@@ -86,7 +86,7 @@ test('exact command, fixed project/source inventory, readiness and ceilings stay
   assert.equal(stages[0].lifecycleDiagnostics, true);
   assert.deepEqual(stages.filter(stage => stage.lifecycleDiagnostics).map(stage => stage.id), ['stage-01', 'stage-02']);
   assert.equal(stages[2].command, browserCommand); assert.equal(stages[2].diagnosticInventory, inventory);
-  assert.deepEqual(stages.map(stage => stage.timeoutMs), [60000, 240000, 465000]);
+  assert.deepEqual(stages.map(stage => stage.timeoutMs), [120000, 240000, 405000]);
   assert.equal(totalTimeoutMs, 775000); assert.ok(totalTimeoutMs + 5000 <= 13 * 60000);
   assert.ok(stages.reduce((sum, stage) => sum + stage.timeoutMs, 0) + 3 * 5000 <= 13 * 60000);
   const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
@@ -113,7 +113,7 @@ ${mode === 'exit' ? 'process.exitCode = 7;' : 'setTimeout(() => process.exit(9),
       const code = await supervise({ ...context, emit: value => output.push(value),
         readiness: async () => { readinessCalls++; return 0; },
         run: async (items, options) => {
-          runs++; assert.deepEqual(items, [stages[0]]); assert.equal(options.timeoutMs, 60000);
+          runs++; assert.deepEqual(items, [stages[0]]); assert.equal(options.timeoutMs, 120000);
           // Only the finite synthetic command and its short test deadline differ.
           // The real caller's unchanged plan and actual lifecycle path are checked.
           return runStages([{ ...items[0], command: `${JSON.stringify(process.execPath)} ${JSON.stringify(script)}` }], {
