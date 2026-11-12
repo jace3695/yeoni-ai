@@ -176,6 +176,7 @@ function FitnessApp() {
   const [directionUpdateNotice, setDirectionUpdateNotice] = useState("");
 
   const [completionError, setCompletionError] = useState("");
+  const [completionReady, setCompletionReady] = useState(false);
   const commitCompletedStore = (update: (previous: WorkoutCompletionStore) => WorkoutCompletionStore): boolean => {
     try {
       const current = readWorkoutCompletionStore();
@@ -269,6 +270,7 @@ function FitnessApp() {
       ),
     );
     } catch { setCompletionError(WORKOUT_STORAGE_ERROR); }
+    finally { setCompletionReady(true); }
   }, [activeTab]);
 
   const handleWeeklyWorkoutPlanChange = (planId: string) => {
@@ -717,6 +719,8 @@ function FitnessApp() {
   };
 
   if (completionError) return <section role="alert" className="p-6"><p>{completionError}</p><p>페이지를 다시 열기 전에 보존된 기록을 확인해 주세요. 초기화는 하지 않았습니다.</p></section>;
+  // Child panels read records during render; validate storage before mounting them.
+  if (!completionReady) return <section role="status" className="p-6">운동 기록을 안전하게 확인하고 있어요.</section>;
 
   return (
     <>
