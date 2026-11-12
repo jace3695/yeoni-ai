@@ -1768,7 +1768,7 @@ test('reference thirteen literal phases retain source 57 numeric native attribut
     // Synthetic labels and sequential calls do not execute assignment/finally control flow. None of
     // the real case body/helper/fixture, page/context/qa or services is imported.
     synthetic[0] = `import { test } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))}; import { fail } from './offline-reference-helper'; for (let phase = 0; phase < 13; phase++) {`;
-    synthetic[2] = "test('synthetic reference phase ' + phase, async () => {";
+    synthetic[2] = "test('synthetic reference phase ' + phase, async () => { if (phase < 12) test.fail();";
     for (const [index, position] of positions.entries()) {
       const prefix = ' '.repeat(position.column - 1) + `await test.step('synthetic phase ${index}', `;
       assert.equal(prefix.indexOf('await test.step(') + 1, position.column);
