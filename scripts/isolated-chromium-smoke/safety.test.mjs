@@ -1808,10 +1808,17 @@ test('reference six literal phases retain source 57 numeric native attribution w
     }
     assert.equal(new Set(actual.map(item => `${item.line}:${item.column}`)).size, 6);
     assert.deepEqual(actual, expectedCoordinates); privateOutput(output);
+    // Raw child streams are private lifecycle capture, not public diagnostic output.
+    const { SafetyEventCollector } = await import('../qa-private-safety-diagnostics.mjs');
+    const events = [], collector = new SafetyEventCollector(value => events.push(value), repository);
+    const emitted = events.length; let dataReads = 0;
+    for (const type of ['test:stdout', 'test:stderr']) {
+      collector.accept({ type, get data() { dataReads++; throw new Error('private-stream-data-access'); } });
+      assert.equal(dataReads, 0); assert.equal(events.length, emitted);
+    }
     const text = output.join('\n'), bytes = await readFile(journalPath, 'utf8');
     for (const secret of [canary, 'PRIVATE_EXPECTED', file, 'offline-reference-helper', root, 'synthetic reference phase', ...positions.map(item => lines[item.line - 1])]) {
       assert.ok(!text.includes(secret)); assert.ok(!bytes.includes(secret));
-      assert.ok(!child.stdout.includes(secret)); assert.ok(!child.stderr.includes(secret));
     }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
