@@ -1590,7 +1590,7 @@ test('reference source 57 pins the finite route graph and six exact source mutat
   "components/yeoni/CommonCharacterHost.tsx": "6b4d0c125c033d37d45835801a56b02157eb26367ef0248458df31543142477a",
   "components/AppCompanion.tsx": "d1c667c4c06fa5a2684f67ba4ad945f04e28cf3c397873860a334e6945f4e1b6",
   "tests/e2e/reporter.ts": "21a52f1e73ca9e116284cd578bf0ea5a3a67900d5ba0b5ec3c1dd3e7be7faeef",
-  "tests/e2e/japanese-reference-routine-state.ts": "a246c11b04511ff598e532c1e9f6ee0bc1463ae37d3dc24e9f20ae30028a504a",
+  "tests/e2e/japanese-reference-routine-state.ts": "a76d81adee68e628e9f5ff4aecd458662ea8ac0b603d6bfaac9d9fc293f00786", "scripts/isolated-chromium-smoke/reference-pin-status-controls.mjs": "67279b42d96db44ce5514f3e5573841c778fcbea64ed717088f11f902d10f8a7",
   "tests/e2e/japanese-reference-routine.spec.ts": "ce0e5594eb4713f4735ebce21eb0445ce634635834839f9e72e096410df6f042"
 };
   for (const [file, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(file)).digest('hex'), hash, file);
@@ -1657,7 +1657,7 @@ vm.createContext(realm);
 const source = await readFile('tests/e2e/japanese-reference-routine-state.ts', 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, strict: true } });
 vm.runInContext(compiled.outputText, realm, { filename: 'private-reference-helper.js', timeout: 2000 });
-const helper = realm.exports;
+const helper = realm.exports; await (await import('./reference-pin-status-controls.mjs')).verifyReferencePinStatusGuard(helper);
 let positives = 0, negatives = 0;
 function rejected(stage, action, matcher) {
   let error; try { action(); } catch (caught) { error = caught; }

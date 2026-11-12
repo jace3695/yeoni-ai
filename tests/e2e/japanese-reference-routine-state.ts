@@ -171,9 +171,29 @@ export async function noApplicationAlerts(page: Page) {
   await expect(announcer).toHaveCount(1); await expect(alerts.and(announcer)).toHaveCount(1); await expect(alerts).toHaveCount(1);
 }
 
+// Narrow exception for AuthGate's mandatory read-only PIN configuration check.
+// Literal URL equality deliberately rejects alternate hosts, queries and fragments.
+export function isReferencePinStatusRead(url: string, method: string, body: string | null): boolean {
+  if (url !== 'http://127.0.0.1:3000/api/pin' || method !== 'POST'
+    || typeof body !== 'string' || body.length > 256
+    || !/^\s*\{\s*"action"\s*:\s*"status"\s*\}\s*$/.test(body)) return false;
+  try {
+    const value: unknown = JSON.parse(body);
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      && Object.keys(value).length === 1 && Object.hasOwn(value, 'action')
+      && (value as { action: unknown }).action === 'status';
+  } catch { return false; }
+}
+
 export async function silentGuard(page: Page, context: BrowserContext) {
-  let apiRequests = 0, pageErrors = 0;
-  const deny = async (route: Route) => { apiRequests++; await route.abort('blockedbyclient'); };
+  let apiRequests = 0, allowedPinStatusReads = 0, pageErrors = 0;
+  const deny = async (route: Route) => {
+    const request = route.request();
+    if (isReferencePinStatusRead(request.url(), request.method(), request.postData())) {
+      allowedPinStatusReads++; await route.fallback(); return;
+    }
+    apiRequests++; await route.abort('blockedbyclient');
+  };
   const onError = () => { pageErrors++; };
   await context.route('http://127.0.0.1:3000/api/**', deny);
   page.on('pageerror', onError);
@@ -196,7 +216,8 @@ export async function silentGuard(page: Page, context: BrowserContext) {
   });
   return {
     check: async () => {
-      expect(apiRequests, 'reference-no-app-api-or-paid-call').toBe(0);
+      expect(apiRequests, 'reference-no-disallowed-api-or-paid-call').toBe(0);
+      expect(allowedPinStatusReads, 'reference-pin-status-route-allowed').toBeGreaterThan(0);
       expect(pageErrors, 'reference-no-application-errors').toBe(0);
       expect(await page.evaluate(() => (window as Window & { __qaReferenceSpeech?: { attempts: number } }).__qaReferenceSpeech?.attempts), 'reference-no-native-speech-attempts').toBe(0);
     },
