@@ -1,0 +1,49 @@
+/* Product CSS remains unchanged. Fixture shell and pinned SVG presentation ports only. */
+/* Shared product globals, utilities and language styles own the app appearance. */
+.qa-preview-notice { margin: 0; padding: 8px 16px; background: var(--yeoni-soft); color: var(--yeoni-ink); text-align: center; font-size: 13px; }
+.qa-tools { max-width: 920px; margin: 12px auto; }
+.qa-tools > summary { min-height: 44px; padding: 12px 16px; cursor: pointer; color: var(--yeoni-muted); }
+.qa-banner { max-width: 920px; margin: 0 auto; padding: 16px; background: #fff3cc; line-height: 1.6; overflow-wrap: anywhere; }
+.qa-banner p { margin: 8px 0; }
+.qa-banner nav, .qa-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+.qa-banner a, .qa-banner button { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; color: #263349; background: #fff; border: 1px solid #9c8752; border-radius: 8px; cursor: pointer; }
+.qa-unsupported { max-width: 920px; margin: 0 auto; padding: 24px 16px; }
+.qa-catalog { max-width: 920px; margin: 0 auto; padding: 24px 16px; line-height: 1.6; overflow-wrap: anywhere; }
+.qa-catalog h1 { font-size: 1.5rem; }
+.qa-catalog-sections { display: grid; gap: 20px; }
+.qa-catalog-sections > section { padding: 16px; background: #fff; border: 1px solid #ded9ed; border-radius: 12px; min-width: 0; }
+.qa-catalog h2 { font-size: 1.15rem; }
+.qa-picker { display: grid; gap: 8px; }
+.qa-picker select { width: 100%; max-width: 100%; min-width: 0; min-height: 44px; padding: 8px; border-radius: 8px; background: #fff; color: inherit; }
+.qa-catalog details { margin-top: 12px; }
+.qa-catalog summary { min-height: 44px; padding: 8px 0; cursor: pointer; }
+.qa-catalog ol { margin: 0; padding-left: 24px; }
+.qa-catalog li { padding: 4px 0; }
+.qa-catalog li a { display: block; min-height: 44px; padding: 8px 0; }
+.qa-catalog small { display: block; }
+.qa-image-omitted { display: grid; place-items: center; width: 100%; height: 100%; color: #6554b8; }
+
+/* The product supplies sr-only through Tailwind; only this used utility is needed here. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
+
+.qa-session-options { margin-top: 12px; padding: 12px; border: 1px solid #9c8752; border-radius: 8px; }
+.qa-session-options summary { min-height: 44px; padding: 8px 0; cursor: pointer; }
+.qa-session-fields { display: flex; flex-wrap: wrap; gap: 12px; }
+.qa-session-fields label { display: grid; gap: 6px; flex: 1 1 220px; min-width: 0; }
+.qa-session-fields select { min-width: 0; width: 100%; min-height: 44px; padding: 8px; border-radius: 8px; background: #fff; color: inherit; }
+
+/* OS voice names can be much wider than a phone viewport. */
+.qa-audio-probe { max-width: 920px; margin: 0 auto; padding: 12px; }
+.qa-audio-probe summary { cursor: pointer; font-weight: 700; }
+.qa-audio-probe select { max-width: 100%; min-width: 0; }
+.qa-audio-probe p { overflow-wrap: anywhere; }
+
+/* Imported SVG style attributes may be blocked by the opaque document’s CSP.
+ * Mirror only the reviewed glyph groups in the hash-authorized stylesheet.
+ * The product component still owns geometry, colors and animation timing. */
+.language-app-shell svg > g[data-strokesvg="shadows"] { fill: var(--shadow, #ccc); }
+.language-app-shell svg > g[data-strokesvg="strokes"] { stroke: var(--stroke, #000); fill: none; stroke-width: 128; stroke-linecap: round; }
+
+/* Only disposable QA snapshots: long JSON labels must not widen the document. */
+.qa-daily-records { margin-top: 12px; }
+.qa-daily-records output { overflow-wrap: anywhere; white-space: pre-wrap; }

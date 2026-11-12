@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
+import { useDailyRoutineCompletion } from "@/components/language/useDailyRoutineCompletion";
+import DailyRoutineSaveNotice from "@/components/language/DailyRoutineSaveNotice";
 import { SENTENCES, type SentenceItem as Sentence } from "@/data/sentences";
 import { speakJapaneseWithPreferredTts } from "@/utils/speakJapanese";
 import WritingPracticePad from "@/components/WritingPracticePad";
@@ -200,6 +201,7 @@ function JapaneseTextBlock({
 }
 
 export default function SentencesPage() {
+  const routine = useDailyRoutineCompletion("sentences");
   const router = useRouter();
   const [savedSentences, setSavedSentences] = useState<Sentence[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -211,6 +213,8 @@ export default function SentencesPage() {
   const [wordFilter, setWordFilter] = useState("");
   const [quiz, setQuiz] = useState<QuizState | null>(null);
   const [score, setScore] = useState({ correct: 0, total: 0 });
+  const scoreRef = useRef({ correct: 0, total: 0 });
+  const answeredRef = useRef(false);
   const [expandedReadingKeys, setExpandedReadingKeys] = useState<Set<string>>(new Set());
   const [writingTargetKey, setWritingTargetKey] = useState<string | null>(null);
   const practicePadRef = useRef<HTMLDivElement | null>(null);
@@ -298,8 +302,10 @@ export default function SentencesPage() {
         (patternFilter === "all" || (s.pattern ?? "other") === patternFilter)
     );
     if (pool.length < 4) return;
+    answeredRef.current = false;
     setQuiz(generateQuiz(pool));
-    setScore({ correct: 0, total: 0 });
+    scoreRef.current = { correct: 0, total: 0 };
+    setScore(scoreRef.current);
   }, [category, levelFilter, patternFilter, practiceScope]);
 
   useEffect(() => {
@@ -379,7 +385,8 @@ export default function SentencesPage() {
   };
 
   const handleChoiceSelect = (choice: string) => {
-    if (!quiz || quiz.selected !== null) return;
+    if (!quiz || quiz.selected !== null || answeredRef.current || !routine.ensureCurrent()) return;
+    answeredRef.current = true;
 
     const correctAnswer =
       quiz.quizType === "jp-to-kr"
@@ -390,16 +397,10 @@ export default function SentencesPage() {
 
     const updatedQuiz = { ...quiz, selected: choice, isCorrect };
     setQuiz(updatedQuiz);
-    setScore((prev) => {
-      const nextTotal = prev.total + 1;
-      if (nextTotal === 3) {
-        markTodayRoutineCompleted("sentences");
-      }
-      return {
-        correct: prev.correct + (isCorrect ? 1 : 0),
-        total: nextTotal,
-      };
-    });
+    const next = { correct: scoreRef.current.correct + (isCorrect ? 1 : 0), total: scoreRef.current.total + 1 };
+    scoreRef.current = next;
+    setScore(next);
+    if (next.total >= 3) routine.complete();
 
     if (!isCorrect) {
       saveWrongSentence(updatedQuiz);
@@ -415,6 +416,7 @@ export default function SentencesPage() {
         (patternFilter === "all" || (s.pattern ?? "other") === patternFilter)
     );
     if (pool.length < 4) return;
+    answeredRef.current = false;
     setQuiz(generateQuiz(pool));
   };
 
@@ -457,6 +459,7 @@ export default function SentencesPage() {
 
   return (
     <section className="mx-auto w-full max-w-6xl">
+      <DailyRoutineSaveNotice {...routine} />
       <div
         style={{
           marginBottom: "18px",

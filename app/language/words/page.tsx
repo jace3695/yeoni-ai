@@ -3,18 +3,20 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
+import { useDailyRoutineCompletion } from "@/components/language/useDailyRoutineCompletion";
+import DailyRoutineSaveNotice from "@/components/language/DailyRoutineSaveNotice";
 import { WORDS, type WordItem as Word } from "@/data/words";
 import type { RubySegment } from "@/data/words";
-import { speakJapaneseWithPreferredTts } from "@/utils/speakJapanese";
+import { useLearningAudio } from "@/components/language/useLearningAudio";
 import WritingPracticePad from "@/components/WritingPracticePad";
+import { createWordQuiz, type WordQuizType } from "@/utils/wordQuiz";
 
 const STORAGE_KEY = "savedWords";
 const WRONG_WORDS_KEY = "wrongWords";
 type CategoryFilter = "전체" | "여행" | "업무" | "일상" | "친구";
 type LevelFilter = "all" | "beginner" | "basic" | "practical";
 type PartOfSpeechFilter = "all" | "noun" | "verb" | "i-adjective" | "na-adjective" | "adverb" | "expression" | "particle" | "other";
-type QuizType = "jp-to-kr" | "kr-to-jp";
+type QuizType = WordQuizType;
 type PageMode = "study" | "quiz";
 
 type WrongWord = {
@@ -122,7 +124,7 @@ function saveWrongWord(w: Word, quizType: QuizType) {
         getWordKey(item) === currentWordKey &&
         item.quizType === quizType
     );
-    if (alreadyExists) return;
+    if (alreadyExists) return true;
     const next: WrongWord[] = [
       ...prev,
       {
@@ -139,27 +141,14 @@ function saveWrongWord(w: Word, quizType: QuizType) {
       },
     ];
     localStorage.setItem(WRONG_WORDS_KEY, JSON.stringify(next));
-  } catch {}
-}
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-function getChoices(correct: Word, pool: Word[], quizType: QuizType): string[] {
-  const others = pool.filter((w) => getWordKey(w) !== getWordKey(correct));
-  const shuffled = shuffle(others).slice(0, 3);
-  const all = shuffle([...shuffled, correct]);
-  if (quizType === "jp-to-kr") return all.map((w) => w.meaning);
-  return all.map((w) => w.word);
+    return true;
+  } catch { return false; }
 }
 
 export default function WordsPage() {
+  const routine = useDailyRoutineCompletion("words");
+  const audio = useLearningAudio();
+  const stopAudio = audio.stop;
   const router = useRouter();
   const [savedWords, setSavedWords] = useState<Word[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -180,6 +169,30 @@ export default function WordsPage() {
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [writingTargetKey, setWritingTargetKey] = useState<string | null>(null);
   const practicePadRef = useRef<HTMLDivElement | null>(null);
+  const answeredRef = useRef(false);
+  const scoreRef = useRef({ correct: 0, total: 0 });
+  const savedWordsRef = useRef<Word[]>([]);
+  const saveToggleLocks = useRef(new Set<string>());
+  const pendingStorageWrites = useRef(new Map<string, () => boolean>());
+  const [storageFailures, setStorageFailures] = useState<string[]>([]);
+  const [savedLoadError, setSavedLoadError] = useState(false);
+
+  const resetQuizScore = () => {
+    scoreRef.current = { correct: 0, total: 0 };
+    setScore(scoreRef.current);
+  };
+  const queueStorageWrite = (key: string, write: () => boolean) => {
+    if (write()) pendingStorageWrites.current.delete(key);
+    else pendingStorageWrites.current.set(key, write);
+    setStorageFailures([...pendingStorageWrites.current.keys()]);
+  };
+  const retryStorageWrites = () => {
+    for (const [key, write] of pendingStorageWrites.current) {
+      if (write()) pendingStorageWrites.current.delete(key);
+    }
+    setStorageFailures([...pendingStorageWrites.current.keys()]);
+  };
+
 
   useEffect(() => {
     try {
@@ -208,34 +221,47 @@ export default function WordsPage() {
     setShowQuizKoreanPronunciation(settings.showKoreanPronunciation);
   }, [settings.showKoreanPronunciation]);
 
-  useEffect(() => {
+  const loadSavedWords = useCallback(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-
-      const parsed = JSON.parse(raw) as Partial<Word>[];
-      if (!Array.isArray(parsed)) return;
-
-      const next = parsed
-        .map((item) => normalizeSavedWord(item))
-        .filter((item): item is Word => item !== null);
-
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) throw new Error("Invalid saved words");
+      const next = parsed.map(item => normalizeSavedWord(item)).filter((item): item is Word => item !== null);
+      savedWordsRef.current = next;
       setSavedWords(next);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {}
+      setSavedLoadError(false);
+    } catch { setSavedLoadError(true); }
   }, []);
+  useEffect(() => { loadSavedWords(); }, [loadSavedWords]);
 
-  const isSaved = (w: Word) =>
-    savedWords.some((s) => getWordKey(s) === getWordKey(w));
+  const isSaved = (w: Word) => savedWords.some(saved => getWordKey(saved) === getWordKey(w));
+
+  const writeSavedWord = (w: Word, shouldSave: boolean) => {
+    try {
+      // Re-read on every retry so unrelated saved words and metadata are retained.
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed) || parsed.some(item => !item || !normalizeSavedWord(item))) throw new Error("Invalid saved words");
+      const records = parsed as Word[];
+      const key = getWordKey(w);
+      const exists = records.some(item => getWordKey(item) === key);
+      const next = shouldSave ? (exists ? records : [...records, w]) : records.filter(item => getWordKey(item) !== key);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      const displayed = next.map(item => normalizeSavedWord(item)!);
+      savedWordsRef.current = displayed;
+      setSavedWords(displayed);
+      setSavedLoadError(false);
+      return true;
+    } catch { return false; }
+  };
 
   const handleSaveToggle = (w: Word) => {
-    const targetKey = getWordKey(w);
-    const next = isSaved(w)
-      ? savedWords.filter((saved) => getWordKey(saved) !== targetKey)
-      : [...savedWords, w];
-
-    setSavedWords(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    const key = getWordKey(w);
+    if (saveToggleLocks.current.has(key)) return;
+    saveToggleLocks.current.add(key);
+    const shouldSave = !savedWordsRef.current.some(item => getWordKey(item) === key);
+    queueStorageWrite(`saved:${key}`, () => writeSavedWord(w, shouldSave));
+    queueMicrotask(() => saveToggleLocks.current.delete(key));
   };
 
   const filteredWords = WORDS.filter((word) =>
@@ -256,15 +282,15 @@ export default function WordsPage() {
 
   const generateQuiz = useCallback(
     (pool: Word[]) => {
-      if (pool.length < 4) return;
-      const word = pool[Math.floor(Math.random() * pool.length)];
-      const randomQuizType: QuizType = Math.random() < 0.5 ? "jp-to-kr" : "kr-to-jp";
-      setQuizType(randomQuizType);
-      setCurrentWord(word);
-      setChoices(getChoices(word, pool, randomQuizType));
+      stopAudio();
+      const question = createWordQuiz(pool);
+      setCurrentWord(question?.word ?? null);
+      setQuizType(question?.type ?? "jp-to-kr");
+      setChoices(question?.choices ?? []);
+      answeredRef.current = false;
       setSelected(null);
     },
-    []
+    [stopAudio]
   );
 
   useEffect(() => {
@@ -275,26 +301,16 @@ export default function WordsPage() {
   }, [mode, categoryFilter, levelFilter, partOfSpeechFilter, practiceScope]);
 
   const handleAnswer = (choice: string) => {
-    if (selected !== null || !currentWord) return;
+    if (answeredRef.current || selected !== null || !currentWord || !routine.ensureCurrent()) return;
+    answeredRef.current = true;
     setSelected(choice);
-    const correctAnswer =
-      quizType === "jp-to-kr"
-        ? currentWord.meaning
-        : currentWord.word;
+    const correctAnswer = quizType === "jp-to-kr" ? currentWord.meaning : currentWord.word;
     const isCorrect = choice === correctAnswer;
-    if (!isCorrect) {
-      saveWrongWord(currentWord, quizType);
-    }
-    setScore((s) => {
-      const nextTotal = s.total + 1;
-      if (nextTotal >= 5) {
-        markTodayRoutineCompleted("words");
-      }
-      return {
-        correct: s.correct + (isCorrect ? 1 : 0),
-        total: nextTotal,
-      };
-    });
+    const next = { correct: scoreRef.current.correct + (isCorrect ? 1 : 0), total: scoreRef.current.total + 1 };
+    scoreRef.current = next;
+    setScore(next);
+    if (!isCorrect) queueStorageWrite(`wrong:${getWordKey(currentWord)}:${quizType}`, () => saveWrongWord(currentWord, quizType));
+    if (next.total >= 5) routine.complete();
   };
 
   const handleNext = () => {
@@ -307,19 +323,10 @@ export default function WordsPage() {
       : currentWord.word
     : "";
 
-  const speakJapaneseText = useCallback(
-    (text: string) => {
-      void speakJapaneseWithPreferredTts(text, {
-        rate: settings.ttsRate,
-        pitch: 1,
-        repeatCount: settings.repeatCount,
-        repeatDelayMs: settings.repeatDelayMs,
-      }).catch(() => window.alert("소리를 재생하지 못했어요. 기기의 일본어 음성 설정을 확인해 주세요. 읽는 법을 보며 계속 학습할 수 있어요."));
-    },
-    [settings.repeatCount, settings.repeatDelayMs, settings.ttsRate]
-  );
+  const speakJapaneseText = (text: string) => { void audio.play(text, settings.ttsRate, settings.repeatCount, settings.repeatDelayMs); };
 
   const handleWritingPracticeToggle = (word: Word) => {
+    stopAudio();
     const targetKey = getWordKey(word);
     setWritingTargetKey((prev) => (prev === targetKey ? null : targetKey));
   };
@@ -358,6 +365,16 @@ export default function WordsPage() {
 
   return (
     <section className="mx-auto w-full max-w-6xl">
+      <DailyRoutineSaveNotice {...routine} />
+      {audio.playing && <button type="button" className="btn" onClick={audio.stop}>소리 멈추기</button>}
+      {audio.audioError && <p role="status">{audio.audioError}</p>}
+      {savedLoadError && <div role="alert"><p>보관한 단어를 읽지 못했어요. 저장 공간과 브라우저 설정을 확인해 주세요.</p><button type="button" className="btn" onClick={loadSavedWords}>보관 목록 다시 읽기</button></div>}
+      {storageFailures.length > 0 && <div role="alert">
+        {storageFailures.some(key => key.startsWith("saved:")) && <p>단어 보관 변경을 저장하지 못했어요. 보관 표시는 기존 상태로 유지했어요.</p>}
+        {storageFailures.some(key => key.startsWith("wrong:")) && <p>오답을 복습 목록에 저장하지 못했어요. 이번 답안과 점수는 처리됐으므로 다시 풀 필요는 없어요.</p>}
+        <p>저장 공간과 브라우저 설정을 확인한 뒤 다시 저장해 주세요. 미저장 항목은 이 화면을 떠나거나 새로고침하면 사라져요.</p>
+        <button type="button" className="btn" onClick={retryStorageWrites}>미저장 항목 다시 저장</button>
+      </div>}
       <div className="page-header" style={{ marginBottom: "16px" }}>
         <h1 style={{ color: "#1e3a8a" }}>단어 학습</h1>
         <p className="muted" style={{ margin: 0, color: "#42526b" }}>
@@ -370,7 +387,7 @@ export default function WordsPage() {
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px", background: "#eff6ff", border: "1px solid #dbeafe", borderRadius: "14px", padding: "6px" }}>
         <button
           className="btn"
-          onClick={() => setMode("study")}
+          onClick={() => { stopAudio(); setMode("study"); }}
           style={{
             flex: 1,
             background: mode === "study" ? "#2563eb" : "#ffffff",
@@ -385,8 +402,10 @@ export default function WordsPage() {
         <button
           className="btn"
           onClick={() => {
+            stopAudio();
             setMode("quiz");
-            setScore({ correct: 0, total: 0 });
+            if (mode === "quiz") generateQuiz(quizPool);
+            resetQuizScore();
           }}
           style={{
             flex: 1,
@@ -403,7 +422,7 @@ export default function WordsPage() {
 
       <div className="card" style={{ marginBottom: "20px", padding: "14px", border: "1px solid #dbeafe", background: "#f8fbff" }}>
         <div className="label" style={{ color: "#1e3a8a", marginBottom: "8px", fontSize: "13px" }}>필터 선택</div>
-        <label>연습 자료 <select value={practiceScope} onChange={(event) => { const value = event.target.value as typeof practiceScope; setPracticeScope(value); setLevelFilter(value === "core" ? "beginner" : "all"); setCategoryFilter("전체"); setPartOfSpeechFilter("all"); setScore({ correct: 0, total: 0 }); }} style={{ minHeight: 44, marginBottom: 12 }}><option value="core">일상 표현부터</option><option value="numbers">숫자·시간·단위 집중 연습</option><option value="all">전체 자료</option></select></label>
+        <label>연습 자료 <select value={practiceScope} onChange={(event) => { stopAudio(); const value = event.target.value as typeof practiceScope; setPracticeScope(value); setLevelFilter(value === "core" ? "beginner" : "all"); setCategoryFilter("전체"); setPartOfSpeechFilter("all"); resetQuizScore(); }} style={{ minHeight: 44, marginBottom: 12 }}><option value="core">일상 표현부터</option><option value="numbers">숫자·시간·단위 집중 연습</option><option value="all">전체 자료</option></select></label>
         <p className="muted">처음에는 기초 표현을 보여줘요. 아래 단계는 앱 안의 추천 학습 순서이며 시험 등급이 아니에요.</p>
       {/* 카테고리 필터 */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
@@ -412,8 +431,9 @@ export default function WordsPage() {
             key={cat}
             className="btn"
             onClick={() => {
+              stopAudio();
               setCategoryFilter(cat);
-              if (mode === "quiz") setScore({ correct: 0, total: 0 });
+              if (mode === "quiz") resetQuizScore();
             }}
             style={{
               background: categoryFilter === cat ? "#2563eb" : "#fff",
@@ -436,8 +456,9 @@ export default function WordsPage() {
             key={level.value}
             className="btn"
             onClick={() => {
+              stopAudio();
               setLevelFilter(level.value);
-              if (mode === "quiz") setScore({ correct: 0, total: 0 });
+              if (mode === "quiz") resetQuizScore();
             }}
             style={{
               background: levelFilter === level.value ? "#0ea5e9" : "#fff",
@@ -460,8 +481,9 @@ export default function WordsPage() {
             key={part.value}
             className="btn"
             onClick={() => {
+              stopAudio();
               setPartOfSpeechFilter(part.value);
-              if (mode === "quiz") setScore({ correct: 0, total: 0 });
+              if (mode === "quiz") resetQuizScore();
             }}
             style={{
               background: partOfSpeechFilter === part.value ? "#f97316" : "#fff",
@@ -601,7 +623,7 @@ export default function WordsPage() {
                     쓰기 연습
                   </button>
                   <button
-                    onClick={() => router.push(`/language/sentences?word=${encodeURIComponent(getSentenceKeyword(w))}`)}
+                    onClick={() => { stopAudio(); router.push(`/language/sentences?word=${encodeURIComponent(getSentenceKeyword(w))}`); }}
                     className="btn"
                     style={{ borderRadius: "10px", border: "1px solid #cbd5e1", background: "#fff", color: "#334155", fontWeight: 600 }}
                   >
@@ -628,12 +650,12 @@ export default function WordsPage() {
       {/* ===== 퀴즈 모드 ===== */}
       {mode === "quiz" && (
         <div>
-          {quizPool.length < 4 ? (
+          {!currentWord ? (
             <div
               className="card"
               style={{ textAlign: "center", color: "#888", padding: "40px 20px" }}
             >
-              퀴즈를 위해 해당 카테고리에 단어가 4개 이상 필요합니다.
+              이 조건에서는 뜻과 보기가 겹치지 않는 문제를 만들 수 없어요. 필터를 넓혀보세요.
             </div>
           ) : (
             <>

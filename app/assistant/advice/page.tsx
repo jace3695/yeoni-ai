@@ -1,5 +1,6 @@
 'use client';
 
+import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '@/lib/supabase';
@@ -23,6 +24,7 @@ export default function ChatgptAdvicePage() {
   return <main className="min-h-dvh bg-yeoni-bg px-4 pb-28 pt-6 text-gray-800"><div className="mx-auto max-w-2xl">
     <Link href="/assistant" className="text-sm font-bold text-violet-700">← 연이</Link>
     <h1 className="mt-5 text-2xl font-bold">ChatGPT가 남긴 조언</h1>
+    <CommonCharacterSlot />
     <p className="mt-2 text-sm leading-6 text-gray-600">ChatGPT에서 분석한 뒤 연이에 저장해 달라고 요청한 조언입니다. 각 조언의 분석 시점을 확인해 주세요.</p>
     <div className="mt-4 flex flex-wrap gap-2"><button type="button" disabled={loading} onClick={() => void load()} className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-violet-700 disabled:opacity-50">조언 새로고침</button>
       <Link href="/assistant/connect" className="rounded-xl bg-violet-100 px-4 py-3 text-sm font-bold text-violet-700">ChatGPT 연결 관리</Link></div>

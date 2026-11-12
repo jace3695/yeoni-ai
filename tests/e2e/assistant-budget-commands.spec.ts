@@ -22,7 +22,7 @@ test('budget command reviews one original, survives lost response and reload, th
   await page.reload(); await expect(review).toHaveCount(0);
   expect(canonical(await read())).toBe(canonical(original));
   await page.goto('/assistant');
-  const input = page.getByLabel('연이에게 보낼 명령'); await expect(input).toBeEnabled();
+  const input = page.getByLabel('연이에게 하고 싶은 말', { exact: true }); await expect(input).toBeEnabled();
   await input.fill(command()); await input.press('Enter'); await expect(review).toBeVisible();
   await page.getByText('대화 메뉴', { exact: true }).click();
   await page.getByRole('link', { name: 'Siri 빠른 명령 설정 →' }).click();
@@ -69,7 +69,7 @@ test('independent sessions reject stale budget confirmation and common undo refu
   const seeded = await qa.account.client.from('budget_transactions').insert(expense(qa.account.id)).select('*').single();
   expect(seeded.error).toBeNull(); const original = seeded.data!;
   await login(page, qa.account); await synced(page); await openCommand(page, command()); await expect(reviewFor(page)).toBeVisible();
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); await qa.traffic.install(context);
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } }); await qa.traffic.install(context);
   try {
     const second = await context.newPage(); await login(second, qa.account); await synced(second);
     await openCommand(second, command(6000)); await expect(reviewFor(second)).toBeVisible();

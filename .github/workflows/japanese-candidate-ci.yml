@@ -1,0 +1,85 @@
+name: Japanese candidate checks without deployment
+on:
+  push:
+    branches: [agent/yeoni-japanese-ci-20261110]
+permissions:
+  contents: read
+concurrency:
+  group: japanese-candidate-ci-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  CI: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+  NODE_OPTIONS: --max-old-space-size=6144
+jobs:
+  isolated-unit-tests:
+    if: github.repository == 'jace3695/yeoni-ai' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.19.0'
+      - run: npm ci
+      - name: Run every test file in a fresh sequential runner
+        shell: python
+        run: |
+          import pathlib, subprocess
+          tests = sorted(str(p) for d in ['app', 'lib', 'tests'] for p in pathlib.Path(d).rglob('*.test.ts'))
+          assert len(tests) == 349, f'Unexpected test-file inventory: {len(tests)}'
+          for index, target in enumerate(tests, 1):
+              print(f'FILE {index}/{len(tests)} {target}', flush=True)
+              subprocess.run(['node', '--experimental-strip-types', '--test', '--test-concurrency=1', '--test-reporter=tap', target], check=True, timeout=180)
+          print(f'ALL {len(tests)} TEST FILES PASSED', flush=True)
+  types-and-lint:
+    if: github.repository == 'jace3695/yeoni-ai' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.19.0'
+      - run: npm ci
+      - run: npx tsc --noEmit --incremental false
+      - run: npm run lint
+  isolated-build:
+    if: github.repository == 'jace3695/yeoni-ai' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [default, webpack]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.19.0'
+      - run: npm ci
+      - name: Start existing disposable loopback-only fixture
+        run: node scripts/e2e-stack.mjs start
+      - name: Build with default compiler
+        if: matrix.compiler == 'default'
+        run: npm run build
+      - name: Build with webpack
+        if: matrix.compiler == 'webpack'
+        run: npm run build -- --webpack
+      - name: Verify Japanese payload trace and HTTP isolation
+        run: node scripts/japanese-preview/http-check.mjs
+      - name: Verify disposable Auth and API persistence privately
+        if: matrix.compiler == 'default'
+        run: node scripts/isolated-auth-api/supervisor.mjs
+      - name: Verify eighteen authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately
+        if: matrix.compiler == 'default'
+        run: node scripts/isolated-chromium-smoke/supervisor.mjs
+      - name: Remove disposable fixture
+        if: always()
+        run: node scripts/e2e-stack.mjs stop

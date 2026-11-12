@@ -7,12 +7,36 @@ export const ADVICE_QUESTIONS: Record<FreeAdviceScope, string> = {
   language: '일본어 학습 기록을 보고 공부 방법을 조언해줘',
 };
 
+const TASK_CLAUSE_SEPARATOR = /\s*(?:그리고|그다음|그\s*다음|한\s*뒤|후에)\s*/;
+
+function unquotedTaskText(message: string): string | null {
+  const text = message.replace(/"[^"\n]*"|'[^'\n]*'|“[^”\n]*”|‘[^’\n]*’/g, ' ');
+  return /["'“”‘’]/.test(text) ? null : text;
+}
+
+// Only a single explicit short task clause gets priority over other domains.
+// Quoted text is a title/example; incomplete quotes and compound requests do not qualify.
+export function detectShortTaskOperation(message: string): 'create' | 'update' | null {
+  const text = unquotedTaskText(message)?.trim();
+  if (!text || TASK_CLAUSE_SEPARATOR.test(text)
+    || !/^(?:할\s*일|일정)(?=\s|에|을|를|$)/.test(text)) return null;
+  if (/(?:추가|등록|기록)(?:해)?[.!。]*$/.test(text)) return 'create';
+  if (/(?:수정|변경)(?:\s*처리)?(?:해)?[.!。]*$/.test(text)) return 'update';
+  return null;
+}
+
+function hasExplicitTaskWrite(message: string): boolean {
+  const text = unquotedTaskText(message);
+  return text !== null && text.split(TASK_CLAUSE_SEPARATOR).some(part => detectShortTaskOperation(part) !== null);
+}
+
 // Routing only: never generates advice, sends records, or changes data.
 export function detectAdviceScope(message: string): FreeAdviceScope | null {
   const text = message.trim();
   // A quoted task/memo may itself contain an advice question. Keep explicit
   // writes on the existing review path, including combined requests.
   if (/(추가|등록|저장|삭제|수정|변경|기록|완료)\s*(해\s*줘|해\s*주세요|해요|했어|했어요|처리)|완료했|끝냈/.test(text)) return null;
+  if (hasExplicitTaskWrite(text)) return null;
   const asksAdvice = /(조언|분석|개선|추천|어떻게|어떤\s*방법|잘\s*(하고|하구)\s*있|줄이려면|늘리려면|하면\s*좋|해도\s*(될|되)|괜찮을까)/.test(text);
   if (!asksAdvice) return null;
   const fitness = /(운동|식단|체중|몸무게|단백질|섭취|식사|걷기|근력|허리)/.test(text);

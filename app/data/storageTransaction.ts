@@ -1,34 +1,69 @@
+import { assertStorageOwnership } from './storageOwnership.ts';
+
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 const JOURNAL_KEY = 'yeoni-storage-transaction-v1';
+let activeWrite = false;
 
-/** Recover an interrupted write before reading or synchronizing a snapshot. */
-export function recoverStorageTransaction(storage: StorageLike) {
+function restoreStorageTransaction(storage: StorageLike) {
+  assertStorageOwnership();
   const raw = storage.getItem(JOURNAL_KEY);
-  if (!raw) return;
-  const before = JSON.parse(raw) as Record<string, string | null>;
+  if (raw === null) return;
+  let before: unknown;
+  try {
+    before = JSON.parse(raw);
+  } catch {
+    throw new Error('이전 저장 복구 정보를 확인할 수 없어 기록을 변경하지 않았습니다.');
+  }
+  // Validate the entire v1 journal before removing any current values. Storage
+  // coerces non-strings, and a self-entry could destroy the recovery evidence.
+  if (before === null || typeof before !== 'object' || Array.isArray(before)
+    || Object.entries(before).some(([key, value]) => key === JOURNAL_KEY || (value !== null && typeof value !== 'string'))) {
+    throw new Error('이전 저장 복구 정보를 확인할 수 없어 기록을 변경하지 않았습니다.');
+  }
+  const entries = Object.entries(before) as [string, string | null][];
   // Remove new values first so restoring the old snapshot does not need extra quota.
-  for (const key of Object.keys(before)) storage.removeItem(key);
-  for (const [key, value] of Object.entries(before)) {
+  for (const [key] of entries) {
+    assertStorageOwnership();
+    storage.removeItem(key);
+  }
+  for (const [key, value] of entries) {
+    assertStorageOwnership();
     if (value !== null) storage.setItem(key, value);
   }
+  assertStorageOwnership();
   storage.removeItem(JOURNAL_KEY);
+}
+
+/** Only a document holding the exclusive Web Lock may recover an old journal. */
+export function recoverStorageTransaction(storage: StorageLike) {
+  assertStorageOwnership();
+  if (activeWrite) throw new Error('기록 저장이 진행 중이라 복구와 추가 접근을 멈췄습니다.');
+  restoreStorageTransaction(storage);
 }
 
 /** All callers publish React state only after this synchronous commit succeeds. */
 export function writeStorageBatch(storage: StorageLike, changes: Record<string, string | null>) {
   recoverStorageTransaction(storage);
   const before = Object.fromEntries(Object.keys(changes).map(key => [key, storage.getItem(key)]));
-  // If the journal cannot be saved, none of the user's keys have been changed.
-  storage.setItem(JOURNAL_KEY, JSON.stringify(before));
+  activeWrite = true;
   try {
-    for (const [key, value] of Object.entries(changes)) {
-      if (value === null) storage.removeItem(key);
-      else storage.setItem(key, value);
+    // If the journal cannot be saved, none of the user's keys have been changed.
+    assertStorageOwnership();
+    storage.setItem(JOURNAL_KEY, JSON.stringify(before));
+    try {
+      for (const [key, value] of Object.entries(changes)) {
+        assertStorageOwnership();
+        if (value === null) storage.removeItem(key);
+        else storage.setItem(key, value);
+      }
+      assertStorageOwnership();
+      storage.removeItem(JOURNAL_KEY);
+    } catch (error) {
+      restoreStorageTransaction(storage);
+      throw error;
     }
-    storage.removeItem(JOURNAL_KEY);
-  } catch (error) {
-    recoverStorageTransaction(storage);
-    throw error;
+  } finally {
+    activeWrite = false;
   }
 }
 

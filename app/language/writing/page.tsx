@@ -2,86 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type WritingProblem = {
-  id: number;
-  prompt: string;
-  answer: string;
-  category: "일상" | "여행" | "업무" | "친구";
-};
+import { JAPANESE_WRITING_CHOICES as PROBLEMS, type JapaneseWritingChoice as WritingProblem } from '@/data/japaneseWritingChoices';
 
-const PROBLEMS: WritingProblem[] = [
-  {
-    id: 1,
-    prompt: "이거 얼마예요?",
-    answer: "これはいくらですか？",
-    category: "여행",
-  },
-  {
-    id: 2,
-    prompt: "다시 한 번 부탁드립니다",
-    answer: "もう一度お願いします",
-    category: "일상",
-  },
-  {
-    id: 3,
-    prompt: "확인 부탁드립니다",
-    answer: "ご確認お願いします",
-    category: "업무",
-  },
-  {
-    id: 4,
-    prompt: "지금 뭐 하고 있어?",
-    answer: "今何してる？",
-    category: "친구",
-  },
-];
-
-type InputMode = "text" | "handwriting";
-
-type Grade = "correct" | "almost" | "wrong";
-
+type InputMode = "choice" | "handwriting";
 type Result = {
   problem: WritingProblem;
   userInput: string;
-  grade: Grade;
+  grade: "correct" | "wrong" | null;
+  mode: InputMode;
 };
-
-function normalize(s: string): string {
-  return s.replace(/\s/g, "").replace(/[?？]+$/, "");
-}
-
-function levenshtein(a: string, b: string): number {
-  const m = a.length, n = b.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
-    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
-  );
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] =
-        a[i - 1] === b[j - 1]
-          ? dp[i - 1][j - 1]
-          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-    }
-  }
-  return dp[m][n];
-}
-
-function getGrade(input: string, answer: string): Grade {
-  const normInput = normalize(input);
-  const normAnswer = normalize(answer);
-  if (normInput === normAnswer) return "correct";
-  const dist = levenshtein(normInput, normAnswer);
-  const threshold = Math.max(1, Math.floor(normAnswer.length * 0.2));
-  if (dist <= threshold) return "almost";
-  return "wrong";
-}
 
 const CANVAS_WIDTH = 560;
 const CANVAS_HEIGHT = 200;
 
 export default function WritingPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [inputMode, setInputMode] = useState<InputMode>("text");
+  const [inputMode, setInputMode] = useState<InputMode>("choice");
   const [userInput, setUserInput] = useState("");
   const [result, setResult] = useState<Result | null>(null);
 
@@ -106,22 +42,7 @@ export default function WritingPage() {
   };
 
   useEffect(() => {
-    setUserInput("");
-    setResult(null);
-  }, [currentIndex]);
-
-  useEffect(() => {
-    setUserInput("");
-    setResult(null);
-    if (inputMode === "handwriting") {
-      setTimeout(() => initCanvas(), 0);
-    }
-  }, [inputMode]);
-
-  useEffect(() => {
-    if (inputMode === "handwriting") {
-      initCanvas();
-    }
+    if (inputMode === "handwriting") initCanvas();
   }, [currentIndex, inputMode]);
 
   const getCanvasPos = (
@@ -206,27 +127,28 @@ export default function WritingPage() {
   };
 
   const handleSubmit = () => {
-    if (inputMode === "text") {
-      const trimmed = userInput.trim();
-      if (!trimmed) return;
-      const grade = getGrade(trimmed, currentProblem.answer);
-      setResult({ problem: currentProblem, userInput: trimmed, grade });
+    if (result) return;
+    if (inputMode === "choice") {
+      if (!currentProblem.choices.includes(userInput)) return;
+      setResult({ problem: currentProblem, userInput, grade: userInput === currentProblem.answer ? "correct" : "wrong", mode: "choice" });
     } else {
-      setResult({
-        problem: currentProblem,
-        userInput: "(필기 입력)",
-        grade: "wrong",
-      });
+      setResult({ problem: currentProblem, userInput: "(필기 입력)", grade: null, mode: "handwriting" });
     }
   };
 
-  const handleNext = () => {
-    setCurrentIndex((i) => (i + 1) % PROBLEMS.length);
+  const changeMode = (mode: InputMode) => {
+    if (mode === inputMode) return;
+    setUserInput("");
+    setResult(null);
+    setInputMode(mode);
   };
-
-  const handlePrev = () => {
-    setCurrentIndex((i) => (i - 1 + PROBLEMS.length) % PROBLEMS.length);
+  const move = (direction: number) => {
+    setUserInput("");
+    setResult(null);
+    setCurrentIndex(index => (index + direction + PROBLEMS.length) % PROBLEMS.length);
   };
+  const handleNext = () => move(1);
+  const handlePrev = () => move(-1);
 
   const modeButtonStyle = (mode: InputMode) => ({
     padding: "8px 18px",
@@ -245,9 +167,9 @@ export default function WritingPage() {
   return (
     <section>
       <div className="page-header">
-        <h1>쓰기 학습</h1>
+        <h1>표현 고르기·손글씨 연습</h1>
         <p className="muted" style={{ margin: 0 }}>
-          한국어 문장을 일본어로 직접 써 보세요.
+          한국어 뜻에 맞는 일본어 문장을 고르거나 손으로 써 보세요. 선택 답과 필기는 이번 화면에서만 사용하며 저장하지 않아요.
         </p>
       </div>
 
@@ -273,14 +195,14 @@ export default function WritingPage() {
         </div>
       </div>
 
-      {/* 입력 방식 선택 */}
+      {/* 연습 방식 선택 */}
       <div className="card">
-        <div className="label" style={{ marginBottom: "8px" }}>입력 방식</div>
+        <div className="label" style={{ marginBottom: "8px" }}>연습 방식</div>
         <div style={{ display: "flex", gap: "10px" }}>
-          <button style={modeButtonStyle("text")} onClick={() => setInputMode("text")}>
-            ⌨️ 텍스트로 쓰기
+          <button style={modeButtonStyle("choice")} onClick={() => changeMode("choice")}>
+            표현 고르기
           </button>
-          <button style={modeButtonStyle("handwriting")} onClick={() => setInputMode("handwriting")}>
+          <button style={modeButtonStyle("handwriting")} onClick={() => changeMode("handwriting")}>
             ✏️ 필기로 쓰기
           </button>
         </div>
@@ -302,28 +224,22 @@ export default function WritingPage() {
               cursor: "pointer",
             }}
           >
-            전체 초기화
+            이번 문제 다시 연습
           </button>
         </div>
 
-        {inputMode === "text" ? (
-          <textarea
-            value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
-            placeholder="일본어로 답을 입력해 주세요"
-            rows={3}
-            style={{
-              width: "100%",
-              padding: "10px",
-              border: "1px solid #d0d0d0",
-              borderRadius: "8px",
-              fontSize: "16px",
-              fontFamily: "inherit",
-              background: "#ffffff",
-              resize: "none",
-              boxSizing: "border-box",
-            }}
-          />
+        {inputMode === "choice" ? (
+          <div role="group" aria-label="일본어 표현 선택" style={{ display: "grid", gap: 8 }}>
+            {currentProblem.choices.map(choice => <button
+              type="button"
+              key={choice}
+              lang="ja"
+              aria-pressed={userInput === choice}
+              disabled={!!result}
+              onClick={() => setUserInput(choice)}
+              style={{ minHeight: 44, padding: "10px", border: userInput === choice ? "2px solid #0070f3" : "1px solid #d0d0d0", borderRadius: 8, background: "#ffffff", color: "#222222", textAlign: "left", fontSize: 16, overflowWrap: "anywhere" }}
+            >{choice}</button>)}
+          </div>
         ) : (
           <div>
             <div
@@ -385,17 +301,17 @@ export default function WritingPage() {
           <button
             onClick={handleSubmit}
             className="btn"
-            disabled={inputMode === "text" && userInput.trim().length === 0}
+            disabled={!!result || (inputMode === "choice" && !userInput)}
           >
-            제출
+            {inputMode === "choice" ? "선택한 답 확인" : "예시 답과 비교"}
           </button>
         </div>
       </div>
 
       {/* 결과 표시 영역 */}
       {result && (
-        <div className="card">
-          <div className="label">결과</div>
+        <div className="card" role="status">
+          <div className="label">이번 연습 결과 · 저장하지 않아요</div>
 
           <div style={{ marginTop: "6px" }}>
             <div className="label">문제</div>
@@ -403,32 +319,28 @@ export default function WritingPage() {
           </div>
 
           <div style={{ marginTop: "10px" }}>
-            <div className="label">내가 입력한 답</div>
+            <div className="label">{result.mode === "choice" ? "내가 고른 답" : "내 필기"}</div>
             <div className="jp-text" style={{ fontSize: "18px" }}>
               {result.userInput || "(입력 없음)"}
             </div>
           </div>
 
           <div style={{ marginTop: "10px" }}>
-            <div className="label">정답</div>
+            <div className="label">예시 답</div>
             <div className="jp-text" style={{ fontSize: "18px" }}>
               {result.problem.answer}
             </div>
           </div>
 
           <div style={{ marginTop: "12px" }}>
-            {inputMode === "text" ? (
+            {result.mode === "choice" ? (
               result.grade === "correct" ? (
                 <div style={{ background: "#e6f7ea", color: "#1e7a36", border: "1px solid #b8e2c4", padding: "8px 12px", borderRadius: "8px", fontSize: "14px" }}>
-                  ✅ 정답이에요! 잘 쓰셨습니다.
-                </div>
-              ) : result.grade === "almost" ? (
-                <div style={{ background: "#fff8e1", color: "#8a6200", border: "1px solid #ffe082", padding: "8px 12px", borderRadius: "8px", fontSize: "14px" }}>
-                  🟡 거의 맞았어요! 정답과 조금 달라요. 다시 확인해 보세요.
+                  ✅ 뜻에 맞는 표현을 골랐어요. 직접 쓰기 능력 점수는 아니에요.
                 </div>
               ) : (
                 <div style={{ background: "#fdecea", color: "#a12a25", border: "1px solid #f2c0bd", padding: "8px 12px", borderRadius: "8px", fontSize: "14px" }}>
-                  ❌ 틀렸습니다. 정답을 보고 다시 써 보세요.
+                  선택한 표현과 예시 답의 뜻을 비교한 뒤 다시 골라 보세요.
                 </div>
               )
             ) : (

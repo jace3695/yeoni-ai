@@ -1,0 +1,32 @@
+.host{box-sizing:border-box;margin:8px auto;padding:8px 12px;max-width:64rem;width:100%;border-bottom:1px solid #e7deef;background:#faf7ff;color:#49355d}
+.controls{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px}
+.controls button{min-height:44px;padding:6px 12px;border:1px solid #a492b8;border-radius:12px;background:white;color:inherit}
+.portrait{max-width:380px;margin:8px auto 0}
+/* Common-host-only compact layout; standalone review stages retain their size. */
+.portrait>div{display:grid;grid-template-columns:80px minmax(0,1fr);gap:4px 8px;align-items:center;padding:0}
+.portrait [aria-label="연이 외형 선택"]{grid-column:2;grid-row:1;min-width:0}
+.portrait [aria-label="연이 외형 선택"] button{min-width:0;min-height:44px;flex:1;padding:4px;font-size:14px}
+.portrait [aria-busy]{grid-column:1;grid-row:1 / 3;width:80px;height:80px;aspect-ratio:auto;margin:0}
+.portrait canvas{max-height:80px;width:auto;max-width:100%;margin:auto}
+.portrait [role="status"]{grid-column:2;grid-row:2;min-height:0;margin:0;font-size:12px;text-align:left;overflow-wrap:anywhere}
+.portrait>div>button{grid-column:2;min-height:44px}
+.host[data-quiet=true] .portrait canvas{max-height:64px}
+/* Stable stage footprint while focus pauses/shrinks the character. */
+@media(max-width:480px){.host{padding:6px 8px}}
+
+/* Reply-side stage and actual canvas share the reply's measured square footprint.
+   Human art retains its 2:3 ratio; no stretched pixels or focus-time shrink. */
+.host[data-beside-reply=true]{margin:0;padding:0;width:100%;border:0;border-radius:12px;background:transparent}
+.host[data-beside-reply=true] .portrait{margin:0;max-width:none}
+.host[data-beside-reply=true] .portrait>div{display:block}
+.host[data-beside-reply=true] .portrait [aria-busy]{width:100%;height:var(--paired-height);aspect-ratio:auto;margin:0}
+.host[data-beside-reply=true] .portrait canvas,.host[data-beside-reply=true][data-quiet=true] .portrait canvas{width:auto;height:var(--paired-height);max-height:var(--paired-height);max-width:100%;object-fit:contain;margin:auto}
+
+/* Cat source has a broad white margin. Enlarge the existing artwork, clipping
+   that margin inside the same stage; human portrait keeps its native framing. */
+.host[data-beside-reply=true] .portrait [aria-busy]{overflow:hidden}
+.host[data-beside-reply=true] [data-character-appearance=cat] canvas{transform:translate(-5%,-5%) scale(1.25)}
+
+/* Blend the opaque white backdrop into the light app surface. This changes no
+   asset alpha or RGB: white fur keeps its shading, contour and animated parts. */
+.host [data-character-appearance=cat] canvas{mix-blend-mode:multiply}

@@ -3,16 +3,21 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { APP_RECORD_KEYS, RECORD_RESET_APPS, resetMarkerKey } from "./appRecordReset.ts";
 import { applyCloudState, mergeCloudState, mergeCloudStateFromBase, mergeExplicitCloudBackup } from "./cloudSync.ts";
+import { grantSyntheticStorageOwnership } from '../../tests/storageOwnershipFixture.ts';
+grantSyntheticStorageOwnership();
 
 const fitnessMarker = resetMarkerKey("fitness");
 const languageMarker = resetMarkerKey("language");
 const stamp = "2026-09-06T12:00:00.000Z|reset-one";
+// Use the real body-record schema so these tests exercise reset semantics,
+// rather than depending on invalid numeric/date-placeholder body fixtures.
+const weights = (date: string, weight: number) => ({ [date]: { weight, recordedAt: "synthetic-time" } });
 
 test("운동 초기화는 오래된 기기의 운동 기록을 버리고 식단·설정 변경은 보존한다", () => {
-  const base = { "ai-fitness-weight-records": { today: 82 }, "ai-fitness-water-intake": { today: 100 }, "ai-fitness-weight-goal": { minKg: 65 } };
+  const base = { "ai-fitness-weight-records": weights("2026-09-06", 82), "ai-fitness-water-intake": { today: 100 }, "ai-fitness-weight-goal": { minKg: 65 } };
   const remote = { ...base, [fitnessMarker]: stamp } as Record<string, unknown>;
   delete remote["ai-fitness-weight-records"];
-  const local = { ...base, "ai-fitness-weight-records": { today: 81 }, "ai-fitness-water-intake": { today: 200 } };
+  const local = { ...base, "ai-fitness-weight-records": weights("2026-09-06", 81), "ai-fitness-water-intake": { today: 200 } };
   const merged = mergeCloudStateFromBase(base, remote, local);
   assert.equal("ai-fitness-weight-records" in merged, false);
   assert.deepEqual(merged["ai-fitness-water-intake"], { today: 200 });
@@ -30,23 +35,23 @@ test("최초 동기화에도 일본어 초기화 이전 초안·복습을 되살
 
 test("초기화 이후 두 기기에서 새로 작성한 기록은 합친다", () => {
   const base = { [fitnessMarker]: stamp, "ai-fitness-weight-records": {} };
-  const remote = { ...base, "ai-fitness-weight-records": { first: 81 } };
-  const local = { ...base, "ai-fitness-weight-records": { second: 80 } };
-  assert.deepEqual(mergeCloudStateFromBase(base, remote, local)["ai-fitness-weight-records"], { first: 81, second: 80 });
+  const remote = { ...base, "ai-fitness-weight-records": weights("2026-09-06", 81) };
+  const local = { ...base, "ai-fitness-weight-records": weights("2026-09-07", 80) };
+  assert.deepEqual(mergeCloudStateFromBase(base, remote, local)["ai-fitness-weight-records"], { ...weights("2026-09-06", 81), ...weights("2026-09-07", 80) });
 });
 
 test("초기화 도중 도착한 이전 서버 응답이 새 초기화를 덮어쓰지 않는다", () => {
   const local = { [fitnessMarker]: stamp };
-  const remote = { "ai-fitness-weight-records": { old: 82 } };
+  const remote = { "ai-fitness-weight-records": weights("2026-09-05", 82) };
   assert.equal("ai-fitness-weight-records" in mergeCloudState(remote, local), false);
 });
 
 test("사용자가 직접 복원한 백업은 현재 초기화 기준을 유지하며 복구한다", () => {
   const current = { [fitnessMarker]: stamp, "ai-fitness-water-intake": { today: 100 } };
-  const backup = { "ai-fitness-weight-records": { previous: 82 }, [fitnessMarker]: "2026-09-01T12:00:00.000Z|old" };
+  const backup = { "ai-fitness-weight-records": weights("2026-09-05", 82), [fitnessMarker]: "2026-09-01T12:00:00.000Z|old" };
   const merged = mergeExplicitCloudBackup(current, backup);
   assert.equal(merged[fitnessMarker], stamp);
-  assert.deepEqual(merged["ai-fitness-weight-records"], { previous: 82 });
+  assert.deepEqual(merged["ai-fitness-weight-records"], weights("2026-09-05", 82));
   assert.deepEqual(merged["ai-fitness-water-intake"], { today: 100 });
 });
 
@@ -57,7 +62,7 @@ test("초기화 대상을 앱끼리 공유하지 않고 로그인·설정 키를
 });
 
 test("DB 트랜잭션의 삭제 키가 화면의 삭제 범위와 일치한다", () => {
-  const sql = readFileSync(new URL("../../supabase/migrations/20260906141943_add_app_record_resets.sql", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const sql = readFileSync(new URL("../../supabase/migrations/20261108132759_add_japanese_chunk_review_reset_key.sql", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   for (const app of ["fitness", "diet", "language"] as const) {
     const clause = sql.split(`when '${app}' then\n    record_keys := array[`)[1]?.split("];", 1)[0];
     assert.ok(clause, `${app} SQL scope missing`);

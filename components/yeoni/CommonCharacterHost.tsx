@@ -1,0 +1,79 @@
+'use client';
+
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { EMPTY_PLAYBACK } from '@/lib/yeoni/character-controller';
+import { isQuietCharacterRoute } from '@/lib/yeoni/common-host-policy';
+import { stopAllSpeech } from '@/lib/yeoni/speech-focus';
+import { useYeoniPreferences } from '../useYeoniPreferences';
+import SwitchableCharacterStage from './SwitchableCharacterStage';
+import type { CharacterControlProps } from './useCharacterStage';
+import styles from './common-character-host.module.css';
+import { CHARACTER_RESET_EVENT, CommonCharacterContext, CommonCharacterPlacementContext, CommonCharacterSuppressionContext, type CharacterChannel } from './CommonCharacterContext';
+const emptySpeech = () => ({ manifest: null, playback: EMPTY_PLAYBACK });
+
+/** One renderer per app shell. Only ephemeral control inputs enter this channel;
+ * no reply text, owner ID, record, or audio is persisted by the host. */
+export default function CommonCharacterHost({ children, path, boundary = 0 }: {
+  children: ReactNode; path: string; boundary?: number;
+}) {
+  const [placement, setPlacement] = useState<{ node: HTMLDivElement | null; besideReply: boolean }>({ node: null, besideReply: false });
+  const registerPlacement = useCallback((node: HTMLDivElement | null, besideReply = false) => { setPlacement({ node, besideReply: Boolean(node && besideReply) }); }, []);
+  const preferences = useYeoniPreferences();
+  const [editing, setEditing] = useState(false);
+  const quietRequests = useRef(new Set<symbol>());
+  const [quietCount, setQuietCount] = useState(0);
+  const [controls, setControls] = useState<CharacterControlProps>({});
+  const current = useRef<CharacterControlProps | null>(null);
+  const [suppressionCount, setSuppressionCount] = useState(0);
+  const suppress = useCallback(() => {
+    current.current = null; setControls({}); stopAllSpeech();
+    window.dispatchEvent(new Event(CHARACTER_RESET_EVENT));
+    setSuppressionCount(count => count + 1);
+    return () => setSuppressionCount(count => Math.max(0, count - 1));
+  }, []);
+  const scope = `${path}:${boundary}`;
+  const liveScope = useRef(scope); liveScope.current = scope;
+  const channel = useMemo<CharacterChannel>(() => ({ publish(next) {
+    if (liveScope.current !== scope) return () => {};
+    current.current = next; setControls(next);
+    return () => { if (current.current === next) { current.current = null; setControls({}); } };
+  }, requestQuiet() {
+    if (liveScope.current !== scope) return () => {};
+    const token = Symbol(); quietRequests.current.add(token); setQuietCount(quietRequests.current.size);
+    return () => { quietRequests.current.delete(token); setQuietCount(quietRequests.current.size); };
+  } }), [scope]);
+  const speech = useCallback(() => current.current?.speech?.() ?? emptySpeech(), []);
+  useLayoutEffect(() => {
+    current.current = null; setControls({}); quietRequests.current.clear(); setQuietCount(0); stopAllSpeech();
+    window.dispatchEvent(new Event(CHARACTER_RESET_EVENT));
+    return () => { current.current = null; stopAllSpeech(); };
+  }, [scope]);
+  useEffect(() => {
+    const focus = () => {
+      const el = document.activeElement;
+      setEditing(el instanceof HTMLElement && (el.matches('input,textarea,select') || el.isContentEditable));
+    };
+    const suspend = () => { if (document.hidden) stopAllSpeech(); };
+    document.addEventListener('focusin', focus); document.addEventListener('focusout', focus);
+    document.addEventListener('visibilitychange', suspend); focus();
+    return () => {
+      document.removeEventListener('focusin', focus); document.removeEventListener('focusout', focus);
+      document.removeEventListener('visibilitychange', suspend);
+    };
+  }, []);
+  const quiet = editing || quietCount > 0 || isQuietCharacterRoute(path);
+  const portrait = suppressionCount > 0 ? null : <aside className={styles.host} data-beside-reply={placement.besideReply} data-yeoni-common-host data-quiet={quiet} aria-label="공통 연이">
+      {preferences.visible && <div className={styles.portrait}>
+        <SwitchableCharacterStage key={scope} speech={speech} emotion={controls.emotion} gesture={controls.gesture} quiet={quiet} showOptions={false} />
+      </div>}
+    </aside>;
+  return <CommonCharacterContext.Provider value={channel}>
+    <CommonCharacterSuppressionContext.Provider value={suppress}>
+    <CommonCharacterPlacementContext.Provider value={registerPlacement}>
+      {children}
+      {placement.node ? createPortal(portrait, placement.node) : portrait}
+    </CommonCharacterPlacementContext.Provider>
+    </CommonCharacterSuppressionContext.Provider>
+  </CommonCharacterContext.Provider>;
+}

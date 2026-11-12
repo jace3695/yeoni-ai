@@ -17,6 +17,7 @@ function SettingsPage() {
         <p className="text-sm leading-6 text-gray-500">계정 보안과 기기 잠금은 여기에서 한 번만 설정하면 가계부·운동·식단·언어 앱에 함께 적용됩니다.</p>
         <div className="mt-6 grid gap-4">
           <YeoniPreferencesPanel />
+          <Link href="/settings/privacy" className="inline-flex min-h-12 items-center rounded-xl bg-white px-4 py-3 font-bold">개인정보·보관 →</Link>
           <AiBudgetPanel />
           <section className="rounded-3xl bg-white p-5 shadow-sm"><h2 className="text-xl font-bold">앱별 기록 관리</h2><p className="mt-2 text-sm leading-6 text-gray-600">초기화할 앱의 설정에서 지워지는 기록을 확인하세요. 통합 달력은 각 앱의 원본 기록을 함께 보여줍니다.</p><div className="mt-4 grid gap-2 sm:grid-cols-2">{RECORD_RESET_APPS.map(app => <Link key={app} href={APP_RESET_INFO[app].href} className="min-h-12 rounded-xl bg-gray-50 px-4 py-3 text-sm font-bold">{APP_RESET_INFO[app].label} 기록 관리 →</Link>)}</div><p className="mt-3 text-xs text-gray-500">가계부는 앱 안의 설정 메뉴에서 초기화할 수 있어요.</p></section>
           <AccountPasswordPanel />

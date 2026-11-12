@@ -1,0 +1,15 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import Growth from '../../app/growth/page';
+import Language from '../../app/language/page';
+import Kana from '../../app/language/kana/page';
+import Words from '../../app/language/words/page';
+import Grammar from '../../app/language/grammar/page';
+import Handwriting from '../../app/growth/handwriting/page';
+import FreeHandwriting from '../../app/growth/handwriting/free/page';
+import KanaStrokeAnimation from '../../components/language/KanaStrokeAnimation';
+import Retired from '../../components/RetiredPractice';
+const path=location.pathname;
+const Sequence = () => <div style={{width:340,height:340}}><KanaStrokeAnimation char={new URLSearchParams(location.search).get('text') || 'ぎゃ'} tab={new URLSearchParams(location.search).get('tab') === 'katakana' ? 'katakana' : 'hiragana'} /></div>;
+const Content = path==='/sequence' ? Sequence : path==='/growth/handwriting' ? Handwriting : path==='/growth/handwriting/free' ? FreeHandwriting : path==='/growth' ? Growth : path==='/language/kana' ? Kana : path==='/language/words' ? Words : path==='/language/grammar' ? Grammar : path==='/language' ? Language : () => <Retired language={path.startsWith('/language')} />;
+createRoot(document.getElementById('root')!).render(<><p style={{padding:12,background:'#fff3cc'}}>합성 데이터 UI 검사 · 실제 인증/DB/기기 음성 검증 아님</p><Content /></>);

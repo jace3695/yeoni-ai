@@ -1,0 +1,98 @@
+/* Budget-only visual system. Shared companion layout and behavior are unchanged. */
+.budget-app-shell.budget-app-shell {
+  --yeoni-bg: #f6f6f9;
+  --yeoni-surface: #ffffff;
+  --yeoni-soft: #f0eef7;
+  --yeoni-ink: #252331;
+  --yeoni-muted: #646170;
+  --yeoni-border: #dedce6;
+  --yeoni-primary: #6750a4;
+  --yeoni-primary-dark: #493278;
+  --yeoni-shadow: 0 3px 14px rgb(37 35 49 / 4%);
+  --background: var(--yeoni-bg);
+  --surface: var(--yeoni-surface);
+  --surface-muted: var(--yeoni-soft);
+  --foreground: var(--yeoni-ink);
+  --foreground-muted: var(--yeoni-muted);
+  --border: var(--yeoni-border);
+  --sage: var(--yeoni-primary);
+  --sage-dark: var(--yeoni-primary-dark);
+  --income: #146b5b;
+  --expense: #b33848;
+  --saving: #465d88;
+  --warning: #8b5e12;
+  color-scheme: light;
+}
+.budget-app-shell .living-finance-home { max-width: 920px; }
+.budget-app-shell .home-header { gap: 12px; }
+.budget-app-shell .home-header-actions { flex-wrap: wrap; }
+.budget-app-shell .home-overview-card { background: var(--surface); }
+.budget-app-shell .home-main-amount { font-size: clamp(28px, 5vw, 42px); overflow-wrap: anywhere; }
+.budget-app-shell .home-budget-summary > div,
+.budget-app-shell .home-metric { background: var(--background); }
+.budget-app-shell .home-budget-summary strong,
+.budget-app-shell .home-flow-item strong { white-space: normal; overflow-wrap: anywhere; }
+.budget-app-shell .home-ai-card-primary { background: var(--surface); box-shadow: var(--yeoni-shadow); }
+.budget-app-shell .home-ai-action-line { background: var(--surface-muted); }
+.budget-app-shell .home-ai-action-line strong { color: var(--foreground); }
+.budget-app-shell .budget-home-actions { display: flex; gap: 10px; margin: 0 0 18px; box-shadow: none !important; }
+.budget-app-shell .budget-primary-action,
+.budget-app-shell .budget-secondary-action {
+  min-height: 48px; min-width: 0; border-radius: 12px; padding: 12px 18px;
+  font: inherit; font-weight: 700; cursor: pointer; line-height: 1.4;
+}
+.budget-app-shell .budget-primary-action { border: 1px solid var(--sage); background: var(--sage); color: #fff; }
+.budget-app-shell .budget-secondary-action { border: 1px solid var(--border); background: var(--surface); color: var(--sage-dark); }
+.budget-app-shell .budget-home-actions .budget-primary-action { flex: 1; }
+.budget-app-shell .budget-home-details,
+.budget-app-shell .budget-entry-scope { border: 1px solid var(--border); border-radius: 16px; padding: 4px 16px; margin: 0 0 18px; background: var(--surface); color: var(--foreground); }
+.budget-app-shell .budget-home-details > summary,
+.budget-app-shell .budget-entry-scope > summary { min-height: 48px; padding: 14px 0; cursor: pointer; font-weight: 650; line-height: 1.5; }
+.budget-app-shell .budget-home-details[open] { padding-bottom: 16px; }
+.budget-app-shell .budget-home-details .home-flow-card,
+.budget-app-shell .budget-home-details .home-expense-card { border: 0; padding: 12px 0; box-shadow: none; }
+.budget-app-shell .budget-section-help,
+.budget-app-shell .budget-entry-scope p,
+.budget-app-shell .budget-entry-preservation { color: var(--foreground-muted); font-size: 13px; line-height: 1.65; }
+.budget-app-shell .budget-entry-scope .budget-secondary-action { margin-bottom: 12px; }
+.budget-app-shell .budget-entry-switch { display: flex !important; gap: 6px !important; padding: 5px; margin-bottom: 8px !important; border-radius: 14px; background: var(--surface-muted); }
+.budget-app-shell .budget-entry-switch button { flex: 1; min-width: 0; min-height: 46px; border: 1px solid transparent; background: transparent; color: var(--foreground-muted); font-weight: 700; }
+.budget-app-shell .budget-entry-switch button[aria-pressed='true'] { color: var(--sage-dark); background: var(--surface); border-color: var(--border); box-shadow: var(--yeoni-shadow); }
+.budget-app-shell .budget-manual-form { padding: 20px; margin: 18px 0; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--foreground); }
+.budget-app-shell .budget-manual-form h3 { margin: 0 0 8px; font-size: 19px; }
+.budget-app-shell .budget-manual-form p { font-size: 13px; line-height: 1.65; color: var(--foreground-muted); }
+.budget-app-shell .budget-manual-form label { color: var(--foreground); font-size: 14px; font-weight: 600; }
+.budget-app-shell .budget-manual-control { display: block; width: 100%; min-width: 0; min-height: 48px; box-sizing: border-box; margin-top: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--foreground); font-size: 16px; }
+.budget-app-shell .budget-manual-notice:empty { display: none; }
+.budget-app-shell .budget-manual-form .budget-manual-notice { color: var(--expense); }
+.budget-app-shell .record-screen [hidden] { display: none !important; }
+/* Replace remaining legacy dark surfaces rather than recoloring their text alone. */
+.budget-app-shell .record-screen > section,
+.budget-app-shell .record-screen section,
+.budget-app-shell .record-screen article { border-color: var(--border) !important; background: var(--surface) !important; box-shadow: none !important; }
+.budget-app-shell .record-screen label,
+.budget-app-shell .record-screen strong,
+.budget-app-shell .record-screen details { color: var(--foreground) !important; }
+.budget-app-shell .record-screen p,
+.budget-app-shell .record-screen span { color: var(--foreground-muted) !important; }
+.budget-app-shell .record-screen textarea { caret-color: var(--sage) !important; font-size: 16px !important; }
+.budget-app-shell .record-screen input::placeholder,
+.budget-app-shell .record-screen textarea::placeholder { color: var(--foreground-muted) !important; }
+.budget-app-shell .living-finance-nav { background: rgb(255 255 255 / 96%); border-color: var(--border); }
+.budget-app-shell .living-finance-app .budget-improvement-card { background: var(--surface); color: var(--foreground); border-color: var(--border); box-shadow: none; }
+.budget-app-shell .living-finance-app .budget-improvement-card button,
+.budget-app-shell .living-finance-app .budget-improvement-card select { background: var(--surface-muted); color: var(--sage-dark); border-color: var(--border); }
+.budget-app-shell .budget-change-row,
+.budget-app-shell .budget-plan-form { border-color: var(--border); }
+.budget-app-shell .home-recent-amount { font-variant-numeric: tabular-nums; }
+.budget-app-shell :focus-visible { outline: 3px solid var(--sage) !important; outline-offset: 3px; }
+@media (max-width: 767px) {
+  .budget-app-shell .budget-home-actions { flex-wrap: wrap; }
+  .budget-app-shell .budget-manual-form { padding: 16px; }
+  .budget-app-shell .home-flow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .budget-app-shell .home-header-actions { width: 100%; justify-content: space-between; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .budget-app-shell .living-finance-app button,
+  .budget-app-shell .home-progress span { transition: none !important; transform: none !important; }
+}

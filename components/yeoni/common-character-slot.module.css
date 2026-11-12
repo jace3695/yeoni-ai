@@ -1,0 +1,24 @@
+.layout{container-type:inline-size;display:grid;grid-template-columns:minmax(0,var(--yeoni-character-height)) minmax(0,1fr);gap:12px;align-items:start;margin-top:12px}
+.layout>[data-yeoni-common-slot]{min-width:0;--paired-height:var(--yeoni-character-height)}
+.reply{min-width:0;overflow-wrap:anywhere}
+.reply p{overflow-wrap:anywhere}
+.reply [data-chat-message]>div{font-size:var(--yeoni-guidance-font-size);font-weight:550;line-height:1.6}
+.reply>[role=region]{height:auto;max-height:var(--yeoni-character-height);padding:10px}
+.layout[data-character-visible=false]{grid-template-columns:minmax(0,1fr)}
+.layout[data-character-visible=false]>[data-yeoni-common-slot]{display:none}
+.layout[data-character-visible=false] .reply>[role=region]{height:auto;max-height:20rem}
+
+/* Reclaim nested message gutters in the narrow reply column without resizing art. */
+@media(max-width:639px){
+  .reply>[role=region]{padding:4px}
+  .reply [data-chat-message]>div{max-width:100%;min-width:0;padding:8px}
+  .reply [aria-label="Zephyr 답변 읽기"]{padding:4px}
+  .reply [aria-label="Zephyr 답변 읽기"] button{max-width:100%;padding-inline:4px}
+}
+
+/* Match guidance reflow when text is enlarged inside a narrow container. */
+@container (max-width:12em){
+  .layout>[data-yeoni-common-slot]{grid-column:1 / -1;width:var(--yeoni-character-height);justify-self:center}
+  .reply{grid-column:1 / -1}
+  .reply>[role=region]{max-height:min(60vh,24rem)}
+}

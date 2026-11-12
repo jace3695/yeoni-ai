@@ -1,11 +1,19 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import Image from "next/image";
-import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
+import KanaStrokeAnimation from "@/components/language/KanaStrokeAnimation";
+import { getKanaWritingClue } from "@/data/kanaWritingClues";
+import { useDailyRoutineCompletion } from "@/components/language/useDailyRoutineCompletion";
+import DailyRoutineSaveNotice from "@/components/language/DailyRoutineSaveNotice";
 import { FREE_MODE } from "@/lib/free-mode";
-import { japaneseAudioErrorMessage, speakJapaneseWithPreferredTts } from "@/utils/speakJapanese";
+import { useLearningAudio } from "@/components/language/useLearningAudio";
 import { authenticatedJsonHeaders } from "@/app/lib/authenticatedHeaders";
+
+const kanaBoardStyle: React.CSSProperties = {
+  width: "100%", maxWidth: 340, aspectRatio: "1", margin: "0 auto", position: "relative",
+  border: "1px solid #cbd5e1", borderRadius: 10, overflow: "hidden", backgroundColor: "#fff",
+  backgroundImage: "linear-gradient(to right, transparent calc(50% - .5px), #cbd5e1 calc(50% - .5px), #cbd5e1 calc(50% + .5px), transparent calc(50% + .5px)), linear-gradient(to bottom, transparent calc(50% - .5px), #cbd5e1 calc(50% - .5px), #cbd5e1 calc(50% + .5px), transparent calc(50% + .5px))",
+};
 
 function getStrokeSvgPaths(char: string, tab: "hiragana" | "katakana") {
   return Array.from(char).map((part) => {
@@ -15,78 +23,6 @@ function getStrokeSvgPaths(char: string, tab: "hiragana" | "katakana") {
   });
 }
 
-let strokeSvgBundlePromise: Promise<Record<string, string>> | undefined;
-function loadStrokeSvg(src: string) {
-  strokeSvgBundlePromise ??= fetch("/kana-strokes.json").then((response) => {
-    if (!response.ok) throw new Error("획순 묶음을 불러오지 못했습니다.");
-    return response.json() as Promise<Record<string, string>>;
-  });
-  return strokeSvgBundlePromise.then((bundle) => bundle[src] ?? "");
-}
-
-function StrokeGlyph({ src, label }: { src: string; label: string }) {
-  const svgRef = useRef<SVGSVGElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let replayTimer: ReturnType<typeof setTimeout> | undefined;
-    const animations: Animation[] = [];
-    const loadAndPlay = async () => {
-      const markup = await loadStrokeSvg(src);
-      if (!markup || cancelled) return;
-      const documentSvg = new DOMParser().parseFromString(markup, "image/svg+xml").documentElement;
-      const target = svgRef.current;
-      if (!target || cancelled) return;
-      target.replaceChildren(...Array.from(documentSvg.childNodes).map((node) => document.importNode(node, true)));
-      target.setAttribute("viewBox", documentSvg.getAttribute("viewBox") ?? "0 0 1024 1024");
-      const strokeItems = Array.from(target.querySelectorAll<SVGElement>('g[data-strokesvg="strokes"] > *'));
-      const strokes = strokeItems.map((item) =>
-        item.matches("path, line, polyline, polygon, circle, ellipse, rect")
-          ? [item as SVGGeometryElement]
-          : Array.from(item.querySelectorAll<SVGGeometryElement>("path, line, polyline, polygon, circle, ellipse, rect")),
-      );
-      const play = () => {
-        if (cancelled) return;
-        animations.splice(0).forEach((animation) => animation.cancel());
-        const strokeLengths = strokes.map((parts) => parts.map((part) => Math.max(part.getTotalLength(), 1)));
-
-        // 브라우저가 첫 프레임을 그리기 전에 모든 획을 숨겨, 완성된 글자나 중간 획이 먼저 보이지 않게 한다.
-        strokes.forEach((parts, strokeIndex) => {
-          parts.forEach((part, partIndex) => {
-            const length = strokeLengths[strokeIndex][partIndex];
-            part.style.strokeDasharray = `${length}`;
-            part.style.strokeDashoffset = `${length}`;
-          });
-        });
-
-        strokes.forEach((parts, strokeIndex) => {
-          parts.forEach((part, partIndex) => {
-            const length = strokeLengths[strokeIndex][partIndex];
-            animations.push(part.animate(
-              [{ strokeDashoffset: `${length}` }, { strokeDashoffset: "0" }],
-              { duration: 700, delay: 350 + strokeIndex * 900, fill: "forwards", easing: "ease-out" },
-            ));
-          });
-        });
-        replayTimer = setTimeout(play, Math.max(3600, 1300 + strokes.length * 900));
-      };
-      play();
-    };
-    void loadAndPlay();
-    return () => {
-      cancelled = true;
-      if (replayTimer) clearTimeout(replayTimer);
-      animations.forEach((animation) => animation.cancel());
-    };
-  }, [src]);
-
-  return <svg ref={svgRef} role="img" aria-label={`${label} 획순 애니메이션`} style={{ width: "100%", height: "100%", maxHeight: 300, display: "block", margin: "0 auto", "--shadow": "#d1d5db", "--stroke": "#111827" } as React.CSSProperties} />;
-}
-
-function KanaStrokeAnimation({ char, tab }: { char: string; tab: "hiragana" | "katakana" }) {
-  const paths = getStrokeSvgPaths(char, tab);
-  return <div style={{ width: "100%", height: "100%", display: "grid", gridTemplateColumns: `repeat(${paths.length}, minmax(0, 1fr))`, alignItems: "center", gap: 4 }}>{paths.map((path, index) => <StrokeGlyph key={path} src={path} label={Array.from(char)[index]} />)}</div>;
-}
 
 const hiragana = [
   { char: "あ", roman: "a" }, { char: "い", roman: "i" }, { char: "う", roman: "u" }, { char: "え", roman: "e" }, { char: "お", roman: "o" },
@@ -366,32 +302,32 @@ const confusingPairs: ConfusingPair[] = [
   {
     a: { char: "シ", roman: "shi" },
     b: { char: "ツ", roman: "tsu" },
-    tip: "シ는 획이 왼쪽 위에서 오른쪽 아래로 뻗고, ツ는 오른쪽 위에서 아래로 내려옵니다. 시옷(シ)은 누워있고, 쯔(ツ)는 세워져 있다고 기억하세요.",
+    tip: "シ는 짧은 두 획이 옆으로 누워 있고, 마지막 긴 획은 왼쪽 아래에서 오른쪽 위로 올려 써요. ツ는 짧은 두 획이 세워져 있고, 마지막 긴 획은 오른쪽 위에서 왼쪽 아래로 내려 써요.",
   },
   {
     a: { char: "ソ", roman: "so" },
     b: { char: "ン", roman: "n" },
-    tip: "ソ는 획이 왼쪽 아래에서 오른쪽 위로 비스듬히 올라가고, ン은 오른쪽 아래로 내려옵니다. 소(ソ)는 올라가고, 은(ン)은 내려온다고 기억하세요.",
+    tip: "ソ의 긴 2획은 오른쪽 위에서 왼쪽 아래로 내려 써요. ン의 긴 2획은 왼쪽 아래에서 오른쪽 위로 올려 써요. 짧은 첫 획도 ソ는 세워지고 ン은 옆으로 누운 모양이에요.",
   },
   {
     a: { char: "さ", roman: "sa" },
     b: { char: "き", roman: "ki" },
-    tip: "さ는 위에 선이 하나이고 아래에 둥근 고리가 있습니다. き는 위에 선이 두 개이고 오른쪽에 작은 획이 추가됩니다. 선의 개수를 주목하세요.",
+    tip: "さ는 위쪽 가로획이 하나, き는 두 개예요. 아래의 굽은 부분은 글꼴에 따라 이어지거나 떨어져 보일 수 있으니 가로획 수부터 비교해요.",
   },
   {
     a: { char: "ぬ", roman: "nu" },
     b: { char: "め", roman: "me" },
-    tip: "ぬ는 오른쪽에 작은 고리(꼬리)가 있고, め는 오른쪽 고리가 더 크고 닫혀있습니다. 꼬리 크기로 구분하세요.",
+    tip: "ぬ는 마지막에 작은 고리가 있고, め는 마지막에 그 작은 고리를 만들지 않아요. 둘 다 큰 둥근 부분이 있으므로 끝부분을 비교해요.",
   },
   {
     a: { char: "わ", roman: "wa" },
     b: { char: "れ", roman: "re" },
-    tip: "わ는 왼쪽 세로선 아래가 둥글게 마무리되고, れ는 아래에 고리 모양이 추가됩니다. れ 아래의 고리를 주목하세요.",
+    tip: "わ는 오른쪽이 크게 둥글게 돌아요. れ는 오른쪽으로 올라갔다가 내려온 뒤 끝을 오른쪽으로 뻗으며, 작은 고리를 만들지 않아요.",
   },
   {
     a: { char: "は", roman: "ha" },
     b: { char: "ほ", roman: "ho" },
-    tip: "は는 오른쪽 부분이 두 획으로 나뉘고, ほ는 세 획으로 고리까지 있습니다. ほ에 작은 고리가 있다는 것을 기억하세요.",
+    tip: "は는 오른쪽 가로획이 하나, ほ는 두 개예요. 두 글자 모두 오른쪽 아래에 작은 고리가 있으므로 고리 유무가 아니라 가로획 수로 구별해요.",
   },
 ];
 
@@ -433,7 +369,6 @@ const DEFAULT_SETTINGS: SectionSettings = {
   repeatCount: 1,
   repeatDelayMs: 500,
 };
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   あ: {
@@ -485,7 +420,7 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
       "2획: 오른쪽 위에서 왼쪽 아래로 비스듬히 내려 긋습니다.",
       "3획: 오른쪽 작은 곡선을 위에서 아래로 씁니다.",
     ],
-    tip: "왼쪽 세로획과 오른쪽 곡선 사이 공간을 유지하면 글자 균형이 좋아집니다.",
+    tip: "왼쪽의 굽은 획과 비스듬한 획, 오른쪽의 짧은 획 사이 간격을 살펴보세요.",
   },
   き: {
     totalStrokes: 4,
@@ -528,7 +463,7 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
       "2획: 가운데에서 아래로 내려오며 왼쪽으로 살짝 꺾어 중심축을 만듭니다.",
       "3획: 오른쪽에서 시작해 아래로 둥글게 감아 마무리합니다.",
     ],
-    tip: "3획의 고리가 너무 닫히지 않게 열어 두면 き와 구분이 더 잘됩니다.",
+    tip: "위쪽 가로획은 하나예요. 아래 굽은 부분에 ぬ처럼 작은 고리를 추가하지 않아요.",
   },
   し: {
     totalStrokes: 1,
@@ -548,11 +483,11 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   せ: {
     totalStrokes: 3,
     steps: [
-      "1획: 왼쪽 세로획을 위에서 아래로 곧게 내립니다.",
-      "2획: 위쪽 가로획을 왼쪽에서 오른쪽으로 긋고 끝을 조금 내립니다.",
-      "3획: 가운데에서 아래로 내려오며 오른쪽으로 휘어 마무리합니다.",
+      "1획: 가로획을 왼쪽에서 오른쪽으로 써요.",
+      "2획: 오른쪽 짧은 세로획을 위에서 아래로 써요.",
+      "3획: 왼쪽 세로획을 내려 아래에서 오른쪽으로 둥글게 이어 써요.",
     ],
-    tip: "세로획(1획)을 너무 길게 쓰지 않으면 전체 비율이 안정적으로 맞습니다.",
+    tip: "첫 획은 가로획이에요. 두 세로획이 가로획과 만나는 위치를 살펴보세요.",
   },
   そ: {
     totalStrokes: 1,
@@ -591,7 +526,7 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
     steps: [
       "1획: 위쪽 짧은 선을 긋고 이어서 아래로 내린 뒤 오른쪽으로 크게 뻗어 마무리합니다.",
     ],
-    tip: "마지막 가로 곡선을 너무 평평하게 하지 말고 살짝 상승시켜 보세요.",
+    tip: "한 획으로 써요. 위쪽 시작 부분에서 꺾인 뒤 아래로 둥글게 돌아오는 모양을 살펴보세요.",
   },
   と: {
     totalStrokes: 2,
@@ -614,26 +549,27 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   に: {
     totalStrokes: 3,
     steps: [
-      "1획: 위쪽 짧은 가로획을 씁니다.",
-      "2획: 가운데 가로획을 1획보다 약간 길게 긋습니다.",
-      "3획: 아래쪽 긴 가로획을 안정적으로 긋습니다.",
+      "1획: 왼쪽 세로획을 위에서 아래로 써요.",
+      "2획: 오른쪽 위 가로획을 써요.",
+      "3획: 오른쪽 아래 가로획을 써요.",
     ],
-    tip: "세 가로획 길이를 위에서 아래로 점점 길게 하면 형태가 자연스럽습니다.",
+    tip: "왼쪽 세로획 하나와 오른쪽 가로획 두 개로 이루어져요. 오른쪽 두 획의 간격을 살펴보세요.",
   },
   ぬ: {
     totalStrokes: 2,
     steps: [
-      "1획: 왼쪽 위에서 아래로 내려오며 가운데를 지나 오른쪽으로 감아 큰 고리를 만듭니다.",
-      "2획: 오른쪽 아래에서 작은 꼬리 고리를 추가해 마무리합니다.",
+      "1획: 왼쪽 위에서 비스듬히 내려 써요.",
+      "2획: 위에서 내려와 왼쪽 아래를 돌아 크게 둥근 부분을 만들고, 마지막에 작은 고리를 만들어요.",
     ],
     tip: "마지막 작은 고리를 분명히 써야 め와 차이가 또렷해집니다.",
   },
   ね: {
-    totalStrokes: 1,
+    totalStrokes: 2,
     steps: [
-      "1획: 위에서 내려와 왼쪽으로 돌아 나오고 다시 오른쪽 아래로 크게 돌려 연결합니다.",
+      "1획: 왼쪽 세로획을 위에서 아래로 써요.",
+      "2획: 왼쪽 가로 부분과 꺾임을 지나 오른쪽을 크게 돌고 작은 고리로 마무리해요.",
     ],
-    tip: "중간의 안쪽 공간을 막지 않게 쓰면 ね 특유의 열린 형태가 잘 보입니다.",
+    tip: "왼쪽 세로획과 오른쪽을 도는 획을 나누어 써요. 마지막 작은 고리가 わ와 다른 점이에요.",
   },
   の: {
     totalStrokes: 1,
@@ -661,12 +597,12 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   ふ: {
     totalStrokes: 4,
     steps: [
-      "1획: 위쪽 작은 점획을 찍습니다.",
-      "2획: 그 아래에 두 번째 점획을 찍어 간격을 맞춥니다.",
-      "3획: 왼쪽에서 오른쪽 아래로 짧게 내려오는 획을 씁니다.",
-      "4획: 중앙에서 아래로 내린 뒤 왼쪽으로 돌렸다가 오른쪽으로 길게 뻗습니다.",
+      "1획: 위쪽 짧은 획을 써요.",
+      "2획: 가운데 굽은 획을 내려 써요.",
+      "3획: 왼쪽 아래의 짧은 획을 써요.",
+      "4획: 오른쪽 아래의 짧은 획을 써요.",
     ],
-    tip: "위 점 두 개는 나란히 두고, 4획을 크게 써서 글자 중심을 잡아 주세요.",
+    tip: "위의 짧은 획, 가운데 굽은 획, 왼쪽과 오른쪽의 짧은 획 순서예요. 옆 획을 지나치게 크게 쓰지 않아요.",
   },
   へ: {
     totalStrokes: 1,
@@ -683,7 +619,7 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
       "3획: 오른쪽 위에서 아래로 내려 중심을 잡습니다.",
       "4획: 오른쪽 아래에 작은 고리를 만들며 마무리합니다.",
     ],
-    tip: "오른쪽 고리를 지나치게 크게 키우지 않으면 は와 구별이 명확해집니다.",
+    tip: "오른쪽 가로획이 두 개라는 점을 は와 비교하세요. は와 ほ 모두 아래에 작은 고리가 있어요.",
   },
   ま: {
     totalStrokes: 3,
@@ -692,7 +628,7 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
       "2획: 중앙에서 아래로 내려온 뒤 왼쪽으로 살짝 돌립니다.",
       "3획: 오른쪽에서 시작해 아래로 감아 균형 있게 마무리합니다.",
     ],
-    tip: "2획과 3획의 시작 높이를 비슷하게 맞추면 안정적인 ま가 됩니다.",
+    tip: "위쪽 가로획 두 개의 간격을 두고, 마지막 세로획 아래에 작은 고리를 만들어요.",
   },
   み: {
     totalStrokes: 2,
@@ -714,10 +650,10 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   め: {
     totalStrokes: 2,
     steps: [
-      "1획: 왼쪽 위에서 아래로 내려와 오른쪽으로 크게 돌아 고리 형태를 만듭니다.",
-      "2획: 오른쪽 아래에서 짧은 연결 획을 더해 마무리합니다.",
+      "1획: 왼쪽 위에서 비스듬히 내려 쓰세요.",
+      "2획: 위에서 내려와 왼쪽 아래를 돌아 크게 둥근 부분을 만들고, 작은 고리 없이 끝내요.",
     ],
-    tip: "1획의 고리를 완전히 닫아 주면 ぬ와의 차이가 분명해집니다.",
+    tip: "마지막에 작은 고리를 만들지 않아요. 작은 고리로 마무리하는 ぬ와 끝부분을 비교하세요.",
   },
   も: {
     totalStrokes: 3,
@@ -751,7 +687,7 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
       "1획: 왼쪽 짧은 세로획을 내립니다.",
       "2획: 위에서 시작해 아래로 내린 뒤 오른쪽으로 두 번 굽히듯 마무리합니다.",
     ],
-    tip: "2획의 두 굴곡을 층처럼 분리하면 よ 형태가 깔끔하게 보입니다.",
+    tip: "짧은 첫 획과 긴 두 번째 획을 구분해요. 두 번째 획은 아래의 작은 고리를 거쳐 오른쪽으로 마무리해요.",
   },
   ら: {
     totalStrokes: 2,
@@ -777,20 +713,19 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
     tip: "아래 작은 고리를 분명히 만들면 ろ와 헷갈림을 줄일 수 있습니다.",
   },
   れ: {
-    totalStrokes: 1,
+    totalStrokes: 2,
     steps: [
-      "1획: 위에서 아래로 내린 뒤 왼쪽으로 돌아 나오고 다시 아래로 연결해 작은 고리를 만듭니다.",
+      "1획: 왼쪽 세로획을 위에서 아래로 써요.",
+      "2획: 왼쪽 가로 부분과 꺾임을 지나 오른쪽으로 올라갔다 내려온 뒤, 오른쪽으로 마무리해요.",
     ],
-    tip: "끝부분 고리를 너무 크게 키우지 않으면 わ와의 구분이 쉬워집니다.",
+    tip: "오른쪽 끝에는 작은 고리가 없어요. 오른쪽으로 올라갔다 내려온 뒤 끝을 오른쪽으로 뻗어요.",
   },
   ろ: {
-    totalStrokes: 3,
+    totalStrokes: 1,
     steps: [
-      "1획: 위쪽 짧은 가로획을 긋습니다.",
-      "2획: 왼쪽 세로획을 내려 씁니다.",
-      "3획: 오른쪽에서 시작해 아래로 돌며 안쪽을 감아 마무리합니다.",
+      "1획: 위 가로 부분에서 비스듬히 내려와 아래를 둥글게 돌고, 작은 고리 없이 마무리해요.",
     ],
-    tip: "3획의 내부 공간을 남겨 두면 뭉개지지 않는 ろ가 됩니다.",
+    tip: "한 획으로 써요. 아래를 둥글게 돌되, る처럼 끝에 작은 고리를 만들지 않아요.",
   },
   わ: {
     totalStrokes: 2,
@@ -798,7 +733,7 @@ const hiraganaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
       "1획: 왼쪽 세로획을 위에서 아래로 내려 씁니다.",
       "2획: 오른쪽에서 시작해 아래로 돌며 둥글게 감고 끝을 살짝 올립니다.",
     ],
-    tip: "2획 끝을 가볍게 들어 올리면 れ와 다른 わ의 인상이 선명해집니다.",
+    tip: "오른쪽을 크게 둥글게 돌아요. 끝에 작은 고리를 추가하지 말고 れ의 길게 뻗은 끝과 비교해 보세요.",
   },
   を: {
     totalStrokes: 3,
@@ -823,10 +758,10 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   ア: {
     totalStrokes: 2,
     steps: [
-      "1획: 왼쪽 위에서 오른쪽 아래로 짧게 내려 첫 기준점을 만듭니다.",
-      "2획: 위에서 아래로 길게 내린 뒤 오른쪽으로 가볍게 꺾어 마무리합니다.",
+      "1획: 위 가로 부분을 오른쪽으로 쓰다가 왼쪽 아래로 짧게 꺾어요.",
+      "2획: 위에서 시작해 왼쪽 아래로 길게 내려 써요.",
     ],
-    tip: "2획 세로선을 중심보다 약간 왼쪽에 두면 ア의 비율이 안정적으로 보입니다.",
+    tip: "두 번째 획은 위에서 시작해 왼쪽 아래로 내려요. 첫 획의 꺾임과 둘째 획의 시작 위치를 살펴보세요.",
   },
   イ: {
     totalStrokes: 2,
@@ -843,7 +778,7 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
       "2획: 중앙의 짧은 세로획을 아래로 내립니다.",
       "3획: 아래쪽 곡선을 왼쪽에서 시작해 오른쪽으로 크게 감아 마무리합니다.",
     ],
-    tip: "ワ와 구분하려면 ウ는 위쪽 지붕(1획+2획)을 분명히 만들고, 아래 곡선을 중심에 맞춰 쓰세요.",
+    tip: "맨 위의 짧은 세로획이 있는지 보세요. ワ에는 이 위쪽 획이 없어요.",
   },
   エ: {
     totalStrokes: 3,
@@ -857,11 +792,11 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   オ: {
     totalStrokes: 3,
     steps: [
-      "1획: 위 가로획을 왼쪽에서 오른쪽으로 씁니다.",
-      "2획: 세로획을 아래로 내리며 중심축을 잡습니다.",
-      "3획: 오른쪽 점획을 위에서 아래로 짧게 써 균형을 맞춥니다.",
+      "1획: 가로획을 왼쪽에서 오른쪽으로 써요.",
+      "2획: 세로획을 위에서 아래로 내려 끝을 짧게 꺾어요.",
+      "3획: 가운데에서 왼쪽 아래로 비스듬히 내려 써요.",
     ],
-    tip: "3획 점획을 너무 바깥으로 빼지 않으면 オ의 중심이 흔들리지 않습니다.",
+    tip: "세 번째 획은 점이 아니라 왼쪽 아래로 내려가는 비스듬한 획이에요. 가로획·세로획과 만나는 위치를 살펴보세요.",
   },
   カ: {
     totalStrokes: 2,
@@ -891,11 +826,11 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   ケ: {
     totalStrokes: 3,
     steps: [
-      "1획: 왼쪽 짧은 세로획을 아래로 씁니다.",
-      "2획: 오른쪽 위에서 아래로 긴 세로획을 내립니다.",
-      "3획: 2획 중간에서 왼쪽 아래로 짧은 보조획을 더합니다.",
+      "1획: 왼쪽 위의 짧은 획을 비스듬히 내려 써요.",
+      "2획: 위 가로획을 왼쪽에서 오른쪽으로 써요.",
+      "3획: 가로획 아래에서 시작해 왼쪽 아래로 길게 내려 써요.",
     ],
-    tip: "ク와 다르게 ケ는 중심이 되는 긴 세로획(2획)이 있으니, 이 축을 먼저 살려 쓰세요.",
+    tip: "첫 짧은 획, 위 가로획, 마지막 긴 획 순서예요. 긴 세 번째 획이 아래로 내려오며 왼쪽으로 휘어요.",
   },
   コ: {
     totalStrokes: 2,
@@ -917,11 +852,11 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   シ: {
     totalStrokes: 3,
     steps: [
-      "1획: 위쪽 짧은 점획을 왼쪽에서 오른쪽 아래로 내립니다.",
-      "2획: 가운데 점획을 1획과 비슷한 방향으로 씁니다.",
-      "3획: 오른쪽에서 왼쪽 아래로 길게 휘어 내리며 마무리합니다.",
+      "1획: 위쪽 짧은 획을 오른쪽 아래로 써요.",
+      "2획: 그 아래의 짧은 획을 오른쪽 아래로 써요.",
+      "3획: 왼쪽 아래에서 오른쪽 위로 길게 올려 써요.",
     ],
-    tip: "ツ와 구분 핵심: シ의 점 두 개는 가로로 누운 배치, 마지막 긴 획은 왼쪽 아래 방향입니다.",
+    tip: "짧은 두 획은 옆으로 누운 모양이고, 마지막 긴 획은 왼쪽 아래에서 오른쪽 위로 올려 써요. ツ의 내려쓰는 긴 획과 비교하세요.",
   },
   ス: {
     totalStrokes: 2,
@@ -942,10 +877,10 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   ソ: {
     totalStrokes: 2,
     steps: [
-      "1획: 왼쪽 아래에서 오른쪽 위로 짧게 올려 씁니다.",
-      "2획: 오른쪽 위에서 왼쪽 아래로 길게 내리며 끝을 가볍게 정리합니다.",
+      "1획: 왼쪽 위의 짧은 획을 오른쪽 아래로 내려 써요.",
+      "2획: 오른쪽 위에서 왼쪽 아래로 긴 획을 내려 써요.",
     ],
-    tip: "ン과 구분하려면 ソ는 첫 획이 '올라가고' 마지막 획이 왼쪽 아래로 떨어진다는 흐름을 기억하세요.",
+    tip: "첫 짧은 획은 위에서 아래로 비스듬히 써요. 긴 두 번째 획은 오른쪽 위에서 왼쪽 아래로 내려 써요.",
   },
   タ: {
     totalStrokes: 3,
@@ -968,11 +903,11 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   ツ: {
     totalStrokes: 3,
     steps: [
-      "1획: 왼쪽 위에서 오른쪽 아래로 짧게 내립니다.",
-      "2획: 오른쪽 위 점획을 1획보다 아래에 배치해 씁니다.",
-      "3획: 위에서 아래로 길게 내린 뒤 살짝 왼쪽으로 휘어 마무리합니다.",
+      "1획: 왼쪽 짧은 획을 아래로 써요.",
+      "2획: 그 오른쪽의 짧은 획을 아래로 써요.",
+      "3획: 오른쪽 위에서 왼쪽 아래로 긴 획을 내려 써요.",
     ],
-    tip: "シ와 구분 핵심: ツ의 점 두 개는 세로로 서 있고, 마지막 긴 획은 아래로 곧게 내려옵니다.",
+    tip: "짧은 두 획은 세워진 모양이고, 마지막 긴 획은 오른쪽 위에서 왼쪽 아래로 내려 써요. シ처럼 올려 쓰지 않아요.",
   },
   テ: {
     totalStrokes: 3,
@@ -1087,7 +1022,7 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
       "2획: 가운데 가로획을 1획보다 길게 씁니다.",
       "3획: 아래 가로획을 가장 길게 그어 마무리합니다.",
     ],
-    tip: "세 가로획 길이를 위에서 아래로 점점 길게 하면 ミ의 리듬이 또렷합니다.",
+    tip: "가운데 가로획은 짧게, 아래 가로획은 길게 써요. 세 획의 기울기와 간격을 살펴보세요.",
   },
   ム: {
     totalStrokes: 2,
@@ -1108,11 +1043,11 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   モ: {
     totalStrokes: 3,
     steps: [
-      "1획: 위 가로획을 짧게 긋습니다.",
-      "2획: 가운데 가로획을 더 길게 씁니다.",
-      "3획: 세로획을 아래로 내리며 오른쪽으로 짧게 정리합니다.",
+      "1획: 위 가로획을 왼쪽에서 오른쪽으로 써요.",
+      "2획: 그 아래 가로획을 왼쪽에서 오른쪽으로 써요.",
+      "3획: 세로획을 내려 아래에서 오른쪽으로 꺾어 마무리해요.",
     ],
-    tip: "2획을 충분히 길게 써야 モ가 ユ와 확실히 구분됩니다.",
+    tip: "위쪽 가로획 두 개를 먼저 쓰고, 세 번째 획을 내려 아래에서 오른쪽으로 꺾어요.",
   },
   ヤ: {
     totalStrokes: 2,
@@ -1145,7 +1080,7 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
       "1획: 위 점획을 짧고 가볍게 씁니다.",
       "2획: 중앙에서 아래로 길게 내리며 오른쪽으로 살짝 흘립니다.",
     ],
-    tip: "2획 끝을 너무 굽히지 않으면 ラ가 リ와 구분되는 직선감을 유지합니다.",
+    tip: "짧은 위 가로획과 그 아래의 굽은 획을 구별해요. 두 번째 획의 끝은 왼쪽 아래로 내려와요.",
   },
   リ: {
     totalStrokes: 2,
@@ -1158,10 +1093,10 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
   ル: {
     totalStrokes: 2,
     steps: [
-      "1획: 왼쪽 짧은 점획을 아래로 씁니다.",
-      "2획: 오른쪽에서 길게 내려와 아래에서 왼쪽으로 살짝 꺾습니다.",
+      "1획: 왼쪽 획을 아래로 내려 끝을 왼쪽으로 흘려요.",
+      "2획: 오른쪽 획을 내려온 뒤 오른쪽 위로 뻗어 마무리해요.",
     ],
-    tip: "2획 끝을 가볍게 안쪽으로 접어주면 ル가 レ와 헷갈리지 않습니다.",
+    tip: "왼쪽 획은 아래로 내려요. 오른쪽 획은 내려온 뒤 오른쪽 위로 뻗으며 마무리해요.",
   },
   レ: {
     totalStrokes: 1,
@@ -1185,24 +1120,24 @@ const katakanaDetailedStrokeOrderData: Record<string, StrokeOrderInfo> = {
       "1획: 위 가로획을 짧게 긋습니다.",
       "2획: 왼쪽에서 아래로 내려오다 오른쪽으로 둥글게 감아 마무리합니다.",
     ],
-    tip: "ウ와 구분하려면 ワ는 중앙 세로획 없이 2획으로 끝나며, 아래 곡선이 더 크게 열립니다.",
+    tip: "왼쪽의 짧은 획 뒤에 위 가로 부분과 내려오는 곡선을 이어 써요. ウ와 달리 맨 위의 짧은 세로획이 없어요.",
   },
   ヲ: {
     totalStrokes: 3,
     steps: [
-      "1획: 위 가로획을 짧게 긋습니다.",
-      "2획: 중앙 세로획을 아래로 내려 틀을 잡습니다.",
-      "3획: 오른쪽에서 시작해 아래를 크게 돌아 나와 마무리합니다.",
+      "1획: 위 가로획을 왼쪽에서 오른쪽으로 써요.",
+      "2획: 가운데 가로획을 왼쪽에서 오른쪽으로 써요.",
+      "3획: 오른쪽 위에서 왼쪽 아래로 긴 획을 내려 써요.",
     ],
-    tip: "3획을 바깥으로 넓게 써야 ヲ가 オ와 다른 닫힌 느낌으로 보입니다.",
+    tip: "위쪽 두 가로 부분과 아래로 내려오는 긴 획을 살펴보세요. オ처럼 중앙 세로획을 추가하지 않아요.",
   },
   ン: {
     totalStrokes: 2,
     steps: [
-      "1획: 위에서 오른쪽 아래로 짧은 점획을 씁니다.",
-      "2획: 왼쪽 위에서 오른쪽 아래로 길게 내려 끝을 가볍게 뺍니다.",
+      "1획: 왼쪽 위의 짧은 획을 오른쪽 아래로 써요.",
+      "2획: 왼쪽 아래에서 오른쪽 위로 긴 획을 올려 써요.",
     ],
-    tip: "ソ와 구분하려면 ン은 두 획 모두 아래로 향하는 흐름이고, 특히 2획이 오른쪽 아래로 떨어집니다.",
+    tip: "첫 짧은 획은 옆으로 누운 모양이에요. 긴 두 번째 획은 왼쪽 아래에서 오른쪽 위로 올려 써요.",
   },
 };
 
@@ -1259,86 +1194,6 @@ const katakanaStrokeOrderData: Record<string, StrokeOrderInfo> = Object.fromEntr
     .filter((entry): entry is [string, StrokeOrderInfo] => entry !== null)
 );
 
-async function speakKanaFallback(
-  char: string,
-  settings: SectionSettings,
-  onStart?: () => void,
-  onEnd?: () => void
-) {
-  if (typeof window === "undefined" || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-
-  const makeUtter = (text: string) => {
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "ja-JP";
-    utter.rate = settings.ttsRate;
-    utter.pitch = 1;
-    utter.volume = 1;
-    const voices = window.speechSynthesis.getVoices();
-    const jaVoice = voices.find((v) => v.lang === "ja-JP" || v.lang.startsWith("ja"));
-    if (jaVoice) utter.voice = jaVoice;
-    return utter;
-  };
-
-  for (let i = 0; i < settings.repeatCount; i += 1) {
-    const utter = makeUtter(char);
-    if (i === 0) {
-      utter.onstart = () => { if (onStart) onStart(); };
-    }
-    await new Promise<void>((resolve) => {
-      utter.onend = () => resolve();
-      utter.onerror = () => resolve();
-      setTimeout(() => {
-        window.speechSynthesis.speak(utter);
-      }, 80);
-    });
-    if (i < settings.repeatCount - 1 && settings.repeatDelayMs > 0) {
-      await wait(settings.repeatDelayMs);
-    }
-  }
-
-  if (onEnd) onEnd();
-}
-
-async function speakKana(
-  char: string,
-  settings: SectionSettings,
-  onStart?: () => void,
-  onEnd?: () => void
-) {
-  if (FREE_MODE) {
-    await speakJapaneseWithPreferredTts(char, { rate: settings.ttsRate, repeatCount: settings.repeatCount, repeatDelayMs: settings.repeatDelayMs, onStart, onEnd });
-    return;
-  }
-  try {
-    if (onStart) onStart();
-    const res = await fetch("/api/language/tts", {
-      method: "POST",
-      headers: await authenticatedJsonHeaders(),
-      body: JSON.stringify({ text: char }),
-    });
-    if (!res.ok) throw new Error("TTS API error");
-    const { audioContent } = await res.json();
-    if (!audioContent) throw new Error("No audioContent");
-
-    for (let i = 0; i < settings.repeatCount; i += 1) {
-      const audio = new Audio(`data:audio/mp3;base64,${audioContent}`);
-      audio.playbackRate = settings.ttsRate;
-      await new Promise<void>((resolve, reject) => {
-        audio.onended = () => resolve();
-        audio.onerror = () => reject(new Error("Audio playback failed"));
-        audio.play().catch(reject);
-      });
-      if (i < settings.repeatCount - 1 && settings.repeatDelayMs > 0) {
-        await wait(settings.repeatDelayMs);
-      }
-    }
-    if (onEnd) onEnd();
-  } catch {
-    await speakKanaFallback(char, settings, onStart, onEnd);
-  }
-}
-
 function getKanaType(char: string): "hiragana" | "katakana" {
   const code = char.codePointAt(0) ?? 0;
   // Hiragana: U+3041–U+309F, Katakana: U+30A0–U+30FF
@@ -1364,13 +1219,12 @@ function saveWrongKana(
     const isDuplicate = existing.some(
       (item) => item.char === char && item.mode === mode
     );
-    if (isDuplicate) return;
+    if (isDuplicate) return true;
 
     existing.push({ char, romaji, type, mode, createdAt: new Date().toISOString() });
     localStorage.setItem("wrongKana", JSON.stringify(existing));
-  } catch {
-    // JSON 파싱 실패 또는 localStorage 접근 불가 시 무시
-  }
+    return true;
+  } catch { return false; }
 }
 
 function getConfusingQuizQuestion(pairIdx?: number): ConfusingQuizItem {
@@ -1425,6 +1279,7 @@ function uniqueKanaItems(items: KanaItem[]): KanaItem[] {
 }
 
 export default function KanaPage() {
+  const routine = useDailyRoutineCompletion("kana");
   const [tab, setTab] = useState<"hiragana" | "katakana">("hiragana");
   const [mode, setMode] = useState<"learn" | "quiz" | "confusing" | "writing" | "audit">("learn");
 
@@ -1508,6 +1363,36 @@ export default function KanaPage() {
   );
   const [selected, setSelected] = useState<string | null>(null);
   const [score, setScore] = useState({ correct: 0, total: 0 });
+  const answeredRef = useRef(false);
+  const scoreRef = useRef({ correct: 0, total: 0 });
+  const confusingAnsweredRef = useRef(false);
+  const writingAnsweredRef = useRef(false);
+  const pendingStorageWrites = useRef(new Map<string, () => boolean>());
+  const [storageFailures, setStorageFailures] = useState<string[]>([]);
+
+  const resetQuizScore = () => {
+    scoreRef.current = { correct: 0, total: 0 };
+    setScore(scoreRef.current);
+  };
+  const queueStorageWrite = (key: string, write: () => boolean) => {
+    if (write()) pendingStorageWrites.current.delete(key);
+    else pendingStorageWrites.current.set(key, write);
+    setStorageFailures([...pendingStorageWrites.current.keys()]);
+  };
+  const retryStorageWrites = () => {
+    for (const [key, write] of pendingStorageWrites.current) {
+      if (write()) pendingStorageWrites.current.delete(key);
+    }
+    setStorageFailures([...pendingStorageWrites.current.keys()]);
+  };
+
+  const persistWrongKana = (item: { char: string; roman: string }, kind: "hiragana" | "katakana", quizMode: "quiz" | "confusing") => {
+    queueStorageWrite(`wrong:${item.char}:${quizMode}`, () => {
+      if (!saveWrongKana(item.char, item.roman, kind, quizMode)) return false;
+      setWrongKanaChars(previous => new Set(previous).add(item.char));
+      return true;
+    });
+  };
 
   // 헷갈리는 글자 모드 상태
   const [confusingView, setConfusingView] = useState<"cards" | "quiz">("cards");
@@ -1518,7 +1403,6 @@ export default function KanaPage() {
   // 발음 재생 중 표시
   const [playingChar, setPlayingChar] = useState<string | null>(null);
   const [settings, setSettings] = useState<SectionSettings>(DEFAULT_SETTINGS);
-  const playingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     try {
@@ -1563,7 +1447,8 @@ export default function KanaPage() {
   const [writingQuizScore, setWritingQuizScore] = useState({ correct: 0, wrong: 0, total: 0 });
   const [writingFeedback, setWritingFeedback] = useState<HandwritingFeedback | null>(null);
   const [writingFeedbackLoading, setWritingFeedbackLoading] = useState(false);
-  const [audioError, setAudioError] = useState("");
+  const audio = useLearningAudio();
+  const stopAudio = audio.stop;
   const [writingFeedbackError, setWritingFeedbackError] = useState<string | null>(null);
   const writingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const writingAreaRef = useRef<HTMLDivElement | null>(null);
@@ -1572,31 +1457,22 @@ export default function KanaPage() {
   const lastQuizResetKeyRef = useRef<string>("");
   const prevModeRef = useRef(mode);
 
-  const handleSpeak = useCallback((char: string) => {
-    if (playingTimerRef.current) clearTimeout(playingTimerRef.current);
+  const handleSpeak = (char: string) => {
     setPlayingChar(char);
-    setAudioError("");
-    void speakKana(
-      char,
-      settings,
-      () => { setPlayingChar(char); },
-      () => {
-        playingTimerRef.current = setTimeout(() => setPlayingChar(null), 300);
-      }
-    ).catch(error => { setAudioError(japaneseAudioErrorMessage(error)); setPlayingChar(null); });
-    // 최대 6초 후 강제 초기화 (onEnd 미발동 대비)
-    playingTimerRef.current = setTimeout(() => setPlayingChar(null), 6000);
-  }, [settings]);
+    void audio.play(char, settings.ttsRate, settings.repeatCount, settings.repeatDelayMs);
+  };
 
   const loadNextQuestion = useCallback(
     (currentData: KanaItem[]) => {
+      stopAudio();
       const source = getQuizEligibleItems(currentData);
       setQuiz(getQuizQuestion(source.length > 0 ? source : getQuizEligibleItems(allData)));
-      setSelected(null);
+      answeredRef.current = false; setSelected(null);
     },
-    [allData]
+    [allData, stopAudio]
   );
   const toggleKanaGroup = (groupId: string) => {
+    stopAudio();
     setSelectedKanaGroupIds((prev) => {
       if (groupId === "all") return ["all"];
       const withoutAll = prev.filter((id) => id !== "all");
@@ -1610,6 +1486,7 @@ export default function KanaPage() {
   };
 
   const handleTabChange = (newTab: "hiragana" | "katakana") => {
+    stopAudio();
     setTab(newTab);
     setSelectedKanaGroupIds(["all"]);
     const newData = newTab === "hiragana" ? hiragana : katakana;
@@ -1619,22 +1496,30 @@ export default function KanaPage() {
     setWritingGuideMode("view");
     setWritingQuizQuestion(getWritingQuizQuestion(newData));
     setWritingQuizShowAnswer(false);
-    setWritingQuizAnswered(false);
+    writingAnsweredRef.current = false; setWritingQuizAnswered(false);
     setWritingQuizScore({ correct: 0, wrong: 0, total: 0 });
-    setSelected(null);
-    setScore({ correct: 0, total: 0 });
+    answeredRef.current = false; setSelected(null);
+    resetQuizScore();
     setQuiz(getQuizQuestion(getQuizEligibleItems(newData)));
   };
 
   const handleModeChange = (newMode: "learn" | "quiz" | "confusing" | "writing" | "audit") => {
+    stopAudio();
     setMode(newMode);
     if (newMode === "quiz") {
-      setSelected(null);
-      setScore({ correct: 0, total: 0 });
+      answeredRef.current = false; setSelected(null);
+      resetQuizScore();
+      if (mode !== "quiz") {
+        const source = getQuizEligibleItems(data);
+        const fallback = getQuizEligibleItems(allData);
+        setQuiz(getQuizQuestion(source.length > 0 ? source : fallback));
+        lastQuizResetKeyRef.current = `${tab}|${selectedGroupKey}`;
+        prevModeRef.current = newMode;
+      }
     }
     if (newMode === "confusing") {
       setConfusingView("cards");
-      setConfusingSelected(null);
+      confusingAnsweredRef.current = false; setConfusingSelected(null);
       setConfusingScore({ correct: 0, total: 0 });
       setConfusingQuiz(getConfusingQuizQuestion());
     }
@@ -1755,8 +1640,6 @@ export default function KanaPage() {
   const currentWritingTip = currentStrokeOrderInfo?.tip?.trim() || "글자 모양을 보고 천천히 따라 써 보세요.";
   const currentChar = currentWritingItem?.char ?? "";
   const currentGuideMap = tab === "hiragana" ? hiraganaGuideMap : katakanaGuideMap;
-  const currentGuideSrc = currentGuideMap[currentChar] ?? "";
-  const hasPngGuide = Boolean(currentGuideSrc);
   const currentGifMap = tab === "hiragana" ? hiraganaGifMap : katakanaGifMap;
   const hasWritingAnimation = (item: KanaItem) => Boolean(currentGifMap[item.char]) || getStrokeSvgPaths(item.char, tab).length > 0;
   const baseGifCount = baseKanaItems.filter(hasWritingAnimation).length;
@@ -1766,34 +1649,23 @@ export default function KanaPage() {
   const auditGifCount = auditItems.filter(hasWritingAnimation).length;
   const auditPngCount = auditItems.filter((item) => Boolean(currentGuideMap[item.char])).length;
   const canDrawOnCanvas = writingSubMode === "quiz" || writingGuideMode === "faint" || writingGuideMode === "blank" || writingGuideMode === "view";
-  const kanaGuideTextStyle = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "13rem",
-    fontWeight: 700,
-    fontFamily: "inherit",
-    lineHeight: 1,
-    userSelect: "none" as const,
-    WebkitUserSelect: "none" as const,
-    pointerEvents: "none" as const,
-  };
   const writingGuideMessage = writingGuideMode === "view"
     ? "글자가 써지는 모습을 보고, 옆 칸에 따라 써보세요."
     : writingGuideMode === "faint"
-      ? "GIF 기준 글자 모양을 떠올리며 흐린 가이드 위에 써보세요."
+      ? "같은 획순 자료의 글자 모양을 보며 흐린 가이드 위에 써보세요."
       : "이제 기억해서 빈칸에 다시 써보세요.";
 
 
   const loadNextWritingQuizQuestion = useCallback(() => {
+    stopAudio();
     setWritingQuizQuestion(getWritingQuizQuestion(data));
     setWritingQuizShowAnswer(false);
-    setWritingQuizAnswered(false);
+    writingAnsweredRef.current = false; setWritingQuizAnswered(false);
     setWritingFeedback(null);
     setWritingFeedbackError(null);
     setWritingFeedbackLoading(false);
     clearWritingCanvas();
-  }, [clearWritingCanvas, data]);
+  }, [clearWritingCanvas, data, stopAudio]);
 
   const resetWritingFeedback = useCallback(() => {
     setWritingFeedback(null);
@@ -1812,9 +1684,9 @@ export default function KanaPage() {
     if (data.length > 0) {
       setWritingQuizQuestion(getWritingQuizQuestion(data));
     }
-    setSelected(null);
+    answeredRef.current = false; setSelected(null);
     setWritingQuizShowAnswer(false);
-    setWritingQuizAnswered(false);
+    writingAnsweredRef.current = false; setWritingQuizAnswered(false);
     resetWritingFeedback();
     clearWritingCanvas();
   }, [clearWritingCanvas, data, dataKey, resetWritingFeedback, writingIndex]);
@@ -1835,7 +1707,7 @@ export default function KanaPage() {
     const source = getQuizEligibleItems(dataRef.current);
     const fallback = getQuizEligibleItems(allData);
     if (source.length > 0 || fallback.length > 0) {
-      setSelected(null);
+      answeredRef.current = false; setSelected(null);
       setQuiz(getQuizQuestion(source.length > 0 ? source : fallback));
     }
     lastQuizResetKeyRef.current = quizResetKey;
@@ -1852,6 +1724,7 @@ export default function KanaPage() {
   }, [data.length]);
 
   const goToPrevWritingItem = useCallback(() => {
+    stopAudio();
     if (data.length === 0) return;
     setWritingIndex((prev) => {
       if (writingOrderMode === "random") return getRandomWritingIndex(prev);
@@ -1859,9 +1732,10 @@ export default function KanaPage() {
     });
     resetWritingFeedback();
     clearWritingCanvas();
-  }, [clearWritingCanvas, data.length, getRandomWritingIndex, resetWritingFeedback, writingOrderMode]);
+  }, [clearWritingCanvas, data.length, getRandomWritingIndex, resetWritingFeedback, stopAudio, writingOrderMode]);
 
   const goToNextWritingItem = useCallback(() => {
+    stopAudio();
     if (data.length === 0) return;
     setWritingIndex((prev) => {
       if (writingOrderMode === "random") return getRandomWritingIndex(prev);
@@ -1869,7 +1743,7 @@ export default function KanaPage() {
     });
     resetWritingFeedback();
     clearWritingCanvas();
-  }, [clearWritingCanvas, data.length, getRandomWritingIndex, resetWritingFeedback, writingOrderMode]);
+  }, [clearWritingCanvas, data.length, getRandomWritingIndex, resetWritingFeedback, stopAudio, writingOrderMode]);
 
   const getFeedbackLines = (value: string[] | string | undefined) => {
     if (!value) return [];
@@ -1914,7 +1788,8 @@ export default function KanaPage() {
   }, [writingQuizQuestion]);
 
   const markWritingQuizResult = (result: "correct" | "wrong") => {
-    if (writingQuizAnswered) return;
+    if (writingAnsweredRef.current || writingQuizAnswered || !routine.ensureCurrent()) return;
+    writingAnsweredRef.current = true;
     setWritingQuizAnswered(true);
     setWritingQuizScore((prev) => ({
       correct: prev.correct + (result === "correct" ? 1 : 0),
@@ -1924,45 +1799,34 @@ export default function KanaPage() {
   };
 
   const handleChoice = (choice: string) => {
-    if (selected !== null) return;
+    if (answeredRef.current || selected !== null || !routine.ensureCurrent()) return;
+    answeredRef.current = true;
     setSelected(choice);
     const isCorrect = choice === quiz.question.roman;
-    setScore((prev) => {
-      const nextTotal = prev.total + 1;
-      if (nextTotal >= 5) {
-        markTodayRoutineCompleted("kana");
-      }
-      return {
-        correct: prev.correct + (isCorrect ? 1 : 0),
-        total: nextTotal,
-      };
-    });
-    if (!isCorrect) {
-      saveWrongKana(quiz.question.char, quiz.question.roman, tab, "quiz");
-      setWrongKanaChars((prev) => new Set(prev).add(quiz.question.char));
-    }
+    const next = { correct: scoreRef.current.correct + (isCorrect ? 1 : 0), total: scoreRef.current.total + 1 };
+    scoreRef.current = next;
+    setScore(next);
+    if (!isCorrect) persistWrongKana(quiz.question, tab, "quiz");
+    if (next.total >= 5) routine.complete();
   };
 
   const handleConfusingChoice = (choice: string) => {
-    if (confusingSelected !== null) return;
+    if (confusingAnsweredRef.current || confusingSelected !== null || !routine.ensureCurrent()) return;
+    confusingAnsweredRef.current = true;
     setConfusingSelected(choice);
     const isCorrect = choice === confusingQuiz.question.roman;
-    setConfusingScore((prev) => ({
-      correct: prev.correct + (isCorrect ? 1 : 0),
-      total: prev.total + 1,
-    }));
-    if (!isCorrect) {
-      const type = getKanaType(confusingQuiz.question.char);
-      saveWrongKana(confusingQuiz.question.char, confusingQuiz.question.roman, type, "confusing");
-    }
+    setConfusingScore(previous => ({ correct: previous.correct + (isCorrect ? 1 : 0), total: previous.total + 1 }));
+    if (!isCorrect) persistWrongKana(confusingQuiz.question, getKanaType(confusingQuiz.question.char), "confusing");
   };
 
   const loadNextConfusingQuestion = () => {
+    stopAudio();
     setConfusingQuiz(getConfusingQuizQuestion());
-    setConfusingSelected(null);
+    confusingAnsweredRef.current = false; setConfusingSelected(null);
   };
 
   const handleAuditPractice = (item: KanaItem) => {
+    stopAudio();
     const group = allKanaGroupByChar[item.char];
     if (group) setSelectedKanaGroupIds([group.id]);
     setMode("writing");
@@ -2041,7 +1905,14 @@ export default function KanaPage() {
 
   return (
     <>
-    {audioError ? <p role="alert" className="mb-3 text-sm text-amber-800">{audioError}</p> : null}
+      <DailyRoutineSaveNotice {...routine} />
+    {audio.audioError && <p role="status" className="mb-3 text-sm text-amber-800">{audio.audioError}</p>}
+    {audio.playing && <button type="button" className="btn" onClick={audio.stop}>소리 멈추기</button>}
+    {storageFailures.length > 0 && <div role="alert">
+      {storageFailures.some(key => key.startsWith("wrong:")) && <p>오답을 복습 목록에 저장하지 못했어요. 이번 답안과 점수는 처리됐으므로 다시 풀 필요는 없어요.</p>}
+      <p>저장 공간과 브라우저 설정을 확인한 뒤 다시 저장해 주세요. 미저장 항목은 이 화면을 떠나거나 새로고침하면 사라져요.</p>
+      <button type="button" className="btn" onClick={retryStorageWrites}>미저장 항목 다시 저장</button>
+    </div>}
     <div style={{ padding: "1.25rem 0 2.25rem", maxWidth: "72rem", margin: "0 auto" }}>
       <div style={{ marginBottom: "1rem", border: "1px solid #dbeafe", background: "linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)", borderRadius: "16px", padding: "1rem 1.1rem", boxShadow: "0 8px 24px rgba(59,130,246,0.08)" }}>
         <h1 style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "0.35rem", color: "#1e3a8a" }}>
@@ -2154,10 +2025,14 @@ export default function KanaPage() {
           }}
         >
           {data.map((item) => {
-            const isPlaying = playingChar === item.char;
+            const isPlaying = audio.playing && playingChar === item.char;
             return (
               <div
                 key={`${item.kind ?? "kana"}-${item.char}-${item.roman}`}
+                role="button"
+                tabIndex={0}
+                aria-label={`${item.char} 발음 듣기`}
+                onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handleSpeak(item.char); } }}
                 onClick={() => handleSpeak(item.char)}
                 style={{
                   display: "flex",
@@ -2293,11 +2168,11 @@ export default function KanaPage() {
           <div style={{ marginBottom: "1rem", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "0.9rem", background: "#f8fafc" }}>
             <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.55rem" }}>{tab === "hiragana" ? "히라가나" : "가타카나"} 검수표</h3>
             <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap", marginBottom: "0.6rem" }}>
-              <button onClick={() => setAuditScope("base")} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: auditScope === "base" ? "2px solid #6366f1" : "1px solid #d1d5db", background: auditScope === "base" ? "#eef2ff" : "#fff", color: auditScope === "base" ? "#4338ca" : "#374151", fontWeight: 700, cursor: "pointer" }}>기본 46자</button>
-              <button onClick={() => setAuditScope("dakuon")} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: auditScope === "dakuon" ? "2px solid #6366f1" : "1px solid #d1d5db", background: auditScope === "dakuon" ? "#eef2ff" : "#fff", color: auditScope === "dakuon" ? "#4338ca" : "#374151", fontWeight: 700, cursor: "pointer" }}>탁음/반탁음</button>
-              <button onClick={() => setAuditScope("youon")} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: auditScope === "youon" ? "2px solid #6366f1" : "1px solid #d1d5db", background: auditScope === "youon" ? "#eef2ff" : "#fff", color: auditScope === "youon" ? "#4338ca" : "#374151", fontWeight: 700, cursor: "pointer" }}>요음</button>
-              <button onClick={() => setAuditScope("special")} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: auditScope === "special" ? "2px solid #6366f1" : "1px solid #d1d5db", background: auditScope === "special" ? "#eef2ff" : "#fff", color: auditScope === "special" ? "#4338ca" : "#374151", fontWeight: 700, cursor: "pointer" }}>특수 발음</button>
-              <button onClick={() => setAuditScope("all")} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: auditScope === "all" ? "2px solid #6366f1" : "1px solid #d1d5db", background: auditScope === "all" ? "#eef2ff" : "#fff", color: auditScope === "all" ? "#4338ca" : "#374151", fontWeight: 700, cursor: "pointer" }}>전체</button>
+              <button onClick={() => { stopAudio(); setAuditScope("base"); }} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: auditScope === "base" ? "2px solid #6366f1" : "1px solid #d1d5db", background: auditScope === "base" ? "#eef2ff" : "#fff", color: auditScope === "base" ? "#4338ca" : "#374151", fontWeight: 700, cursor: "pointer" }}>기본 46자</button>
+              <button onClick={() => { stopAudio(); setAuditScope("dakuon"); }} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: auditScope === "dakuon" ? "2px solid #6366f1" : "1px solid #d1d5db", background: auditScope === "dakuon" ? "#eef2ff" : "#fff", color: auditScope === "dakuon" ? "#4338ca" : "#374151", fontWeight: 700, cursor: "pointer" }}>탁음/반탁음</button>
+              <button onClick={() => { stopAudio(); setAuditScope("youon"); }} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: auditScope === "youon" ? "2px solid #6366f1" : "1px solid #d1d5db", background: auditScope === "youon" ? "#eef2ff" : "#fff", color: auditScope === "youon" ? "#4338ca" : "#374151", fontWeight: 700, cursor: "pointer" }}>요음</button>
+              <button onClick={() => { stopAudio(); setAuditScope("special"); }} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: auditScope === "special" ? "2px solid #6366f1" : "1px solid #d1d5db", background: auditScope === "special" ? "#eef2ff" : "#fff", color: auditScope === "special" ? "#4338ca" : "#374151", fontWeight: 700, cursor: "pointer" }}>특수 발음</button>
+              <button onClick={() => { stopAudio(); setAuditScope("all"); }} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: auditScope === "all" ? "2px solid #6366f1" : "1px solid #d1d5db", background: auditScope === "all" ? "#eef2ff" : "#fff", color: auditScope === "all" ? "#4338ca" : "#374151", fontWeight: 700, cursor: "pointer" }}>전체</button>
             </div>
             <div style={{ fontSize: "0.86rem", color: "#374151" }}>기본 46자 획순 애니메이션/PNG: {baseGifCount}/{baseKanaItems.length} · {basePngCount}/{baseKanaItems.length}</div>
             <div style={{ fontSize: "0.86rem", color: "#374151" }}>탁음/반탁음 획순 애니메이션/PNG: {dakuonGifCount}/{dakuonKanaItems.length} · {dakuonPngCount}/{dakuonKanaItems.length}</div>
@@ -2345,6 +2220,7 @@ export default function KanaPage() {
           <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.9rem" }}>
             <button
               onClick={() => {
+                stopAudio();
                 setWritingSubMode("trace");
                 setWritingQuizShowAnswer(false);
                 resetWritingFeedback();
@@ -2366,10 +2242,11 @@ export default function KanaPage() {
             </button>
             <button
               onClick={() => {
+                stopAudio();
                 setWritingSubMode("quiz");
                 setWritingQuizQuestion(getWritingQuizQuestion(data));
                 setWritingQuizShowAnswer(false);
-                setWritingQuizAnswered(false);
+                writingAnsweredRef.current = false; setWritingQuizAnswered(false);
                 resetWritingFeedback();
                 clearWritingCanvas();
               }}
@@ -2390,6 +2267,7 @@ export default function KanaPage() {
             <div style={{ marginLeft: "auto", display: "flex", gap: "0.4rem" }}>
               <button
                 onClick={() => {
+                  stopAudio();
                   setWritingOrderMode("sequence");
                   resetWritingFeedback();
                   clearWritingCanvas();
@@ -2410,6 +2288,7 @@ export default function KanaPage() {
               </button>
               <button
                 onClick={() => {
+                  stopAudio();
                   setWritingOrderMode("random");
                   resetWritingFeedback();
                   clearWritingCanvas();
@@ -2472,6 +2351,10 @@ export default function KanaPage() {
             </div>
           </div>
 
+          {writingSubMode === "quiz" && getKanaWritingClue(writingQuizQuestion.char) && (
+            <p role="note" style={{ marginBottom: "0.75rem", color: "#5b21b6" }}>{getKanaWritingClue(writingQuizQuestion.char)}</p>
+          )}
+
           {writingSubMode === "trace" && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.45rem", marginBottom: "0.75rem" }}>
                 {([
@@ -2484,6 +2367,7 @@ export default function KanaPage() {
                   <button
                     key={modeBtn.id}
                     onClick={() => {
+                      stopAudio();
                       setWritingGuideMode(modeBtn.id);
                     }}
                     style={{
@@ -2510,78 +2394,30 @@ export default function KanaPage() {
           {writingSubMode === "trace" && writingGuideMode === "view" ? (
             <div className="kana-writing-grid" style={{ marginBottom: "0.95rem", width: "100%" }}>
               <section style={{ borderRadius: "12px", border: "1px solid #d1d5db", background: "#fff", padding: "0.75rem" }}>
-                <h3 style={{ marginBottom: "0.5rem", fontSize: "0.9rem", color: "#374151", fontWeight: 700 }}>쓰기 순서 보기</h3>
-                <div style={{ height: "340px", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "10px", background: "#f8fafc", padding: "0.5rem" }}>
+                <h3 style={{ marginBottom: "0.35rem", fontSize: "0.9rem", color: "#374151", fontWeight: 700 }}>쓰기 순서 보기</h3>
+                <div style={{ marginBottom: "0.5rem", fontSize: "0.82rem", color: "#4b5563" }}>검은 획이 움직이는 순서와 방향을 살펴보세요.</div>
+                <div style={kanaBoardStyle}>
                   <KanaStrokeAnimation key={`${tab}-${currentChar}`} char={currentChar} tab={tab} />
                 </div>
               </section>
               <section style={{ borderRadius: "12px", border: "1px solid #d1d5db", background: "#fff", padding: "0.75rem" }}>
                 <h3 style={{ marginBottom: "0.35rem", fontSize: "0.9rem", color: "#374151", fontWeight: 700 }}>따라 써보기</h3>
                 <div style={{ marginBottom: "0.5rem", fontSize: "0.82rem", color: "#4b5563" }}>획순 애니메이션의 글자 모양을 보며 직접 써보세요.</div>
-                <div ref={writingAreaRef} style={{ width: "100%", height: "340px", borderRadius: "10px", border: "1px solid #e5e7eb", background: "#fff", position: "relative", overflow: "hidden" }}>
-                  {hasPngGuide ? (
-                    <Image fill unoptimized sizes="(max-width: 768px) 100vw, 50vw" src={currentGuideSrc} alt={`${currentChar} 따라쓰기 PNG 가이드`} style={{ objectFit: "contain", opacity: 0.2, pointerEvents: "none", zIndex: 1 }} />
-                  ) : (
-                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 1 }}>
-                      <span style={{ fontSize: "140px", fontWeight: 700, color: "#d1d5db", opacity: 0.28, lineHeight: 1 }}>{currentChar}</span>
-                    </div>
-                  )}
-                  <canvas ref={writingCanvasRef} onPointerDown={startDrawing} onPointerMove={drawMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={endDrawing} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", zIndex: 4, cursor: "crosshair" }} />
+                <div ref={writingAreaRef} style={kanaBoardStyle}>
+                  <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}><KanaStrokeAnimation char={currentChar} tab={tab} animated={false} /></div>
+                  <canvas aria-label="가나 쓰기 연습장" ref={writingCanvasRef} onPointerDown={startDrawing} onPointerMove={drawMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={endDrawing} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", zIndex: 4, cursor: "crosshair" }} />
                 </div>
               </section>
             </div>
           ) : (
           <div
             ref={writingAreaRef}
-            style={{
-              width: "100%",
-              height: "420px",
-              borderRadius: "12px",
-              border: "1px solid #d1d5db",
-              background: "#fff",
-              position: "relative",
-              overflow: "hidden",
-              marginBottom: "0.95rem",
-            }}
+            style={{ ...kanaBoardStyle, marginBottom: "0.95rem" }}
           >
-            <div
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                top: "50%",
-                borderTop: "2px solid #eef1f5",
-                transform: "translateY(-1px)",
-                pointerEvents: "none",
-              }}
-            />
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                bottom: 0,
-                left: "50%",
-                borderLeft: "2px solid #eef1f5",
-                transform: "translateX(-1px)",
-                pointerEvents: "none",
-              }}
-            />
-            {writingSubMode === "trace" && writingGuideMode === "faint" && (
-              (hasPngGuide ? <Image fill unoptimized sizes="100vw" src={currentGuideSrc} alt={`${currentChar} 흐린 PNG 가이드`} style={{ objectFit: "contain", opacity: 0.2, pointerEvents: "none", zIndex: 1 }} /> : <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  zIndex: 1,
-                  color: "rgba(107, 114, 128, 0.22)",
-                  ...kanaGuideTextStyle,
-                }}
-              >
-                {currentWritingItem.char}
-              </div>)
-            )}
-            
+            {writingSubMode === "trace" && writingGuideMode === "faint" && <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}><KanaStrokeAnimation char={currentChar} tab={tab} animated={false} /></div>}
             {canDrawOnCanvas && (
             <canvas
+              aria-label="가나 쓰기 연습장"
               ref={writingCanvasRef}
               onPointerDown={(e) => {
                 e.preventDefault();
@@ -2883,7 +2719,7 @@ export default function KanaPage() {
           {/* 서브 탭: 카드 보기 / 비교 퀴즈 */}
           <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem", flexWrap: "wrap", padding: "0.55rem", border: "1px solid #dbeafe", borderRadius: "14px", background: "#f8fbff" }}>
             <button
-              onClick={() => { setConfusingView("cards"); }}
+              onClick={() => { stopAudio(); setConfusingView("cards"); }}
               style={{
                 padding: "0.4rem 1rem",
                 borderRadius: "6px",
@@ -2900,8 +2736,9 @@ export default function KanaPage() {
             </button>
             <button
               onClick={() => {
+                stopAudio();
                 setConfusingView("quiz");
-                setConfusingSelected(null);
+                confusingAnsweredRef.current = false; setConfusingSelected(null);
                 setConfusingScore({ correct: 0, total: 0 });
                 setConfusingQuiz(getConfusingQuizQuestion());
               }}
@@ -2938,7 +2775,7 @@ export default function KanaPage() {
                   {/* 글자 쌍 */}
                   <div style={{ display: "flex", borderBottom: "1px solid #f3f4f6" }}>
                     {[pair.a, pair.b].map((item, j) => {
-                      const isPlaying = playingChar === item.char;
+                      const isPlaying = audio.playing && playingChar === item.char;
                       return (
                         <div
                           key={j}
@@ -3053,8 +2890,8 @@ export default function KanaPage() {
                   width: "100%",
                   height: "150px",
                   borderRadius: "12px",
-                  border: `2px solid ${playingChar === confusingQuiz.question.char ? "#6366f1" : "#e5e7eb"}`,
-                  background: playingChar === confusingQuiz.question.char ? "#eef2ff" : "#fff",
+                  border: `2px solid ${audio.playing && playingChar === confusingQuiz.question.char ? "#6366f1" : "#e5e7eb"}`,
+                  background: audio.playing && playingChar === confusingQuiz.question.char ? "#eef2ff" : "#fff",
                   marginBottom: "1.5rem",
                   cursor: "pointer",
                   userSelect: "none",
@@ -3063,7 +2900,7 @@ export default function KanaPage() {
                 }}
               >
                 <span style={{ fontSize: "6rem", lineHeight: 1 }}>{confusingQuiz.question.char}</span>
-                {playingChar === confusingQuiz.question.char && (
+                {audio.playing && playingChar === confusingQuiz.question.char && (
                   <span style={{ fontSize: "0.75rem", color: "#6366f1", fontWeight: "600", marginTop: "0.25rem" }}>
                     재생 중...
                   </span>

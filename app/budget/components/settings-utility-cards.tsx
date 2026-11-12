@@ -31,7 +31,7 @@ export default function SettingsUtilityCards({ autoAnalyzeEnabled, autoQuestion,
           checked={autoAnalyzeEnabled}
           onChange={(e) => setAutoAnalyzeEnabled(e.target.checked)}
         />
-        <span style={{ color: '#E0E0EA', fontSize: 13 }}>AI 상담 진입 시 자동 분석 실행</span>
+        <span style={{ color: '#E0E0EA', fontSize: 13 }}>연이 상담 진입 시 자동 분석 실행</span>
       </label>
 
       <input

@@ -1,0 +1,12 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; object-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>일본어 저장소 가상자료 검사</title>
+<style>body{max-width:55rem;margin:2rem auto;padding:1rem;font:17px/1.6 system-ui}button,a,select{margin:.4rem;padding:.6rem}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f2f4f8;padding:1rem}</style>
+<h1>일본어 저장소 가상자료 검사</h1>
+<p>정해진 localhost 전용 검사입니다. 로그인·서버 요청·실제 학습 기록을 사용하지 않습니다. 두 새 탭에서 각각 100개의 가상 답 번호와 횟수를 추가합니다.</p>
+<label>검사 종류 <select id="mode"><option value="mixed">A: Web Locks, B: IDB만</option><option value="idb">두 탭 모두 IDB만</option></select></label>
+<button id="prepare">새 검사 준비</button>
+<p id="links"></p><button id="start" disabled>준비된 두 탭 검사 시작</button><button id="save" disabled>결과 JSON 내려받기</button>
+<p>새 탭 A와 B를 모두 연 뒤 시작하세요. 결과 확인 후 검사 탭을 닫으세요. 데이터는 yeoni-compat-synthetic: 접두사가 붙은 가상자료만 씁니다.</p>
+<pre id="result">아직 실행하지 않았습니다.</pre>
+<script type="module" src="controller.js"></script></html>

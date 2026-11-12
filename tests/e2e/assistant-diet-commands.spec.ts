@@ -20,7 +20,7 @@ test('diet water confirmation cancels, recovers a lost response, appears after r
   await expect(review).toContainText('오늘 총 300mL'); await expect(review).toContainText('오늘 총 500mL'); expect(await qa.read()).toEqual(before);
   await review.getByRole('button', { name: '취소', exact: true }).click(); await expect(page.getByText('취소했습니다. 식단 기록은 변경하지 않았습니다.')).toBeVisible();
   await page.reload(); await expect(review).toHaveCount(0); expect(await qa.read()).toEqual(before);
-  await page.goto('/assistant', { waitUntil: 'domcontentloaded' }); const input = page.getByLabel('연이에게 보낼 명령'); await expect(input).toBeEnabled();
+  await page.goto('/assistant', { waitUntil: 'domcontentloaded' }); const input = page.getByLabel('연이에게 하고 싶은 말', { exact: true }); await expect(input).toBeEnabled();
   await input.fill('오늘 물 총 500ml 기록해줘'); await input.press('Enter'); await expect(review).toBeVisible();
   await page.goto('/assistant/quick'); await expect(review).toBeVisible(); const draft = await page.evaluate(() => sessionStorage.getItem('yeoni:task-command-drafts:v1'));
   await page.reload(); await expect(review).toBeVisible(); expect(await page.evaluate(() => sessionStorage.getItem('yeoni:task-command-drafts:v1'))).toBe(draft);
@@ -63,7 +63,7 @@ test('diet memo appends literal text and keeps meals, nutrition and water unchan
 test('two diet sessions reject stale confirmation and a later meal form edit blocks undo', async ({ page, qa, browser }) => {
   expect((await qa.account.client.from('user_app_state').update({ state: seed() }).eq('user_id', qa.account.id)).error).toBeNull();
   await login(page, qa.account); await synced(page); await openCommand(page); await expect(reviewFor(page)).toBeVisible();
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Seoul' }); await qa.traffic.install(context);
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Seoul' }); await qa.traffic.install(context);
   try {
     const second = await context.newPage(); await login(second, qa.account); await synced(second); await openCommand(second, '오늘 식단 메모 추가: 오래된 확인'); await expect(reviewFor(second)).toBeVisible();
     await reviewFor(page).getByRole('button', { name: '확인하고 저장' }).click(); await expect(receiptFor(page).getByText(/식단 기록 저장/)).toBeVisible();

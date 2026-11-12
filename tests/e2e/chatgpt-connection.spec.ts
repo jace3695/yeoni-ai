@@ -74,7 +74,7 @@ test('ChatGPT advice is isolated by owner; missing auth, forged origins and fail
   const foreignOrigin=await request.post('/api/chatgpt/connection',{headers:{origin:'https://evil.example'},data:{decision:'revoke',id:randomUUID()}}); expect(foreignOrigin.status()).toBe(403);
   const discovery=await request.get('/.well-known/oauth-authorization-server'); expect(discovery.status()).toBe(200); expect((await discovery.json()).issuer).toBe(origin);
   const missing=await mcp(request,'invalid','list_saved_advice'); expect(missing.isError).toBe(true);
-  const second=await qa.createAccount(); const secondContext=await browser.newContext(); await qa.traffic.install(secondContext); const secondPage=await secondContext.newPage();
+  const second=await qa.createAccount(); const secondContext=await browser.newContext({ serviceWorkers: 'block' }); await qa.traffic.install(secondContext); const secondPage=await secondContext.newPage();
   try {
     await login(secondPage,second,'/assistant/advice'); await expect(secondPage.getByText('아직 저장한 ChatGPT 조언이 없습니다.',{exact:true})).toBeVisible();
     expect((await second.client.from('chatgpt_advice').select('*')).data).toEqual([]);

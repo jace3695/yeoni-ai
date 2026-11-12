@@ -18,7 +18,7 @@ test('language confirmation cancels without writes, recovers after lost response
   // Readiness is the enabled command input below; a WebKit load event can
   // remain pending after the page itself is ready for interaction.
   await page.goto('/assistant', { waitUntil: 'domcontentloaded' });
-  const input = page.getByLabel('연이에게 보낼 명령'); await expect(input).toBeEnabled();
+  const input = page.getByLabel('연이에게 하고 싶은 말', { exact: true }); await expect(input).toBeEnabled();
   await input.fill('오늘 단어 학습 완료했어'); await input.press('Enter'); await expect(review).toBeVisible();
   await page.goto('/assistant/quick', { waitUntil: 'domcontentloaded' }); await expect(review).toBeVisible();
   const stored = await page.evaluate(() => sessionStorage.getItem('yeoni:task-command-drafts:v1'));
@@ -60,7 +60,7 @@ test('language confirmation cancels without writes, recovers after lost response
 
 test('independent sessions cannot confirm stale learning, and a subsequent lesson prevents unsafe undo', async ({ page, qa, browser }) => {
   await login(page, qa.account); await synced(page); await openCommand(page); await expect(reviewFor(page)).toBeVisible();
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); await qa.traffic.install(context);
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } }); await qa.traffic.install(context);
   try {
     const second = await context.newPage(); await login(second, qa.account); await synced(second);
     await openCommand(second, '오늘 문법 학습 완료했어'); await expect(reviewFor(second)).toBeVisible();

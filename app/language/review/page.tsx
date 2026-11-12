@@ -5,7 +5,8 @@ import Link from "next/link";
 import { GRAMMAR_LESSONS, GRAMMAR_PROGRESS_KEY, type GrammarProgressItem } from "@/data/grammar";
 import type { RubySegment as WordRubySegment } from "@/data/words";
 import type { RubySegment as SentenceRubySegment } from "@/data/sentences";
-import { markTodayRoutineCompleted } from "@/utils/dailyRoutineProgress";
+import { useDailyRoutineCompletion } from "@/components/language/useDailyRoutineCompletion";
+import DailyRoutineSaveNotice from "@/components/language/DailyRoutineSaveNotice";
 import { CURRICULUM_REVIEW_KEY, type CurriculumReviewItem } from "@/utils/curriculumProgress";
 import { reviewInterval, reviewObservationFields, summarizeReviewMastery, type ReviewObservation } from "@/utils/learningReview";
 import { reviewFocus, type ReviewTrack } from "@/utils/reviewFocus";
@@ -80,24 +81,18 @@ type ReviewCompletedItemsEntry = {
 };
 
 function readReviewedItemsByDate(): ReviewCompletedItemsEntry[] {
-  try {
-    const raw = localStorage.getItem(REVIEW_COMPLETED_ITEMS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .filter((entry): entry is { date?: unknown; items?: unknown } => !!entry && typeof entry === "object")
-      .map((entry) => ({
-        date: typeof entry.date === "string" ? entry.date : "",
-        items: Array.isArray(entry.items)
-          ? entry.items.filter((item): item is string => typeof item === "string")
-          : [],
-      }))
-      .filter((entry) => entry.date.length > 0);
-  } catch {
-    return [];
+  const raw = localStorage.getItem(REVIEW_COMPLETED_ITEMS_KEY);
+  if (raw === null) return [];
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed) || !parsed.every(entry => entry && typeof entry === 'object' && typeof entry.date === 'string' && Array.isArray(entry.items) && entry.items.every((item: unknown) => typeof item === 'string'))) {
+    throw new Error("복습 목록 형식을 확인하지 못했어요.");
   }
+  // Ambiguous duplicate days may carry conflicting metadata. Preserve bytes
+  // and require repair rather than silently discard either entry.
+  if (new Set(parsed.map(entry => entry.date)).size !== parsed.length) {
+    throw new Error('같은 날짜의 복습 기록이 중복되어 있어요. 원본을 보존하고 저장을 멈췄어요.');
+  }
+  return parsed as ReviewCompletedItemsEntry[];
 }
 
 function writeReviewedItemsByDate(entries: ReviewCompletedItemsEntry[]): void {
@@ -111,9 +106,13 @@ function getReviewedItemsForDate(date: string): string[] {
 }
 
 function saveReviewedItemsForDate(date: string, itemIds: string[]): void {
-  const uniqueItems = Array.from(new Set(itemIds));
-  const completedByDate = readReviewedItemsByDate().filter((entry) => entry.date !== date);
-  writeReviewedItemsByDate([...completedByDate, { date, items: uniqueItems }]);
+  const entries = readReviewedItemsByDate();
+  const existing = entries.find(entry => entry.date === date);
+  const items = Array.from(new Set([...(existing?.items ?? []), ...itemIds]));
+  // Keep unknown metadata, unrelated dates and original ordering intact.
+  writeReviewedItemsByDate(existing
+    ? entries.map(entry => entry.date === date ? { ...entry, items } : entry)
+    : [...entries, { date, items }]);
 }
 
 function getTodayLocalDateKey(): string {
@@ -221,6 +220,7 @@ function parseKanaReviewItem(item: WrongItem): {
 }
 
 export default function ReviewPage() {
+  const routine = useDailyRoutineCompletion("review");
   const [activeReviewTab, setActiveReviewTab] = useState<ReviewTab>("all");
   const [savedWords, setSavedWords] = useState<Word[]>([]);
   const [savedSentences, setSavedSentences] = useState<Sentence[]>([]);
@@ -233,7 +233,8 @@ export default function ReviewPage() {
   const [curriculumReviewItems, setCurriculumReviewItems] = useState<CurriculumReviewItem[]>([]);
   const [courseSaveError, setCourseSaveError] = useState("");
   const [reviewOpenedAt] = useState(() => Date.now());
-  const hasMarkedReviewCompletedRef = useRef(false);
+  const reviewedDateRef = useRef("");
+  const [reviewSaveError, setReviewSaveError] = useState("");
 
   useEffect(() => {
     const words = loadArray<Word>(WORDS_KEY);
@@ -256,14 +257,24 @@ export default function ReviewPage() {
     setWrongSentences(wSentences);
     setCurriculumReviewItems(loadArray<CurriculumReviewItem>(CURRICULUM_REVIEW_KEY));
 
-    const dateKey = getTodayLocalDateKey();
-    const todayItems = getReviewedItemsForDate(dateKey);
 
-    setReviewedItemIds(todayItems);
-    if (todayItems.length >= 3) {
-      markTodayRoutineCompleted("review");
-      hasMarkedReviewCompletedRef.current = true;
-    }
+  }, []);
+
+
+  useEffect(() => {
+    const refreshDate = () => {
+      const date = getTodayLocalDateKey();
+      if (date === reviewedDateRef.current) return;
+      try {
+        const items = getReviewedItemsForDate(date);
+        reviewedDateRef.current = date;
+        setReviewedItemIds(items);
+      } catch { setReviewSaveError("오늘 복습 목록을 읽지 못했어요. 다시 열어 주세요."); }
+    };
+    refreshDate();
+    const timer = window.setInterval(refreshDate, 1000);
+    window.addEventListener('focus', refreshDate);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refreshDate); };
   }, []);
 
 
@@ -345,6 +356,7 @@ export default function ReviewPage() {
   };
 
   const scheduleCurriculumReview = (id: string, correct: boolean, neededHelp: boolean, hadWrong: boolean, observation?: ReviewObservation) => {
+    if (!routine.ensureCurrent()) { setCourseSaveError("계정이나 기록이 바뀌었어요. 복습 화면을 다시 열어 주세요."); return; }
     try {
     const now = new Date();
     const latest: CurriculumReviewItem[] = JSON.parse(localStorage.getItem(CURRICULUM_REVIEW_KEY) ?? "[]");
@@ -369,21 +381,18 @@ export default function ReviewPage() {
   };
 
   const trackReviewAction = (itemId: string) => {
+    if (!routine.ensureCurrent()) { setReviewSaveError("계정이나 기록이 바뀌었어요. 복습 화면을 다시 열어 주세요."); return; }
     const dateKey = getTodayLocalDateKey();
-
-    setReviewedItemIds((prev) => {
-      if (prev.includes(itemId)) return prev;
-
-      const next = [...prev, itemId];
+    try {
+      // Always reload this date; never copy yesterday's in-memory list into today.
+      const previous = getReviewedItemsForDate(dateKey);
+      const next = Array.from(new Set([...previous, itemId]));
       saveReviewedItemsForDate(dateKey, next);
-
-      if (next.length >= 3 && !hasMarkedReviewCompletedRef.current) {
-        markTodayRoutineCompleted("review");
-        hasMarkedReviewCompletedRef.current = true;
-      }
-
-      return next;
-    });
+      reviewedDateRef.current = dateKey;
+      setReviewedItemIds(next);
+      setReviewSaveError("");
+      if (next.length >= 3) routine.complete(dateKey);
+    } catch { setReviewSaveError("복습 항목의 완료 표시를 저장하지 못했어요. 다른 학습 결과는 이미 저장되었을 수 있어요. 완료 표시를 다시 눌러 주세요."); }
   };
 
   const isReviewed = (itemId: string) => reviewedItemIds.includes(itemId);
@@ -407,6 +416,9 @@ export default function ReviewPage() {
 
   return (
     <section>
+      <DailyRoutineSaveNotice {...routine} />
+      {reviewSaveError && <p role="alert">{reviewSaveError}</p>}
+      {reviewedItemIds.length >= 3 && <button type="button" className="btn" disabled={routine.pending} onClick={() => routine.complete(reviewedDateRef.current)}>이 날짜의 일일 학습 체크 확인</button>}
       <div className="page-header card" style={{ marginBottom: "14px", padding: "18px", border: "1px solid #dbeafe", background: "linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%)", boxShadow: "0 10px 22px rgba(37,99,235,0.08)" }}>
         <h1 style={{ color: "#1e3a8a", marginBottom: "4px" }}>복습</h1>
         <p className="muted" style={{ margin: 0, color: "#334155" }}>저장한 단어와 틀린 문제를 다시 확인해 보세요.</p>
@@ -414,6 +426,7 @@ export default function ReviewPage() {
       </div>
 
       <div className="card" style={{ marginBottom: "14px", padding: "14px", borderColor: "#dbeafe", boxShadow: "0 6px 16px rgba(15,23,42,.06)" }}>
+        <p><Link href="/language/chunk-review">표현 조각 보충복습은 별도 목록에서 다시 풀어요 →</Link></p>
         <div className="label" style={{ marginBottom: "10px", color: "#1d4ed8" }}>복습 요약</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: "10px" }}>
           {[

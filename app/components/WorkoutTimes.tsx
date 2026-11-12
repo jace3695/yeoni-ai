@@ -10,7 +10,8 @@ export default function WorkoutTimes({initialDate,meals,fixedDate=false,onPendin
   const [row,setRow]=useState<WorkoutTime|null>(null),[start,setStart]=useState(''),[end,setEnd]=useState('');
   const [loading,setLoading]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [review,setReview]=useState<(TimeRequest&{uncertain?:boolean})|null>(null),[busy,setBusy]=useState(false);
-  const alive=useRef(false),generation=useRef(0),working=useRef(false);
+  const alive=useRef(false),generation=useRef(0),working=useRef(false),epoch=useRef(0),scopeDate=useRef(initialDate);
+  scopeDate.current=initialDate;
   const dirty=start!==(row?.starts_at??'')||end!==(row?.ends_at??'');
   useUnsavedChanges(dirty||!!review);
   useEffect(()=>{onPendingChange?.(dirty||!!review);return()=>onPendingChange?.(false);},[dirty,review,onPendingChange]);
@@ -26,10 +27,12 @@ export default function WorkoutTimes({initialDate,meals,fixedDate=false,onPendin
     finally{if(alive.current&&version===generation.current)setLoading(false);}
   }
   useEffect(()=>{
-    alive.current=true;generation.current++;setDate(initialDate);let active=true;
+    const lifecycle=++epoch.current;
+    alive.current=true;generation.current++;working.current=false;
+    setDate(initialDate);setOwner('');setRow(null);setStart('');setEnd('');setReview(null);setBusy(false);setNotice('');setLoading(true);setError('');let active=true;
     if(!supabase){setError('로그인 연결을 확인해 주세요.');setLoading(false);return;}
     void supabase.auth.getUser().then(({data,error})=>{if(!active)return;if(error||!data.user){setError('로그인을 확인해 주세요.');setLoading(false);return;}setOwner(data.user.id);void load(data.user.id,initialDate);}).catch(()=>{if(active){setError('로그인 연결을 확인해 주세요.');setLoading(false);}});
-    return()=>{active=false;alive.current=false;};
+    return()=>{active=false;alive.current=false;epoch.current=lifecycle+1;};
   },[initialDate]);
   const disabled=loading||!!error||busy||!!review||!owner;
   const prepare=(remove=false)=>{
@@ -40,12 +43,14 @@ export default function WorkoutTimes({initialDate,meals,fixedDate=false,onPendin
   };
   const run=async()=>{
     if(!supabase||!review||working.current)return;
+    const requestEpoch=epoch.current;
+    const isCurrent=()=>alive.current&&epoch.current===requestEpoch&&scopeDate.current===initialDate;
     working.current=true;setBusy(true);
-    const result=review.uncertain?await confirmWorkoutTime(supabase,owner,review):await writeWorkoutTime(supabase,owner,review);
-    if(!alive.current)return;
+    const result=review.uncertain?await confirmWorkoutTime(supabase,owner,review,isCurrent):await writeWorkoutTime(supabase,owner,review,isCurrent);
+    if(!isCurrent())return;
     if(result==='uncertain'){setReview({...review,uncertain:true});setNotice('저장 결과를 확인하지 못했어요. 다시 쓰지 않고 서버 결과만 확인합니다.');}
     else{setReview(null);setNotice(result==='confirmed'?'운동 시각을 반영했습니다. 운동 완료·상세 기록은 바뀌지 않았습니다.':result==='invalid'?'시각과 날짜를 다시 확인해 주세요.':'기록이 바뀌었거나 요청이 반영되지 않았어요. 최신 값을 확인한 뒤 다시 진행해 주세요.');await load(owner,date);}
-    working.current=false;setBusy(false);
+    if(isCurrent()){working.current=false;setBusy(false);}
   };
   const meal=meals?.[date];const mealClock=meal&&typeof meal==='object'&&!Array.isArray(meal)?(meal as Record<string,unknown>).lastMealTime:undefined;
   const gap=row?workoutMealGap(row,mealClock):null;

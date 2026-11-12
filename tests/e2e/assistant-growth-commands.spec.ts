@@ -25,7 +25,7 @@ test('growth confirmation cancels, recovers lost responses, displays unknown tim
   expect(await sessions(qa.account.client)).toEqual(before);expect((await qa.account.client.from('assistant_growth_command_history').select('id')).data).toEqual([]);
   await review.getByRole('button',{name:'취소',exact:true}).click();await expect(page.getByText('취소했습니다. 자기계발 기록은 변경하지 않았습니다.')).toBeVisible();
   await page.reload();await expect(review).toHaveCount(0);expect(await sessions(qa.account.client)).toEqual(before);
-  await page.goto('/assistant');const input=page.getByLabel('연이에게 보낼 명령');await expect(input).toBeEnabled();await input.fill('오늘 타자 연습 완료했어');await input.press('Enter');await expect(review).toBeVisible();
+  await page.goto('/assistant');const input=page.getByLabel('연이에게 하고 싶은 말', { exact: true });await expect(input).toBeEnabled();await input.fill('오늘 타자 연습 완료했어');await input.press('Enter');await expect(review).toBeVisible();
   await page.goto('/assistant/quick');await expect(review).toBeVisible();const draft=await page.evaluate(()=>sessionStorage.getItem('yeoni:task-command-drafts:v1'));
   await page.reload();await expect(review).toBeVisible();expect(await page.evaluate(()=>sessionStorage.getItem('yeoni:task-command-drafts:v1'))).toBe(draft);
   // Keep fault injection in the fixture's context routing chain. A separate
@@ -54,7 +54,7 @@ test('growth confirmation cancels, recovers lost responses, displays unknown tim
 
 test('two growth sessions reject stale confirmation and later manual records block undo',async({page,qa,browser})=>{
   const ids=await seed(qa.account.client,qa.account.id);await login(page,qa.account);await synced(page);await openCommand(page,'오늘 타자 7분 완료했어');await expect(reviewFor(page)).toContainText('완료 · 7분');
-  const context=await browser.newContext({viewport:{width:390,height:844},timezoneId:'Asia/Seoul'});await qa.traffic.install(context);
+  const context=await browser.newContext({ serviceWorkers: 'block',viewport:{width:390,height:844},timezoneId:'Asia/Seoul'});await qa.traffic.install(context);
   try {
     const second=await context.newPage();await login(second,qa.account);await synced(second);await openCommand(second,'오늘 타자 7분 완료했어');await expect(reviewFor(second)).toBeVisible();
     await reviewFor(page).getByRole('button',{name:'확인하고 저장'}).click();await expect(receiptFor(page)).toContainText('완료 · 7분');

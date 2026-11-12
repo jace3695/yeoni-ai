@@ -7,7 +7,7 @@ import { WORDS } from "@/data/words";
 import { SENTENCES } from "@/data/sentences";
 import { GRAMMAR_LESSONS, GRAMMAR_PROGRESS_KEY, type GrammarProgressItem } from "@/data/grammar";
 import { CURRICULUM, TRACKS, type CourseTrack } from "@/data/curriculum";
-import { CURRICULUM_REVIEW_KEY, loadCurriculumProgress, type CurriculumProgress } from "@/utils/curriculumProgress";
+import { CURRICULUM_REVIEW_KEY, curriculumProgressErrorMessage, loadCurriculumProgress, type CurriculumProgress } from "@/utils/curriculumProgress";
 import { getLocalDateKey } from "@/utils/dateKey";
 
 function getCurrentStreak(activityDates: string[]): number {
@@ -441,6 +441,7 @@ export default function ProgressPage() {
   const [confusingKanaChars, setConfusingKanaChars] = useState<string[]>([]);
   const [grammarProgress, setGrammarProgress] = useState<GrammarProgressItem[]>([]);
   const [activeProgressTab, setActiveProgressTab] = useState<ProgressTab>("all");
+  const [curriculumError, setCurriculumError] = useState("");
   const [curriculumProgress, setCurriculumProgress] = useState<CurriculumProgress | null>(null);
   const [curriculumReviewCount, setCurriculumReviewCount] = useState(0);
 
@@ -508,7 +509,8 @@ export default function ProgressPage() {
     }
     setData({ wrongKana, wrongWords, wrongSentences });
     setGrammarProgress(grammarItems);
-    setCurriculumProgress(loadCurriculumProgress());
+    try { setCurriculumProgress(loadCurriculumProgress()); setCurriculumError(""); }
+    catch (error) { setCurriculumError(curriculumProgressErrorMessage(error, "학습 기록을 읽지 못했어요. 화면을 다시 열어 주세요.")); }
     setCurriculumReviewCount(loadFromStorage(CURRICULUM_REVIEW_KEY).length);
     const rawConfusingKana = loadFromStorage("wrongKanaChars");
     const rawConfusingKanaLegacy = loadFromStorage("confusingKana");
@@ -809,7 +811,7 @@ export default function ProgressPage() {
   const currentSentenceQuiz = sentenceQuizItems[sentenceQuizIndex] ?? null;
 
   return (
-    <div style={{ maxWidth: 700, margin: "0 auto", padding: "1.5rem 1rem 3rem", color: "#0f172a" }}>
+    <div style={{ width: "100%", margin: "0 auto", padding: "1.5rem 0 3rem", color: "#0f172a" }}>
       <section style={{ marginBottom: "1.1rem", border: "1px solid #dbeafe", borderRadius: 20, padding: "1.2rem", background: "linear-gradient(145deg, #f8fbff 0%, #eef4ff 100%)", boxShadow: "0 10px 28px rgba(59, 130, 246, 0.08)" }}>
         <h1 style={{ fontSize: "1.8rem", margin: "0 0 0.5rem", color: "#1e3a8a" }}>학습 진도</h1>
         <p style={{ color: "#334155", margin: 0, lineHeight: 1.55 }}>
@@ -819,6 +821,7 @@ export default function ProgressPage() {
 
       <section style={{ marginBottom: "1rem", border: "1px solid #dbeafe", borderRadius: 20, padding: "1rem", background: "#ffffff", boxShadow: "0 6px 20px rgba(148, 163, 184, 0.16)" }}>
         <h2 style={{ fontSize: "1.05rem", margin: "0 0 0.8rem", color: "#1f684c" }}>새 학습 과정</h2>
+        {curriculumError ? <p role="alert">{curriculumError}</p> : <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(105px,1fr))", gap: "0.55rem", marginBottom: "0.7rem" }}>
           <div style={{ padding: "0.7rem", borderRadius: 12, background: "#f3faf6", textAlign: "center" }}><small>연속 학습</small><strong style={{ display: "block", color: "#287a59" }}>{getCurrentStreak(curriculumProgress?.activityDates ?? [])}일</strong></div>
           <div style={{ padding: "0.7rem", borderRadius: 12, background: "#f3faf6", textAlign: "center" }}><small>총 학습일</small><strong style={{ display: "block", color: "#287a59" }}>{curriculumProgress?.activityDates.length ?? 0}일</strong></div>
@@ -833,6 +836,7 @@ export default function ProgressPage() {
           })}
         </div>
         <Link href={curriculumProgress?.lastLessonId ? `/language/learn?lesson=${curriculumProgress.lastLessonId}` : "/language"} style={{ display: "block", marginTop: "0.7rem", padding: "0.65rem", borderRadius: 10, textAlign: "center", textDecoration: "none", color: "#fff", background: "#287a59", fontWeight: 750, fontSize: "0.85rem" }}>{curriculumProgress?.completedLessonIds.length ? "최근 수업 다시 보기" : "학습 시작점 고르기"}</Link>
+        </>}
       </section>
 
       <section style={{ marginBottom: "1rem", border: "1px solid #dbeafe", borderRadius: 20, padding: "1rem", background: "#ffffff", boxShadow: "0 6px 20px rgba(148, 163, 184, 0.16)" }}>
@@ -1359,11 +1363,13 @@ export default function ProgressPage() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                flexWrap: "wrap",
+                gap: "0.5rem",
                 marginBottom: "0.75rem",
               }}
             >
               <h2 style={{ fontSize: "1.1rem", margin: 0 }}>{label}</h2>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
                 <Link
                   href={href}
                   style={{
@@ -1404,7 +1410,7 @@ export default function ProgressPage() {
               <ul style={{ margin: 0, paddingLeft: 0 }}>
                 {items.map((item, i) => (
                   <li key={`wrong-kana-item-${i}`} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", listStyle: "none" }}>
-                    <div style={{ flex: 1 }}>{renderKanaItem(item, i)}</div>
+                    <div style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{renderKanaItem(item, i)}</div>
                     <button
                       onClick={() => removeWrongKanaItem(item)}
                       style={{
@@ -1428,7 +1434,7 @@ export default function ProgressPage() {
                 {items.map((item, i) => (
                   <li key={`wrong-item-${key}-${i}`} style={{ marginBottom: "0.35rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", alignItems: "center" }}>
-                      <span style={{ flex: 1 }}>{renderWordOrSentenceItem(item, i)}</span>
+                      <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{renderWordOrSentenceItem(item, i)}</span>
                       <button
                         onClick={() => {
                           if (key === "wrongWords") {

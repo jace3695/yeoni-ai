@@ -19,27 +19,31 @@ export function workoutMealGap(row:WorkoutTime,meal:unknown) {
   return m<=a ? `마지막 식사 ${a-m}분 후 운동 시작` : m>=b ? `운동 종료 ${m-b}분 후 마지막 식사` : '마지막 식사 시각이 운동 구간 안에 있습니다. 입력한 시각을 확인해 주세요.';
 }
 export type TimeRequest={before:WorkoutTime|null; after:WorkoutTime|null};
-export type TimeResult='confirmed'|'uncertain'|'changed'|'invalid';
+export type TimeResult='confirmed'|'uncertain'|'changed'|'invalid'|'cancelled';
 function validRequest(owner:string,request:TimeRequest) {
   const {before,after}=request;
   return !!(before||after)&&[before,after].every(r=>r===null || validWorkoutTime(r)&&r.user_id===owner)&&(!before||!after||before.recorded_on===after.recorded_on&&before.revision!==after.revision);
 }
-export async function confirmWorkoutTime(client:SupabaseClient,owner:string,request:TimeRequest):Promise<TimeResult> {
+export async function confirmWorkoutTime(client:SupabaseClient,owner:string,request:TimeRequest,isCurrent:()=>boolean=()=>true):Promise<TimeResult> {
+  if(!isCurrent())return 'cancelled';
   if(!validRequest(owner,request))return 'invalid';
   try {
     const row=request.after??request.before!;
     const {data,error}=await client.from('workout_actual_times').select('*').eq('user_id',owner).eq('recorded_on',row.recorded_on).abortSignal(AbortSignal.timeout(15000)).maybeSingle();
+    if(!isCurrent())return 'cancelled';
     if(error)return 'uncertain';
     if(!request.after)return data?'changed':'confirmed';
     return data&&validWorkoutTime(data)&&Object.keys(request.after).every(k=>data[k as keyof WorkoutTime]===request.after![k as keyof WorkoutTime])?'confirmed':'changed';
-  }catch{return 'uncertain';}
+  }catch{return isCurrent()?'uncertain':'cancelled';}
 }
-export async function writeWorkoutTime(client:SupabaseClient,owner:string,request:TimeRequest):Promise<TimeResult> {
+export async function writeWorkoutTime(client:SupabaseClient,owner:string,request:TimeRequest,isCurrent:()=>boolean=()=>true):Promise<TimeResult> {
+  if(!isCurrent())return 'cancelled';
   if(!validRequest(owner,request)||request.after&&!completedWorkoutTime(request.after))return 'invalid';
   const {before,after}=request;
   try {
     const query=!before ? client.from('workout_actual_times').insert(after!) : after ? client.from('workout_actual_times').update({starts_at:after.starts_at,ends_at:after.ends_at,revision:after.revision}).eq('user_id',owner).eq('recorded_on',before.recorded_on).eq('revision',before.revision) : client.from('workout_actual_times').delete().eq('user_id',owner).eq('recorded_on',before.recorded_on).eq('revision',before.revision);
     await query.abortSignal(AbortSignal.timeout(15000));
   }catch{/* A lost reply may have committed. Read before any further mutation. */}
-  return confirmWorkoutTime(client,owner,request);
+  if(!isCurrent())return 'cancelled';
+  return confirmWorkoutTime(client,owner,request,isCurrent);
 }

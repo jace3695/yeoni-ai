@@ -56,11 +56,11 @@ const sections = [
   },
   {
     id: 'analysis',
-    title: '5. 소비 분석과 AI 상담',
+    title: '5. 소비 분석과 연이 상담',
     icon: '✨',
     items: [
       '분석에서 월별 수입·지출·저축, 전월 대비 변화, 상위 지출과 소비 흐름을 확인할 수 있어요.',
-      'AI 상담에는 기간·카테고리·결제수단을 구체적으로 질문하면 더 정확해요.',
+      '연이 상담에는 기간·카테고리·결제수단을 구체적으로 질문하면 더 정확해요.',
       '답변의 합계나 근거가 중요할 때는 관련 거래 내역도 함께 확인하세요.',
       '기록이 적거나 질문 기간에 데이터가 없으면 분석 결과가 제한될 수 있어요.'
     ],
@@ -107,7 +107,7 @@ const sections = [
       '화면이 갱신되지 않으면 네트워크 연결을 확인한 뒤 새로고침하세요.',
       '음성 입력이 안 되면 브라우저의 마이크 권한을 확인하세요.',
       '알림이 안 오면 설정의 알림 스위치, 브라우저 알림 권한, 아이폰의 홈 화면 추가 여부를 확인하세요.',
-      'AI 분석이 이상하면 거래의 날짜·금액·유형·카테고리가 올바른지 먼저 확인하고 질문 기간을 구체적으로 지정하세요.',
+      '연이의 분석이 이상하면 거래의 날짜·금액·유형·카테고리가 올바른지 먼저 확인하고 질문 기간을 구체적으로 지정하세요.',
       '로그인이 반복해서 풀리면 쿠키 차단이나 시크릿 모드를 해제한 뒤 다시 로그인하세요.'
     ]
   }
@@ -149,7 +149,7 @@ export default function UserGuide({ open, onClose }: UserGuideProps) {
           <div style={{ padding: 18, borderRadius: 18, background: 'linear-gradient(135deg,rgba(232,168,124,0.18),rgba(139,92,246,0.12))', border: '1px solid rgba(232,168,124,0.32)', marginBottom: 18 }}>
             <BookOpen size={26} color="#E8A87C" />
             <h3 style={{ margin: '10px 0 6px', fontSize: 18 }}>가장 쉬운 사용 순서</h3>
-            <p style={{ margin: 0, color: '#C7C7D2', fontSize: 13, lineHeight: 1.7 }}>예산 설정 → 거래 기록 → 내역 확인 → 분석·AI 상담 → 월간 리포트 순으로 사용하면 좋아요. AI가 분류한 내용은 저장 전에 한 번 확인해 주세요.</p>
+            <p style={{ margin: 0, color: '#C7C7D2', fontSize: 13, lineHeight: 1.7 }}>예산 설정 → 거래 기록 → 내역 확인 → 분석·연이 상담 → 월간 리포트 순으로 사용하면 좋아요. AI가 분류한 내용은 저장 전에 한 번 확인해 주세요.</p>
           </div>
 
           <nav aria-label="가이드 목차" style={{ display: 'grid', gap: 8, marginBottom: 22 }}>

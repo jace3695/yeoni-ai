@@ -1,9 +1,10 @@
 "use client";
 
+
 import { growthSessionTimeLabel } from "@/lib/assistant-growth-command";
 import { useDialogFocus } from "@/components/useDialogFocus";
+import { readOwnedLanguageCache } from "../data/languageStorageLock";
 import { RECORDS_CHANGED_EVENT } from "../data/storageTransaction";
-import AppCompanion from "@/components/AppCompanion";
 import Link from "next/link";
 import { useEffect, useRef, useMemo, useState } from "react";
 import AuthGate from "../components/AuthGate";
@@ -49,16 +50,17 @@ function UnifiedCalendar() {
       const stores = readRecordStores();
       Object.entries(stores.workouts).forEach(([date, value]) => { if (date.startsWith(monthKey) && isWorkoutPerformed(value)) next[date] = { ...next[date], workout: getWorkoutRecord(value), note: stores.notes[date] }; });
       Object.entries(stores.diet).forEach(([date, value]) => { if (date.startsWith(monthKey) && Object.keys(value).length) next[date] = { ...next[date], diet: value, water: stores.water[date] }; });
-      Object.entries(parse(localStorage.getItem("dailyLearningHistory"))).forEach(([date, value]) => {
-        if (!date.startsWith(monthKey) || !value || typeof value !== "object") return;
-        const row = value as Record<string, unknown>;
-        const ids = Array.isArray(row.completedIds) ? row.completedIds.filter((id): id is string => typeof id === "string") : [];
-        const count = Number(row.completedCount || ids.length);
-        if (count) next[date] = { ...next[date], language: { count, ids } };
-      });
+
       if (supabase) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+          Object.entries(parse(readOwnedLanguageCache(localStorage, "dailyLearningHistory", user.id))).forEach(([date, value]) => {
+            if (!date.startsWith(monthKey) || !value || typeof value !== "object") return;
+            const row = value as Record<string, unknown>;
+            const ids = Array.isArray(row.completedIds) ? row.completedIds.filter((id): id is string => typeof id === "string") : [];
+            const count = Number(row.completedCount || ids.length);
+            if (count) next[date] = { ...next[date], language: { count, ids } };
+          });
           const end = `${monthKey}-${new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()}`;
           const [tasks, budget, growth] = await Promise.all([
             supabase.from("assistant_items").select("id,title,due_at,status").eq("user_id", user.id).gte("due_at", `${monthKey}-01T00:00:00+09:00`).lte("due_at", `${end}T23:59:59+09:00`).neq("status", "cancelled"),
@@ -125,7 +127,7 @@ function UnifiedCalendar() {
   const diet = row?.diet ? [row.diet.dietStatus, row.diet.fastingRecordStatus ? `공복 ${row.diet.fastingRecordStatus}` : "", row.water ? `물 ${row.water.toLocaleString()}mL` : "", row.diet.dietMemo].filter((value): value is string => typeof value === "string" && Boolean(value)) : [];
 
   return <main className="min-h-dvh bg-yeoni-bg text-[#242231]"><header className="app-module-header"><div className="app-module-header-inner"><AppIdentity kind="calendar" title="통합 달력" subtitle="모든 앱의 날짜별 기록" /><Link href="/calendar/settings" className="inline-flex min-h-11 shrink-0 items-center px-3 text-sm font-bold">설정</Link></div></header><div className="yeoni-page-content">
-    <AppCompanion>날짜를 누르면 그날의 일정과 기록을 함께 볼 수 있어요.</AppCompanion>
+    <p className="mb-5 leading-relaxed">날짜를 누르면 그날의 일정과 기록을 함께 볼 수 있어요.</p>
     {loading ? <p role="status" className="mb-3 text-sm text-gray-500">기록을 불러오는 중…</p> : loadFailures.length > 0 ? <div role="status" className="mb-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-800"><p>{loadFailures.join(' · ')} 기록을 확인하지 못했어요. 이전에 불러온 기록은 유지합니다.</p><button type="button" onClick={() => setReloadVersion(value => value + 1)} className="mt-2 min-h-11 rounded-xl bg-white px-4 font-bold">다시 불러오기</button></div> : null}
     <section className="rounded-3xl bg-white p-4 shadow-sm sm:p-6"><div className="flex items-center justify-between"><button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-xl bg-gray-100 px-3 py-2 font-bold">←</button><h2 className="text-xl font-bold">{month.getFullYear()}년 {month.getMonth() + 1}월</h2><button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-xl bg-gray-100 px-3 py-2 font-bold">→</button></div>
       <div className="mt-5 grid grid-cols-7 text-center text-xs font-bold text-gray-400">{"일월화수목금토".split("").map((day) => <span key={day}>{day}</span>)}</div>

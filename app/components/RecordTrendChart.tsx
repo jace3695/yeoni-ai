@@ -10,12 +10,18 @@ export default function RecordTrendChart({
   points,
   color,
   digits = 1,
+  note,
+  detail,
+  changeUnit = unit,
 }: {
   title: string;
   unit: string;
   points: TrendPoint[];
   color: string;
   digits?: number;
+  note?: string;
+  detail?: string;
+  changeUnit?: string;
 }) {
   const latest = points.at(-1);
   const first = points[0];
@@ -24,9 +30,10 @@ export default function RecordTrendChart({
 
   if (!latest) {
     return (
-      <section className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+      <section data-trend-chart={title} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
         <p className="text-[12px] font-bold text-gray-700">{title}</p>
-        <p className="mt-3 text-[12px] text-gray-400">기록이 아직 없습니다.</p>
+        <p className="mt-3 text-[12px] text-gray-400">{note || '기록이 아직 없습니다.'}</p>
+        {detail && <details className="mt-2 text-[11px] text-gray-500"><summary className="cursor-pointer focus-visible:outline focus-visible:outline-2">상세 보기</summary><p className="mt-2 leading-5">{detail}</p></details>}
       </section>
     );
   }
@@ -42,7 +49,7 @@ export default function RecordTrendChart({
   }));
 
   return (
-    <section className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+    <section data-trend-chart={title} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-[12px] font-bold text-gray-700">{title}</p>
@@ -60,7 +67,7 @@ export default function RecordTrendChart({
           >
             {change > 0 ? "+" : ""}
             {formatValue(change, digits)}
-            {unit}
+            {changeUnit}
           </span>
         ) : null}
       </div>
@@ -95,8 +102,10 @@ export default function RecordTrendChart({
         ))}
       </svg>
       <p className="mt-1 text-[10px] text-gray-400">
-        최근 {points.length}회 기록 기준
+        {first.dateKey} ~ {latest.dateKey} · {points.length}회
       </p>
+      {note && <p className="mt-2 text-[11px] text-gray-500">{note}</p>}
+      {detail && <details className="mt-1 text-[11px] text-gray-500"><summary className="cursor-pointer focus-visible:outline focus-visible:outline-2">상세 보기</summary><p className="mt-2 leading-5">{detail}</p></details>}
     </section>
   );
 }

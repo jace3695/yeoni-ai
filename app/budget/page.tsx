@@ -1,10 +1,20 @@
 'use client'
+import { formatDisplayCurrency } from "@/lib/budget-display-currency";
+import RecordReplyStatus from '@/components/yeoni/RecordReplyStatus';
+import { rollingReplySource } from '@/lib/yeoni/record-reply-sources';
+import { budgetGuidance } from "@/lib/yeoni/record-guidance";
+import YeoniPreferencesPanel from "@/components/YeoniPreferencesPanel";
+import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
+import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
+import CommonCharacterSuspension from '@/components/yeoni/CommonCharacterSuspension';
+import ManualEntry from './components/manual-entry'
+import { useManualBudgetDraft } from './lib/use-manual-draft'
+import { validBudgetDate } from './lib/manual-entry'
 import ZephyrReadButton from '@/components/ZephyrReadButton';
 import { useUnsavedChanges } from '@/components/useUnsavedChanges'
 import { getLocalDateKey } from '@/utils/dateKey'
 import { pendingBudgetSaveKey, readPendingBudgetSave, type PendingBudgetSave } from './lib/pending-save'
 import ConfirmDialog from "@/components/ConfirmDialog";
-import AppCompanion from "@/components/AppCompanion";
 import YeoniAdviceEntry from "@/components/YeoniAdviceEntry";
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { Capacitor } from '@capacitor/core'
@@ -13,7 +23,7 @@ import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
 import { authenticatedFetch, createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowRight, ChevronDown, ChevronUp, CircleDollarSign, PiggyBank, ReceiptText, Sparkles } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronUp, CircleDollarSign, PiggyBank, ReceiptText } from 'lucide-react'
 import FixedSpaceBackground from './components/fixed-space-background'
 import PreferencesSettingsCards from './components/preferences-settings-cards'
 import HistoryScreen from './components/history-screen'
@@ -66,29 +76,6 @@ const QUICK_INPUT_EXAMPLES = [
   '적금 5만원 넣었어',
 ]
 
-function formatDisplayCurrency(n: number, currency: string) {
-  if (currency === 'USD') {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0
-    }).format(n)
-  }
-
-  if (currency === 'JPY') {
-    return new Intl.NumberFormat('ja-JP', {
-      style: 'currency',
-      currency: 'JPY',
-      maximumFractionDigits: 0
-    }).format(n)
-  }
-
-  return new Intl.NumberFormat('ko-KR', {
-    style: 'currency',
-    currency: 'KRW',
-    maximumFractionDigits: 0
-  }).format(n)
-}
 
 function getCategoryIcon(category?: string) {
   const map: Record<string, string> = {
@@ -156,6 +143,14 @@ function getPaymentBadgeStyle(payment?: string) {
 
 function BudgetDashboard() {
   const [user, setUser] = useState<any>(null)
+  const liveBudgetOwner = useRef<string | null>(null); liveBudgetOwner.current = user?.id ?? null
+  const reviewOwner = useRef<string | null>(null)
+  const reviewWasManual = useRef(false)
+  const budgetEpoch = useRef(0)
+  const recordReadVersions = useRef<Record<BudgetRecordKind, number>>({ expense: 0, income: 0, saving: 0 })
+  useEffect(() => () => { budgetEpoch.current += 1 }, [])
+  const [manualReset, setManualReset] = useState(0)
+  const manualEntry = useManualBudgetDraft(user?.id ?? null)
   const [nickname, setNickname] = useState('')
   const [autoAnalyzeEnabled, setAutoAnalyzeEnabled] = useState(true)
   const [autoQuestion, setAutoQuestion] = useState('이번 달 소비 분석해줘')
@@ -179,16 +174,30 @@ function BudgetDashboard() {
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
   })
   const [input, setInput] = useState('')
+  const [entryMode, setEntryMode] = useState<'manual' | 'sentence'>('manual')
+  const [entryCoolingDown, setEntryCoolingDown] = useState(false)
+  useEffect(() => {
+    if (!entryCoolingDown) return
+    const timer = window.setTimeout(() => setEntryCoolingDown(false), 600)
+    return () => window.clearTimeout(timer)
+  }, [entryCoolingDown])
   const [feedback, setFeedback] = useState('')
   const [parsedItems, setParsedItems] = useState<any[]>([])
   const [showConfirm, setShowConfirm] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
+  const voiceInputEpoch = useRef(0)
+  useEffect(() => () => { voiceInputEpoch.current += 1 }, [user?.id, tab, input, showConfirm, aiLoading])
   const [isSavingRecords, setIsSavingRecords] = useState(false)
   const savingRecordsRef = useRef(false)
   const pendingSaveRef = useRef<PendingBudgetSave | null>(null)
   const [hasPendingSave, setHasPendingSave] = useState(false)
-  useUnsavedChanges(Boolean(input.trim() || parsedItems.length || isSavingRecords))
+  useUnsavedChanges(Boolean(input.trim() || parsedItems.length || isSavingRecords || manualEntry.dirty))
   useEffect(() => {
+    budgetEpoch.current += 1
+    reviewOwner.current = null
+    reviewWasManual.current = false
+    savingRecordsRef.current = false; setIsSavingRecords(false)
+    setAiLoading(false)
     pendingSaveRef.current = null
     setHasPendingSave(false)
     setParsedItems([])
@@ -196,16 +205,21 @@ function BudgetDashboard() {
     setShowConfirm(false)
     setFeedback('')
     if (!user?.id) return
+    // Start initial reads only after this committed owner generation has its epoch.
+    void Promise.allSettled([fetchTransactions(), fetchSavings(), fetchIncome()])
     try {
       const pending = readPendingBudgetSave(window.localStorage, user.id)
       if (!pending) return
       pendingSaveRef.current = pending
+      reviewOwner.current = user.id
       setHasPendingSave(true)
       setParsedItems(pending.items)
       setShowConfirm(true)
       setTab('input')
       setFeedback('이전 저장 결과를 확인해야 해요. 아래 버튼으로 같은 요청을 다시 확인하면 중복 없이 처리합니다.')
     } catch { setFeedback('이전 저장 내용을 읽지 못했어요. 저장 공간 설정을 확인해 주세요.') }
+    // Initial reads belong to the owner generation, not to recreated read callbacks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
   const [question, setQuestion] = useState('')
   const suggestedQuestions = [
@@ -232,6 +246,9 @@ function BudgetDashboard() {
   const resetRequestId = useRef('')
   const [autoAnalyzeRan, setAutoAnalyzeRan] = useState(false)
   const [currency, setCurrency] = useState('KRW')
+  const [guidanceCurrencyScope, setGuidanceCurrencyScope] = useState<{ owner: string; status: 'loading' | 'ready' | 'error' } | null>(null)
+  const currencyReadVersion = useRef(0)
+  useEffect(() => () => { currencyReadVersion.current += 1 }, [])
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
   const [budgetAlertEnabled, setBudgetAlertEnabled] = useState(true)
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('unsupported')
@@ -241,6 +258,7 @@ function BudgetDashboard() {
   const [categoryBudgetInputs, setCategoryBudgetInputs] = useState<Record<string, string>>({})
   const [showBudgetEditor, setShowBudgetEditor] = useState(false)
   const [budgetLoading, setBudgetLoading] = useState(false)
+  const [guidanceBudgetScope, setGuidanceBudgetScope] = useState<{ owner: string; month: string; error: boolean } | null>(null)
   const [budgetSaving, setBudgetSaving] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -528,9 +546,6 @@ function BudgetDashboard() {
         if (savedQuestion?.trim()) setAutoQuestion(savedQuestion)
 
         Promise.allSettled([
-          fetchTransactions(),
-          fetchSavings(),
-          fetchIncome(),
           fetchRecurringExpensePreferences()
         ])
       } catch (error) {
@@ -587,6 +602,7 @@ function BudgetDashboard() {
         setCategoryBudgets({})
         setCategoryBudgetInputs({})
         setActionError('선택한 달의 예산을 불러오지 못했어요.')
+        setGuidanceBudgetScope({ owner: user.id, month: selectedMonth, error: true })
         setBudgetLoading(false)
         return
       }
@@ -597,6 +613,7 @@ function BudgetDashboard() {
         return acc
       }, {})
 
+      setGuidanceBudgetScope({ owner: user.id, month: selectedMonth, error: false })
       setMonthlyBudget(loadedBudget)
       setBudgetInput(loadedBudget && loadedBudget > 0 ? String(loadedBudget) : '')
       setCategoryBudgets(loadedCategories)
@@ -604,7 +621,7 @@ function BudgetDashboard() {
         acc[category] = loadedCategories[category] > 0 ? String(loadedCategories[category]) : ''
         return acc
       }, {} as Record<string, string>))
-      setShowBudgetEditor(!loadedBudget)
+      setShowBudgetEditor(false)
       setBudgetLoading(false)
     }
 
@@ -689,14 +706,19 @@ function BudgetDashboard() {
   }, [isLockReady, user, simplePinEnabled, hasSimplePin, isUnlocked, lastActiveAt, LOCK_TIMEOUT])
 
   const fetchRecordKind = async (kind: BudgetRecordKind) => {
+    const ticket = ++recordReadVersions.current[kind], startedEpoch = budgetEpoch.current
+    const current = () => recordReadVersions.current[kind] === ticket && budgetEpoch.current === startedEpoch
     setRecordLoads(current => ({ ...current, [kind]: 'loading' }))
     try {
       const { data: { user: owner }, error: authError } = await supabase.auth.getUser()
+      if (!current()) return false
       if (authError || !owner) throw new Error('로그인 상태를 확인해 주세요.')
+      if (liveBudgetOwner.current !== owner.id) return false
       const table = BUDGET_RECORD_TABLE[kind] as 'budget_transactions' | 'budget_income' | 'budget_savings'
       const rows = await loadBudgetRows(supabase, table, owner.id)
+      if (!current()) return false
       const { data: { user: currentOwner } } = await supabase.auth.getUser()
-      if (currentOwner?.id !== owner.id) return false
+      if (!current() || currentOwner?.id !== owner.id || liveBudgetOwner.current !== owner.id) return false
       if (kind === 'expense') {
         setTransactions(rows)
         const start = new Date()
@@ -707,6 +729,7 @@ function BudgetDashboard() {
       setRecordLoads(current => ({ ...current, [kind]: 'ready' }))
       return true
     } catch {
+      if (!current()) return false
       setRecordLoads(current => ({ ...current, [kind]: '전체 내역을 불러오지 못했어요. 연결을 확인한 뒤 다시 불러와 주세요.' }))
       return false
     }
@@ -1018,6 +1041,7 @@ function BudgetDashboard() {
         if (deleteError) throw deleteError
       }
 
+      setGuidanceBudgetScope({ owner: user.id, month: selectedMonth, error: false })
       setMonthlyBudget(totalAmount)
       setCategoryBudgets(normalizedCategories)
       setShowBudgetEditor(false)
@@ -1053,6 +1077,8 @@ function BudgetDashboard() {
       return
     }
 
+    if (liveBudgetOwner.current !== user.id) return
+    setGuidanceCurrencyScope({ owner: user.id, status: 'ready' })
     setCurrency(value)
     setPageNotice('통화 설정이 저장되었어요.')
   }
@@ -1102,15 +1128,19 @@ function BudgetDashboard() {
   }
 
   const loadUserSettings = async (userId: string) => {
+    const version = ++currencyReadVersion.current
+    setGuidanceCurrencyScope({ owner: userId, status: 'loading' })
     const { data, error } = await supabase
       .from('budget_user_settings')
       .select('currency, notifications_enabled, budget_alert_enabled, simple_pin_enabled')
       .eq('user_id', userId)
-      .single()
+      .maybeSingle()
 
-    if (error || !data) {
-      return null
-    }
+    if (version !== currencyReadVersion.current) return null
+    if (error) { setGuidanceCurrencyScope({ owner: userId, status: 'error' }); return null }
+    if (!data) { setCurrency('KRW'); setGuidanceCurrencyScope({ owner: userId, status: 'ready' }); return null }
+    if (data.currency && !['KRW', 'USD', 'JPY'].includes(data.currency)) { setGuidanceCurrencyScope({ owner: userId, status: 'error' }); return null }
+    setGuidanceCurrencyScope({ owner: userId, status: 'ready' })
 
     setCurrency(data.currency || 'KRW')
     setNotificationsEnabled(data.notifications_enabled ?? true)
@@ -1435,27 +1465,41 @@ function BudgetDashboard() {
     }
   }
 
+  const handleManualReview = (item: ReturnType<typeof import('./lib/manual-entry').manualBudgetItem>, ownerId: string) => {
+    if (!user?.id || ownerId !== user.id || liveBudgetOwner.current !== ownerId || aiLoading || savingRecordsRef.current || pendingSaveRef.current) return
+    reviewOwner.current = ownerId
+    reviewWasManual.current = true
+    setParsedItems([item]); setFeedback(''); setShowConfirm(true)
+  }
+
   const handleAddTransaction = async () => {
     if (!input.trim() || savingRecordsRef.current || pendingSaveRef.current) return
+    const startedOwner = user?.id, startedEpoch = budgetEpoch.current
     setAiLoading(true)
     setFeedback('')
 
     try {
       const parsed = await parseInput(input)
+      if (!startedOwner || liveBudgetOwner.current !== startedOwner || budgetEpoch.current !== startedEpoch) return
       const { data: rules, error: rulesError, count } = await supabase.from('budget_category_rules')
         .select('merchant_key,category,revision', { count: 'exact' }).eq('user_id', user.id).order('merchant_key').limit(1000)
+      if (!startedOwner || liveBudgetOwner.current !== startedOwner || budgetEpoch.current !== startedEpoch) return
       if (rulesError || count !== rules?.length) {
         setFeedback('기억한 분류를 읽지 못했어요. 연결을 확인한 뒤 다시 해석해 주세요.')
         setAiLoading(false)
         return
       }
+      if (!startedOwner || liveBudgetOwner.current !== startedOwner || budgetEpoch.current !== startedEpoch) return
+      reviewOwner.current = startedOwner
+      reviewWasManual.current = false
       setParsedItems(applyCategoryMemory(parsed, rules || []))
       setShowConfirm(true)
     } catch {
+      if (liveBudgetOwner.current !== startedOwner || budgetEpoch.current !== startedEpoch) return
       setFeedback('입력 내용을 완전히 해석하지 못했어요. 내용을 조금만 다듬어서 다시 해석해보세요.')
     }
 
-    setAiLoading(false)
+    if (liveBudgetOwner.current === startedOwner && budgetEpoch.current === startedEpoch) setAiLoading(false)
   }
 
   const updateParsedItem = (index: number, patch: Record<string, unknown>) => {
@@ -1467,10 +1511,12 @@ function BudgetDashboard() {
 
   const handleConfirmSave = async () => {
     if (!parsedItems.length || savingRecordsRef.current || !user?.id) return
+    if (reviewOwner.current !== user.id || liveBudgetOwner.current !== user.id) { setFeedback('계정이 바뀌었어요. 내용을 다시 입력해 주세요.'); return }
     const hasInvalidItem = parsedItems.some((item) => !item.place?.trim()
       || !Number.isSafeInteger(Number(item.amount)) || Number(item.amount) <= 0
-      || !/^\d{4}-\d{2}-\d{2}$/.test(item.date || ''))
+      || !validBudgetDate(item.date || ''))
     if (hasInvalidItem) { setFeedback('날짜, 이름, 금액을 확인해 주세요. 금액은 0원보다 큰 정수로 입력해요.'); return }
+    const savingOwner = user.id, savingEpoch = budgetEpoch.current
     savingRecordsRef.current = true
     setIsSavingRecords(true)
     setFeedback('')
@@ -1484,6 +1530,7 @@ function BudgetDashboard() {
       pendingSaveRef.current = pending
       setHasPendingSave(true)
       const { data, error } = await supabase.rpc('save_budget_batch', { p_batch_id: pending.id, p_items: pending.items })
+      if (liveBudgetOwner.current !== savingOwner || budgetEpoch.current !== savingEpoch) return
       if (error) {
         // A SQL rejection rolls back the whole transaction, so editing is safe.
         if (error.code === 'P0001' || error.code?.startsWith('22') || error.code?.startsWith('23') || error.code === 'PGRST202') {
@@ -1498,16 +1545,18 @@ function BudgetDashboard() {
       setHasPendingSave(false)
       setShowConfirm(false)
       setParsedItems([])
-      setInput('')
+      if (reviewWasManual.current) { manualEntry.clear(); setManualReset(value => value + 1) }
+      else { setInput('') }
+      setEntryCoolingDown(true)
       setFeedback(String(data?.count ?? pending.items.length) + '건의 저장을 확인했어요.')
       await Promise.all([fetchIncome(), fetchTransactions(), fetchSavings()])
     } catch {
+      if (liveBudgetOwner.current !== savingOwner || budgetEpoch.current !== savingEpoch) return
       setFeedback(pendingSaveRef.current
         ? '저장 응답을 확인하지 못했어요. 같은 내용으로 다시 확인해 주세요. 중복 저장되지 않습니다.'
         : '내역을 저장하지 못했어요. 입력 내용과 연결·저장 공간을 확인한 뒤 다시 시도해 주세요.')
     } finally {
-      savingRecordsRef.current = false
-      setIsSavingRecords(false)
+      if (liveBudgetOwner.current === savingOwner && budgetEpoch.current === savingEpoch) { savingRecordsRef.current = false; setIsSavingRecords(false) }
     }
   }
 
@@ -1651,7 +1700,7 @@ function BudgetDashboard() {
       await buildExpenseAnswer(question)
     } catch (error) {
       console.error('AI 질문 처리 오류:', error)
-      setAiAnswer('AI 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
+      setAiAnswer('연이의 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
       setAiFollowUpQuestions([])
     } finally {
       setAnalyzing(false)
@@ -1666,7 +1715,7 @@ function BudgetDashboard() {
       await buildExpenseAnswer(q)
     } catch (error) {
       console.error('AI 추천 질문 처리 오류:', error)
-      setAiAnswer('AI 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
+      setAiAnswer('연이의 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
       setAiFollowUpQuestions([])
     } finally {
       setAnalyzing(false)
@@ -1760,20 +1809,13 @@ function BudgetDashboard() {
   }
 
   const handleVoiceInput = async () => {
-    const onText = async (text: string) => {
-      setInput(text)
-      setAiLoading(true)
-      setFeedback('')
-
-      try {
-        const parsed = await parseInput(text)
-        setParsedItems(parsed)
-        setShowConfirm(true)
-      } catch {
-        setFeedback('음성 입력은 들어왔지만 해석이 완전하지 않았어요. 문장을 조금 정리해서 다시 해석해보세요.')
-      }
-
-      setAiLoading(false)
+    if (input.trim() || aiLoading || listening || savingRecordsRef.current || pendingSaveRef.current) return
+    const epoch = ++voiceInputEpoch.current
+    const onText = (text: string) => {
+      if (epoch !== voiceInputEpoch.current || savingRecordsRef.current || pendingSaveRef.current) return
+      voiceInputEpoch.current += 1
+      setInput(current => current.trim() ? current : text)
+      setFeedback('음성을 입력칸에 채웠어요. 내용을 고친 뒤 내용 확인하기를 눌러 주세요.')
     }
 
     if (Capacitor.isNativePlatform()) {
@@ -2150,15 +2192,17 @@ function BudgetDashboard() {
         const expenseChangeRate = previousMonthExpenses > 0 ? (((currentMonthExpenses - previousMonthExpenses) / previousMonthExpenses) * 100) : 0
         const incomeChangeRate = previousMonthIncome > 0 ? (((currentMonthIncome - previousMonthIncome) / previousMonthIncome) * 100) : 0
       
-        let aiMain = '아직 충분한 데이터가 없어요. 기록을 더 쌓아보세요.'
-        let aiSub = '수입, 지출, 저축 데이터를 조금 더 쌓으면 더 정확하게 분석할 수 있어요.'
         let aiStyle = '분석 대기'
         let aiStyleDetail = '기록이 조금 더 쌓이면 소비 성향을 더 정확하게 보여줄 수 있어요.'
-        let aiKeyIssue = '아직 핵심 문제를 판단할 데이터가 부족해요.'
-        let aiActionTip = '조금 더 기록이 쌓이면 바로 실천할 행동도 함께 알려드릴게요.'
         
         if (total > 0 || incomeTotal > 0 || savingsRecordedTotal > 0) {
-          if (savingsRate >= 20 && rawPct < 80) {
+          if (!recordsReady || budgetLoading || guidanceBudgetScope?.month !== selectedMonth || guidanceBudgetScope?.owner !== user?.id || guidanceBudgetScope.error) {
+            aiStyle = '기록 확인 중'
+            aiStyleDetail = '선택한 월의 기록과 예산을 확인한 뒤 살펴볼게요.'
+          } else if (!budgetConfigured || incomeTotal <= 0) {
+            aiStyle = '판단 보류'
+            aiStyleDetail = '예산 또는 수입 기록이 없어 전체적인 여유나 저축 흐름은 판단하지 않아요.'
+          } else if (savingsRate >= 20 && rawPct < 80) {
             aiStyle = '절약형'
             aiStyleDetail = '저축 비중이 높고 예산 사용도 비교적 안정적인 편이에요.'
           } else if (estimatedFixedTotal > 0 && incomeTotal > 0 && (estimatedFixedTotal / incomeTotal) * 100 >= 40) {
@@ -2174,74 +2218,9 @@ function BudgetDashboard() {
             aiStyle = '균형형'
             aiStyleDetail = '수입, 지출, 저축 흐름이 한쪽으로 크게 치우치지 않은 편이에요.'
           }
-          if (rawPct >= 100) {
-            aiMain = `${currentMonth + 1}월은 예산을 초과했어요. 큰 지출 항목부터 점검해보세요.`
-            aiKeyIssue = '핵심 문제: 현재 지출이 이미 예산 범위를 넘어선 상태예요.'
-            aiActionTip = '추천 행동: 오늘부터 가장 큰 지출 카테고리 1개만 먼저 줄여보세요.'
-          } else if (rawPct >= 80) {
-            aiMain = `${currentMonth + 1}월 예산 사용률이 높아요. 남은 기간 지출을 조금만 조절해보세요.`
-            aiKeyIssue = '핵심 문제: 예산 소진 속도가 빨라서 후반부에 부담이 커질 수 있어요.'
-            aiActionTip = '추천 행동: 남은 기간에는 필수 지출 외 소비를 한 번 더 체크해보세요.'
-          } else if (savingsRate >= 20) {
-            aiMain = '저축률이 아주 좋아요. 지금 흐름을 유지하면 안정적으로 모을 수 있어요.'
-            aiKeyIssue = '핵심 문제: 큰 문제는 없지만 현재의 좋은 흐름을 유지하는 것이 중요해요.'
-            aiActionTip = '추천 행동: 지금 저축 패턴을 유지하면서 갑작스러운 소비만 조심해보세요.'
-          } else if (savingsRate >= 10) {
-            aiMain = '저축 흐름이 괜찮아요. 소소한 소비만 줄이면 더 좋아질 수 있어요.'
-            aiKeyIssue = '핵심 문제: 저축은 하고 있지만 자잘한 소비가 누적될 가능성이 있어요.'
-            aiActionTip = `추천 행동: 반복되는 소액 소비 1개만 정해서 ${currentMonth + 1}월에 줄여보세요.`
-          } else if (foodRatio >= 45) {
-            aiMain = '식비 관련 지출 비중이 높아요. 외식이나 배달 빈도를 점검해보세요.'
-            aiKeyIssue = '핵심 문제: 식비·카페·배달 비중이 전체 지출에서 너무 큰 편이에요.'
-            aiActionTip = '추천 행동: 배달이나 외식 횟수를 이번 주에 1~2번만 줄여도 체감이 클 수 있어요.'
-          } else if (deliveryRatio >= 20) {
-            aiMain = `배달 지출 비중이 높은 편이에요. ${currentMonth + 1}월 절약 포인트가 될 수 있어요.`
-            aiKeyIssue = '핵심 문제: 배달처럼 반복되는 편의성 소비가 누적되고 있어요.'
-            aiActionTip = '추천 행동: 이번 주는 배달 대신 대체 식사 1~2회를 먼저 시도해보세요.'
-          } else if (cafeRatio >= 15) {
-            aiMain = '카페 지출이 조금 높아요. 작은 습관 조정만으로도 절약 효과가 있어요.'
-            aiKeyIssue = '핵심 문제: 카페 소비가 자주 반복되면서 고정 습관처럼 쌓이고 있어요.'
-            aiActionTip = '추천 행동: 카페 이용 횟수를 하루나 이틀만 줄여도 누적 절약에 도움이 돼요.'
-          } else if (livingSuppliesRatio >= 15) {
-            aiMain = '생활용품 지출 비중이 높은 편이에요. 꼭 필요한 소모품인지 한 번 점검해보세요.'
-            aiKeyIssue = '핵심 문제: 생활용품 구매가 반복되면서 전체 지출에서 차지하는 비중이 커지고 있어요.'
-            aiActionTip = '추천 행동: 다이소, 올리브영, 휴지, 샴푸 같은 소모품은 구매 전 재고를 먼저 확인해보세요.'
-          } else if (estimatedFixedTotal > 0 && incomeTotal > 0 && (estimatedFixedTotal / incomeTotal) * 100 >= 40) {
-            aiMain = '고정지출 비중이 높은 편이에요. 매달 반복되는 지출을 먼저 관리해보세요.'
-            aiKeyIssue = '핵심 문제: 고정성 지출이 커서 자유롭게 쓸 수 있는 돈이 적은 편이에요.'
-            aiActionTip = '추천 행동: 구독, 통신, 정기결제처럼 반복되는 항목부터 점검해보세요.'
-          } else {
-            aiMain = '전체적으로 안정적인 흐름이에요. 지금처럼 기록을 유지해보세요.'
-            aiKeyIssue = '핵심 문제: 현재는 큰 위험 신호 없이 비교적 안정적인 소비 흐름이에요.'
-            aiActionTip = '추천 행동: 지금 패턴을 유지하면서 한 달 단위로만 계속 점검해보세요.'
-          }
-        
-          if (topCategoryName !== '-') {
-            aiSub = `가장 많이 쓴 항목은 ${topCategoryName}이고, 누적 ${formatKRW(topCategoryAmount)} 사용 중이에요.`
-          }
-        
-          if (previousMonthExpenses > 0) {
-            aiSub = `${currentMonth + 1}월 지출은 지난달보다 ${expenseChangeRate >= 0 ? `${expenseChangeRate.toFixed(1)}% 증가` : `${Math.abs(expenseChangeRate).toFixed(1)}% 감소`}했어요.`
-          }
-        
-          if (savingsRate > 0 && incomeTotal > 0) {
-            aiSub = `현재 저축률은 ${savingsRate.toFixed(1)}%이고, 수입 대비 저축 흐름을 계속 확인해보면 좋아요.`
-          }
-        
-          if (estimatedFixedTotal > 0 && incomeTotal > 0 && (estimatedFixedTotal / incomeTotal) * 100 >= 40) {
-            aiSub = `예상 고정지출은 ${formatKRW(estimatedFixedTotal)}으로, 수입 대비 비중이 높은 편이에요.`
-          }
-        
-          if (foodRatio >= 45) {
-            aiSub = `식비·카페·배달 합계가 전체 지출의 ${foodRatio.toFixed(1)}%예요. 생활 소비보다 먹는 지출 비중이 큰 편이에요.`
-          } else if (deliveryRatio >= 20) {
-            aiSub = `배달 지출 비중이 ${deliveryRatio.toFixed(1)}%로 높아요. 줄이면 가장 빨리 체감될 가능성이 커요.`
-          } else if (cafeRatio >= 15) {
-            aiSub = `카페 지출 비중이 ${cafeRatio.toFixed(1)}%예요. 자주 반복되는 소액 소비일 가능성이 있어요.`
-          } else if (livingSuppliesRatio >= 15) {
-            aiSub = `생활용품 지출 비중이 ${livingSuppliesRatio.toFixed(1)}%예요. 소모품 구매 주기와 재고를 함께 확인해보면 좋아요.`
-          }
         }
+
+        const homeGuidance = budgetGuidance(loading || budgetLoading || guidanceCurrencyScope?.owner !== user?.id || guidanceCurrencyScope?.status === 'loading' || guidanceBudgetScope?.owner !== user?.id || guidanceBudgetScope?.month !== selectedMonth || Object.values(recordLoads).includes('loading') ? 'loading' : !recordsReady || !user || guidanceBudgetScope.error || guidanceCurrencyScope?.status !== 'ready' ? 'error' : 'ready', selectedMonth, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`, selectedTransactions.length + selectedIncomeList.length + selectedSavings.length, total, incomeTotal, monthlyBudget, { currency, topCategory: topCategoryName !== '-' ? { name: topCategoryName, amount: topCategoryAmount } : undefined, previousExpense: previousMonthExpenses })
 
         const currentMonthExpenseItems = selectedTransactions
 
@@ -2724,7 +2703,7 @@ function BudgetDashboard() {
 
     const data = await res.json().catch(() => null)
     if (!res.ok || !data?.answer) {
-      const errorAnswer = data?.error || 'AI 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.'
+      const errorAnswer = data?.error || '연이의 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.'
       finishAiAnswer(errorAnswer, ['선택 월 지출을 요약해줘', '가장 많이 쓴 항목은?', '예산 사용률을 알려줘'])
       return
     }
@@ -3135,7 +3114,7 @@ return (
               : actionError || dataLoadError || pageNotice}
           </span>
           {dataLoadError && !isOffline && (
-            <button type="button" onClick={() => window.location.reload()} style={{ minHeight: 36, marginLeft: 10, border: '1px solid rgba(15,15,20,.22)', borderRadius: 9, padding: '5px 10px', color: '#0F0F14', background: 'rgba(255,255,255,.55)', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+            <button type="button" onClick={() => void Promise.all([fetchIncome(), fetchTransactions(), fetchSavings()])} style={{ minHeight: 36, marginLeft: 10, border: '1px solid rgba(15,15,20,.22)', borderRadius: 9, padding: '5px 10px', color: '#0F0F14', background: 'rgba(255,255,255,.55)', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
               다시 불러오기
             </button>
           )}
@@ -3199,6 +3178,7 @@ return (
       `}</style>
 
 
+      <CommonCharacterSuspension active={tab !== 'home' && !(tab === 'analysis' && analysisView === 'ai')} />
       <header className="app-module-header">
         <div className="app-module-header-inner">
           <AppIdentity kind="budget" title="AI 가계부" subtitle="생활 금융 기록" />
@@ -3215,14 +3195,13 @@ return (
         const action = pendingDelete.kind === 'all' ? handleResetAllData() : handleDeleteRecord(pendingDelete.kind, pendingDelete.id)
         void action.finally(() => setPendingDelete(null))
       }} />
-      <div className="budget-guide"><AppCompanion home={tab === 'home'} compact={tab !== 'home'} quiet={tab !== 'home'}>{tab === 'home' ? '오늘 쓴 내역부터 가볍게 남겨봐요.' : tab === 'input' ? '금액과 날짜를 확인하고 저장해 주세요.' : tab === 'analysis' ? '항목별 흐름을 비교해봐요. 기록이 쌓이면 소비 습관이 더 잘 보여요.' : tab === 'settings' ? '설정을 바꾸기 전에 안내를 확인해 주세요. 초기화는 지워지는 기록부터 살펴봐요.' : '찾고 싶은 기간과 항목을 골라봐요. 저장한 내역을 다시 확인할 수 있어요.'}</AppCompanion></div>
 
       {tab === 'home' && (
         <main className="living-finance-view living-finance-home app-safe-top" style={{ padding: '24px 20px 96px' }}>
           <header className="home-header">
             <div className="home-title-copy">
               <div className="home-title-row">
-                <div style={{ display:'inline-flex', alignItems:'center', gap:10 }}><AppIcon kind="budget" /><p className="home-eyebrow">AI 가계부</p></div>
+                <h1>{nickname ? `${nickname}님의 생활 금융` : '나의 생활 금융'}</h1>
                 <label className="home-month-picker">
                   <span>조회 월</span>
                   <input
@@ -3239,32 +3218,17 @@ return (
                   />
                 </label>
               </div>
-              <h1>{nickname ? `${nickname}님의 생활 금융` : '나의 생활 금융'}</h1>
               <p className="home-greeting">{selectedMonthLabel} 돈의 흐름을 편안하게 살펴보세요.</p>
             </div>
             <div className="home-header-actions">
-              <span className="home-ai-status">{currentMonth + 1}월 소비 흐름을 살펴보고 있어요.</span>
+              <span className="home-ai-status">{selectedMonthLabel} 기록 기준</span>
               <button className="home-logout" onClick={handleLogout}>로그아웃</button>
             </div>
           </header>
-
-          {user?.id && <PaymentPlans key={`home-plans:${user.id}`} userId={user.id} records={transactions} month={selectedMonth} budget={monthlyBudget} ready={recordsReady && !budgetLoading} currency={currency} compact onManage={() => { setTab('analysis'); setAnalysisView('stats'); }} onRefreshRecords={fetchTransactions} />}
-          <section className="home-ai-card home-ai-card-primary">
-            <div className="home-ai-icon" aria-hidden="true"><Sparkles size={22} strokeWidth={1.8} /></div>
-            <div className="home-ai-content">
-              <p className="home-section-label">AI 소비 진단</p>
-              <h2>{aiMain}</h2>
-              <p className="home-ai-summary">{aiSub}</p>
-              <div className="home-ai-action-line">
-                <span>이번 달 한 가지</span>
-                <strong>{aiActionTip}</strong>
-              </div>
-              <button type="button" className="home-text-action" onClick={() => { setAnalysisView('ai'); setTab('analysis') }}>
-                자세한 분석 보기 <ArrowRight size={15} aria-hidden="true" />
-              </button>
-            </div>
-          </section>
-
+          <div className="budget-home-actions">
+            <button type="button" className="budget-primary-action" onClick={() => setTab('input')}>＋ 기록 추가</button>
+            <button type="button" className="budget-secondary-action" onClick={() => setTab('list')}>내역 확인</button>
+          </div>
           {(() => {
             const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate()
             const remainDays = isCurrentMonthSelected ? lastDay - today.getDate() : null
@@ -3295,7 +3259,7 @@ return (
                   </div>
                   <div>
                     <span>현재 지출</span>
-                    <strong>{formatKRW(total)}</strong>
+                    <strong>−{formatKRW(total)}</strong>
                   </div>
                 </div>
 
@@ -3315,6 +3279,26 @@ return (
               </section>
             )
           })()}
+
+          <CommonCharacterGuide>
+          <section className="home-ai-card home-ai-card-primary home-yeoni-diagnosis">
+            <div className="home-ai-content">
+              <p className="home-section-label">연이와 소비 살펴보기</p>
+              <p className="home-diagnosis-basis">{homeGuidance.basis}</p>
+              <RecordReplyStatus source={rollingReplySource(user?.id, "budget", { transactions, incomeList, savings, currency }, recordsReady && guidanceCurrencyScope?.owner === user?.id && guidanceCurrencyScope?.status === "ready")} />
+              <h2>{homeGuidance.title}</h2>
+              <p className="home-ai-summary">{homeGuidance.detail}</p>
+              <div className="home-ai-action-line">
+                <span>선택 월 살펴보기</span>
+                <strong>{homeGuidance.action ?? "확인된 기록이 준비되면 함께 살펴볼게요."}</strong>
+              </div>
+              <button type="button" className="home-text-action" onClick={() => { setAnalysisView('ai'); setTab('analysis') }}>
+                자세한 분석 보기 <ArrowRight size={15} aria-hidden="true" />
+              </button>
+            </div>
+          </section>
+          </CommonCharacterGuide>
+
 
           {showBudgetEditor && (
             <section className="home-budget-editor">
@@ -3355,6 +3339,9 @@ return (
             </section>
           )}
 
+          <details className="budget-home-details">
+            <summary>돈의 흐름 · 지출 분석 · 결제 예정</summary>
+            <p className="budget-section-help">선택한 달의 기록을 자세히 살펴보세요.</p>
           <section className="home-flow-card">
             <div className="home-section-heading">
               <div>
@@ -3365,14 +3352,14 @@ return (
             </div>
             <div className="home-flow-grid">
               {[
-                { label: '수입', value: incomeTotal, tone: 'income' },
-                { label: '지출', value: total, tone: 'expense' },
-                { label: '저축', value: savingsRecordedTotal, tone: 'saving' },
-                { label: '여유 자금', value: incomeTotal - total - savingsRecordedTotal, tone: 'available' }
+                { label: '수입', value: incomeTotal, tone: 'income', sign: '+' },
+                { label: '지출', value: total, tone: 'expense', sign: '−' },
+                { label: '저축', value: savingsRecordedTotal, tone: 'saving', sign: '' },
+                { label: '기록상 남은 돈', value: incomeTotal - total - savingsRecordedTotal, tone: 'available', sign: '' }
               ].map(item => (
                 <div className={`home-flow-item ${item.tone}`} key={item.label}>
                   <span>{item.label}</span>
-                  <strong>{formatKRW(item.value)}</strong>
+                  <strong>{item.sign}{formatKRW(item.value)}</strong>
                 </div>
               ))}
             </div>
@@ -3441,11 +3428,14 @@ return (
             )
           })()}
 
+          {user?.id && <PaymentPlans key={`home-plans:${user.id}`} userId={user.id} records={transactions} month={selectedMonth} budget={monthlyBudget} ready={recordsReady && !budgetLoading} currency={currency} compact onManage={() => { setTab('analysis'); setAnalysisView('stats'); }} onRefreshRecords={fetchTransactions} />}
+          </details>
+
           <section className="home-recent-card">
             <div className="home-section-heading">
               <div>
-                <p className="home-section-label">최근 기록</p>
-                <h2>가장 최근에 기록한 내역</h2>
+                <p className="home-section-label">전체 기간 최근 기록</p>
+                <h2>조회한 월과 관계없이, 거래 날짜가 최근인 순서예요.</h2>
               </div>
               <button type="button" className="home-text-action is-inline" onClick={() => setTab('list')}>
                 전체 보기 <ArrowRight size={15} aria-hidden="true" />
@@ -3468,7 +3458,7 @@ return (
                       <span>{meta}</span>
                     </div>
                     <strong className={`home-recent-amount ${isIncome ? 'income' : isSaving ? 'saving' : 'expense'}`}>
-                      {isIncome || isSaving ? '+' : '-'}{formatKRW(item.amount)}
+                      {isIncome ? '+' : isSaving ? '' : '−'}{formatKRW(item.amount)}
                     </strong>
                   </div>
                 )
@@ -3487,24 +3477,32 @@ return (
       )}
 
       {tab === 'input' && (
-        <main className="record-screen app-safe-top" style={{ padding: '24px 20px 88px' }}>
+        <main inert={entryCoolingDown} className="record-screen app-safe-top" style={{ padding: '24px 20px 88px' }}>
           <header className="record-header">
-            <h2>{showConfirm ? '기록 내용을 확인하세요' : '말하듯 입력하세요'}</h2>
+            <h2>{showConfirm ? '2. 입력 내용을 확인하고 저장하세요' : '1. 수입·지출 내역을 입력하세요'}</h2>
             <p>
               {showConfirm
                 ? '날짜·금액·분류를 확인하고 필요한 내용을 수정한 뒤 저장하세요.'
-                : '여러 건도 한 번에 해석하고, 저장하기 전에 모든 내용을 직접 고칠 수 있어요.'}
+                : '직접 적기와 문장 입력 중 편한 방법을 골라요. 마지막 확인 전에는 저장하지 않습니다.'}
             </p>
           </header>
 
+          {!showConfirm && <div className="budget-entry-switch" role="group" aria-label="기록 입력 방법">
+            <button type="button" aria-pressed={entryMode === 'manual'} disabled={aiLoading || listening || isSavingRecords || hasPendingSave} onClick={() => setEntryMode('manual')}>직접 적기</button>
+            <button type="button" aria-pressed={entryMode === 'sentence'} disabled={aiLoading || listening || isSavingRecords || hasPendingSave} onClick={() => setEntryMode('sentence')}>문장으로 입력</button>
+          </div>}
+          {!showConfirm && <p className="budget-entry-preservation">입력 방법을 바꿔도 적던 내용은 유지돼요.</p>}
+
           {!showConfirm ? (
             <>
+              <details open hidden={entryMode !== 'sentence'} className="budget-sentence-entry"><summary style={{minHeight:44,cursor:'pointer'}}>문장으로 입력하기</summary><p>입력한 문장을 앱 서버에 보내 해석을 요청합니다. 직접 입력하려면 위의 ‘직접 적기’ 탭을 선택하세요.</p>
               <section style={{ background: 'rgba(19,19,28,0.72)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 18, padding: 14, marginBottom: 12, backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
                 <label htmlFor="ai-record-input" style={{ display: 'block', color: '#F8FAFC', fontSize: 13, fontWeight: 700, marginBottom: 9 }}>
                   기록할 내용
                 </label>
                 <textarea
                   id="ai-record-input"
+                  className="scroll-mt-36"
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => {
@@ -3513,41 +3511,47 @@ return (
                       handleAddTransaction()
                     }
                   }}
-                  placeholder="예: 오늘 점심 9000원 카드, 스타벅스 5900원 카드, 적금 5만원"
+                  placeholder="예: 오늘 점심 9000원 카드"
                   rows={4}
                   maxLength={1000}
                   style={{ width: '100%', background: 'rgba(8,8,12,0.52)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 14, color: '#FFFFFF', fontSize: 16, lineHeight: 1.6, padding: '14px 16px', resize: 'vertical', outline: 'none', boxSizing: 'border-box', caretColor: '#E8A87C', textShadow: '0 1px 2px rgba(0,0,0,0.45)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)' }}
                 />
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 8 }}>
-                  <span style={{ color: '#7C8596', fontSize: 11 }}>Ctrl/⌘ + Enter로 해석</span>
+                  <span style={{ color: '#7C8596', fontSize: 11 }}>Ctrl/⌘ + Enter로 내용 확인</span>
                   <span style={{ color: input.length > 900 ? '#FF9B9B' : '#7C8596', fontSize: 11 }}>{input.length}/1000</span>
                 </div>
 
-                <p style={{ color: '#AEB7C6', fontSize: 11, fontWeight: 700, margin: '16px 0 8px' }}>빠른 예시</p>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-                  {QUICK_INPUT_EXAMPLES.map((example) => (
-                    <button
-                      key={example}
-                      type="button"
-                      onClick={() => {
-                        setInput(example)
-                        setFeedback('')
-                      }}
-                      style={{ background: 'rgba(26,26,46,0.75)', border: '1px solid #2A2A3E', borderRadius: 999, color: '#D0D0E0', fontSize: 12, padding: '8px 11px', cursor: 'pointer' }}
-                    >
-                      {example}
-                    </button>
-                  ))}
-                </div>
+                <details style={{ marginBottom: 14, color: '#D0D0E0' }}>
+                  <summary style={{ cursor: 'pointer', padding: '12px 0', fontSize: 14 }}>어떻게 적나요? 예시 보기</summary>
+                    <p style={{ fontSize: 13 }}>예시는 입력칸만 채워요. 적던 내용이 있으면 먼저 비워 주세요.</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                    {QUICK_INPUT_EXAMPLES.map((example) => (
+                      <button
+                        key={example}
+                        type="button"
+                        disabled={aiLoading || listening || !!input.trim()}
+                        onClick={() => {
+                          if (aiLoading || listening || input.trim()) return
+                          setInput(example)
+                          setFeedback('')
+                        }}
+                        style={{ background: 'rgba(26,26,46,0.75)', border: '1px solid #2A2A3E', borderRadius: 999, color: '#D0D0E0', fontSize: 14, minHeight: 44, padding: '8px 11px', cursor: aiLoading || listening || input.trim() ? 'not-allowed' : 'pointer', opacity: aiLoading || listening || input.trim() ? 0.6 : 1 }}
+                      >
+                        {example}
+                      </button>
+                    ))}
+                  </div>
+
+                </details>
 
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
                     type="button"
-                    aria-label={listening ? '음성 입력 중지' : '음성으로 기록 입력'}
+                    aria-label={listening ? '음성 입력 중' : input.trim() ? '음성 입력은 입력칸을 비운 뒤 사용할 수 있어요' : '음성으로 기록 입력'}
                     aria-pressed={listening}
                     onClick={handleVoiceInput}
-                    disabled={aiLoading}
+                    disabled={aiLoading || listening || !!input.trim()}
                     style={{ minWidth: 54, minHeight: 46, background: listening ? '#FF6B6B22' : '#1A1A2E', border: '1px solid ' + (listening ? '#FF6B6B' : '#2A2A3E'), borderRadius: 12, padding: '10px 14px', cursor: aiLoading ? 'wait' : 'pointer', color: listening ? '#FF6B6B' : '#D0D0E0', fontSize: 18, fontWeight: 700, opacity: aiLoading ? 0.6 : 1 }}
                   >
                     {listening ? '■' : '🎤'}
@@ -3558,21 +3562,21 @@ return (
                     disabled={aiLoading || !input.trim()}
                     style={{ flex: 1, minHeight: 46, background: aiLoading || !input.trim() ? '#715943' : 'linear-gradient(135deg,#E8A87C,#D4916A)', border: 'none', borderRadius: 12, padding: '10px 20px', cursor: aiLoading ? 'wait' : !input.trim() ? 'not-allowed' : 'pointer', color: '#0F0F14', fontWeight: 700, fontSize: 14, opacity: aiLoading || !input.trim() ? 0.65 : 1 }}
                   >
-                    {aiLoading ? '내용을 해석하는 중…' : 'AI로 내용 채우기'}
+                    {aiLoading ? '내용을 확인하는 중…' : '내용 확인하기'}
                   </button>
                 </div>
               </section>
 
               <p style={{ color: '#7C8596', fontSize: 11, lineHeight: 1.6, margin: '0 2px' }}>
                 AI가 제안한 결과는 자동 저장되지 않아요. 다음 화면에서 날짜·금액·분류를 확인한 뒤 저장됩니다.
-              </p>
+              </p></details>
             </>
           ) : parsedItems.length > 0 ? (
             <section style={{ background: 'rgba(19,19,28,0.78)', border: '1px solid rgba(232,168,124,0.52)', borderRadius: 18, padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
                 <div>
-                  <p style={{ color: '#E8A87C', fontSize: 12, fontWeight: 700, margin: '0 0 5px' }}>해석 결과 {parsedItems.length}건</p>
-                  <p style={{ color: '#B8B8C8', fontSize: 12, lineHeight: 1.5, margin: 0 }}>잘못 채워진 항목만 바로 수정하세요.</p>
+                  <p style={{ color: '#E8A87C', fontSize: 12, fontWeight: 700, margin: '0 0 5px' }}>저장할 기록 {parsedItems.length}건</p>
+                  <p style={{ color: '#B8B8C8', fontSize: 12, lineHeight: 1.5, margin: 0 }}>날짜·금액·분류가 맞는지 보고, 아래 저장 버튼을 눌러 주세요.</p>
                 </div>
                 <strong style={{ color: '#FFFFFF', fontSize: 14, whiteSpace: 'nowrap' }}>
                   합계 {formatKRW(parsedItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))}
@@ -3592,7 +3596,7 @@ return (
                           setParsedItems(updated)
                           if (updated.length === 0) setShowConfirm(false)
                         }}
-                        style={{ background: '#FF6B6B18', border: '1px solid #FF6B6B66', borderRadius: 8, color: '#FF9B9B', fontSize: 11, padding: '5px 8px', cursor: 'pointer' }}
+                        style={{ background: '#FF6B6B18', border: '1px solid #FF6B6B66', borderRadius: 8, color: '#9b2437', fontSize: 11, padding: '5px 8px', cursor: 'pointer' }}
                       >
                         삭제
                       </button>
@@ -3739,6 +3743,15 @@ return (
             </section>
           ) : null}
 
+          <ManualEntry draft={manualEntry.draft} onDraftChange={manualEntry.change} key={String(user?.id ?? '') + ':' + manualReset} owner={user?.id ?? ''} hidden={showConfirm || entryMode !== 'manual'} disabled={isSavingRecords || hasPendingSave || aiLoading} categories={BUDGET_CATEGORIES} onReview={handleManualReview} />
+
+          {!showConfirm && <details className="budget-entry-scope">
+            <summary>내 계좌 이체·카드대금·환불을 기록할 때</summary>
+            <p>현재 기록은 수입·지출·저축으로 구분돼요. 결제수단의 ‘계좌이체’는 소비 대금을 보낸 방법이며, 내 계좌 사이 이동을 자동으로 제외하는 기능은 아닙니다.</p>
+            <p>이미 기록한 카드 구매를 카드대금 납부 때 다시 지출로 적으면 합계가 중복돼요. 환불을 새 수입으로 적어도 원래 지출이 자동 취소되지는 않아요. 먼저 상세 내역에서 원거래를 확인하세요.</p>
+            <button type="button" className="budget-secondary-action" onClick={() => setTab('list')}>기존 내역 확인</button>
+          </details>}
+
           {!showConfirm && feedback && (
             <p aria-live="polite" style={{ color: feedback.includes('오류') || feedback.includes('못했') ? '#FF9B9B' : '#4ECDC4', fontSize: 13, lineHeight: 1.6, margin: '12px 2px 0' }}>
               {feedback}
@@ -3768,7 +3781,7 @@ return (
         <header className="living-finance-view analysis-header app-safe-top">
           <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 6px' }}>분석</h2>
           <p style={{ color: '#9CA3AF', fontSize: 13, lineHeight: 1.6, margin: '0 0 14px' }}>
-            숫자로 흐름을 확인하고, 궁금한 내용은 AI에게 바로 물어보세요.
+            숫자로 흐름을 확인하고, 궁금한 내용은 연이에게 바로 물어보세요.
           </p>
           <div className="analysis-tabs"
             role="tablist"
@@ -3776,7 +3789,7 @@ return (
           >
             {([
               { id: 'stats', label: '소비 분석' },
-              { id: 'ai', label: 'AI 상담' }
+              { id: 'ai', label: '연이 상담' }
             ] as const).map(item => {
               const isActive = analysisView === item.id
               return (
@@ -3805,7 +3818,7 @@ return (
           <section style={{ background: 'rgba(19,19,28,0.75)', border: '1px solid #1A1A24', borderRadius: 16, padding: 16, marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
               <div>
-                <p style={{ color: '#E8A87C', fontSize: 12, fontWeight: 700, margin: '0 0 6px', letterSpacing: 1 }}>AI 상담</p>
+                <p style={{ color: '#E8A87C', fontSize: 12, fontWeight: 700, margin: '0 0 6px', letterSpacing: 1 }}>연이 상담</p>
                 <h3 style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 700, margin: '0 0 6px' }}>가계부에 궁금한 점을 물어보세요</h3>
                 <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.6, margin: 0 }}>
                   통계 보고서는 소비 분석에 모으고, 이곳에서는 질문과 답변에만 집중해요.
@@ -3853,7 +3866,7 @@ return (
                 onChange={e => setQuestion(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !analyzing && handleAnalyze()}
                 placeholder="예: 이번 달 식비는 얼마나 썼어?"
-                aria-label="AI에게 질문할 내용"
+                aria-label="연이에게 질문할 내용"
                 style={{ flex: '1 1 220px', minHeight: 46, background: 'rgba(8,8,12,0.46)', border: '1px solid rgba(255,255,255,0.24)', borderRadius: 10, padding: '12px 14px', color: '#FFFFFF', fontSize: 14, outline: 'none', textShadow: '0 1px 2px rgba(0,0,0,0.45)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.08)' }}
               />
               <button type="button" aria-label="음성으로 질문 입력" onClick={handleQuestionVoiceInput} disabled={analyzing} style={{ minWidth: 52, minHeight: 46, background: 'rgba(26,26,46,0.75)', border: '1px solid #2A2A3E', borderRadius: 10, color: '#D0D0E0', padding: '10px 14px', cursor: analyzing ? 'wait' : 'pointer', fontSize: 18, fontWeight: 700 }}>🎤</button>
@@ -3862,13 +3875,24 @@ return (
               </button>
             </div>
 
-            <div aria-live="polite">
+            <CommonCharacterSlot>
+            <div role="region" aria-label="연이의 가계부 상담" tabIndex={0} aria-live="polite" className="budget-consultation-response">
               {aiAnswer ? (
-                <div style={{ marginTop: 16, background: 'rgba(15,15,20,0.75)', border: '1px solid #2A2A3E', borderRadius: 12, padding: 14 }}>
-                  <p style={{ color: '#E8A87C', fontSize: 11, fontWeight: 700, margin: '0 0 8px', letterSpacing: 0.5 }}>AI 답변</p>
-                  <div style={{ color: '#FFFFFF', fontSize: 14, lineHeight: 1.7 }}>
+                <div className="budget-consultation-bubble">
+                  <p style={{ color: '#E8A87C', fontSize: 11, fontWeight: 700, margin: '0 0 8px', letterSpacing: 0.5 }}>연이의 답변</p>
+                  <div className="budget-consultation-copy">
                     {aiAnswer.split('\n').map((line, i) => <span key={i}>{line}<br /></span>)}
                   </div>
+                </div>
+              ) : (
+                <div className="budget-consultation-bubble budget-consultation-copy">
+                  <p style={{ margin: '0 0 6px' }}>아직 대화가 없어요</p>
+                  <p style={{ margin: 0 }}>추천 질문을 누르거나 직접 입력해 시작해보세요.</p>
+                </div>
+              )}
+            </div>
+            </CommonCharacterSlot>
+            {aiAnswer && <div className="budget-consultation-actions">
                   <ZephyrReadButton text={aiAnswer} />
                   {aiFollowUpQuestions.length > 0 && (
                     <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #2A2A3E' }}>
@@ -3877,6 +3901,7 @@ return (
                         {aiFollowUpQuestions.map((followUp) => (
                           <button
                             key={followUp}
+                            className="budget-consultation-follow-up"
                             type="button"
                             onClick={() => handleSuggestedQuestion(followUp)}
                             disabled={analyzing}
@@ -3888,14 +3913,7 @@ return (
                       </div>
                     </div>
                   )}
-                </div>
-              ) : (
-                <div style={{ marginTop: 16, background: 'rgba(15,15,20,0.62)', border: '1px dashed #2A2A3E', borderRadius: 12, padding: '18px 14px', textAlign: 'center' }}>
-                  <p style={{ color: '#FFFFFF', fontSize: 14, fontWeight: 700, margin: '0 0 6px' }}>아직 대화가 없어요</p>
-                  <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.6, margin: 0 }}>추천 질문을 누르거나 직접 입력해 시작해보세요.</p>
-                </div>
-              )}
-            </div>
+            </div>}
 
             <p style={{ color: '#7C8596', fontSize: 10, lineHeight: 1.6, margin: '12px 0 0' }}>
               AI에는 거래처·메모·개별 날짜가 아닌 합계 중심 정보만 전달돼요.
@@ -3983,7 +4001,7 @@ return (
               <div><p style={{ color: '#777F8E', fontSize: 10, margin: '0 0 4px' }}>지출</p><strong style={{ color: '#FF7D75', fontSize: 13 }}>{formatKRW(allExpenseTotal)}</strong></div>
               <div><p style={{ color: '#777F8E', fontSize: 10, margin: '0 0 4px' }}>저축</p><strong style={{ color: '#7EA6D9', fontSize: 13 }}>{formatKRW(allSavingsTotal)}</strong></div>
             </div>
-            <p style={{ color: '#777F8E', fontSize: 10, margin: '10px 0 0' }}>선택 월 예산과 AI 진단에는 포함하지 않아요.</p>
+            <p style={{ color: '#777F8E', fontSize: 10, margin: '10px 0 0' }}>선택 월 예산과 소비 진단에는 포함하지 않아요.</p>
           </details>
 
           <div style={{ background: 'rgba(19,19,28,0.75)', border: '1px solid #1A1A24', borderRadius: 16, padding: 16, marginBottom: 16 }}>
@@ -4162,6 +4180,7 @@ return (
         </div>
       )}
 
+      {tab === 'settings' && <YeoniPreferencesPanel app="budget" />}
       {tab === 'settings' && (
         <div className="settings-screen app-safe-top" style={{ padding: '24px 20px 96px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20 }}>
@@ -4350,7 +4369,7 @@ return (
                           type="button"
                           onClick={() => handleDeletePasskey(passkey.id)}
                           disabled={passkeyBusy}
-                          style={{ flexShrink: 0, background: 'rgba(255,107,107,0.10)', border: '1px solid rgba(255,107,107,0.35)', borderRadius: 8, padding: '7px 10px', color: '#FF9B9B', fontSize: 11, cursor: passkeyBusy ? 'default' : 'pointer' }}
+                          style={{ flexShrink: 0, background: 'rgba(255,107,107,0.10)', border: '1px solid rgba(255,107,107,0.35)', borderRadius: 8, padding: '7px 10px', color: '#9b2437', fontSize: 11, cursor: passkeyBusy ? 'default' : 'pointer' }}
                         >
                           삭제
                         </button>

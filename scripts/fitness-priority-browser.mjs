@@ -1,0 +1,792 @@
+import { OA_REPORT_INVENTORY } from '../app/lib/oaReportInventory.ts';
+// Local component regression harness: synthetic records and a deferred OCR fixture.
+// No authenticated app, real health data, remote API, or OCR accuracy claims.
+import { build } from './browser-qa/node_modules/esbuild/lib/main.js';
+import { chromium, expect } from '@playwright/test';
+import { createServer } from 'node:http';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import assert from 'node:assert/strict';
+import postcss from 'postcss';
+import tailwindcss from 'tailwindcss';
+
+const output = resolve('scripts/browser-qa/.generated/fitness-priority');
+const bodyAnalysis = process.env.FITNESS_BODY_ANALYSIS === '1';
+const lateProCheck = process.env.FITNESS_LATE_PRO === '1';
+const correctionCheck = process.env.FITNESS_SOURCE_CORRECTION === '1';
+const trunkCheck = process.env.FITNESS_TRUNK === '1';
+const realOcr = process.env.FITNESS_REAL_OCR === '1';
+const recordNavigation = process.env.FITNESS_RECORD_NAV === '1';
+mkdirSync(output, { recursive: true });
+const bundle = await build({ stdin: { contents: `
+import React, { useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import BodyRecordCard from './app/components/BodyRecordCard';
+import RecordDashboard from './app/components/RecordDashboard';
+import WeightChart from './app/components/WeightChart';
+import {readRecordStores} from './app/data/recordStorage';
+import InbodyRecordCard from './app/components/InbodyRecordCard';
+import DataBackupPanel from './app/components/DataBackupPanel';
+import { readLocalCloudState, mergeCloudStateFromBase } from './app/data/cloudSync';
+window.cloudSnapshot = readLocalCloudState; window.mergeSnapshot = mergeCloudStateFromBase;
+import RecordCalendarView from './app/components/RecordCalendarView';
+import DailyWorkoutEditor from './app/components/DailyWorkoutEditor';
+import ExerciseGuidePanel from './app/components/ExerciseGuidePanel';
+import ExerciseCard from './app/components/ExerciseCard';
+import { getWorkoutGroupById, workoutGroupToDayWorkout } from './app/data/workoutGroups';
+import { getExerciseGuide } from './app/data/exerciseGuides';
+import { SAFETY_STOP_MESSAGE, WORKOUTS } from './app/data/workouts';
+const registeredGuide=getExerciseGuide('wall-pushup');
+window.expectedSafetyCriteria=[...new Set([...registeredGuide.stopCriteria,'합성 루틴 고유 주의사항',SAFETY_STOP_MESSAGE])];
+const safetyFixture={exerciseId:'wall-pushup',name:'등록 운동 안전 안내',sets:0,restSeconds:0,guide:registeredGuide,details:[{type:'warn',text:registeredGuide.stopCriteria[0]},{type:'warn',text:'합성 루틴 고유 주의사항'},{type:'warn',text:'합성 루틴 고유 주의사항'},{type:'warn',text:SAFETY_STOP_MESSAGE}]};
+import { applyDayRoutineEdit, EMPTY_USER_WORKOUT_SETTINGS } from './app/data/userWorkoutSettings';
+const W='ai-fitness-weight-records', I='ai-fitness-inbody-records';
+function App() {
+ const [date,setDate]=useState('2026-10-14');
+ const [weights,setWeights]=useState(()=>JSON.parse(localStorage.getItem(W)||'{}'));
+ const [inbody,setInbody]=useState(()=>JSON.parse(localStorage.getItem(I)||'{}'));
+ const [settings,setSettings]=useState(()=>JSON.parse(localStorage.getItem('fixture-settings')||'null')||EMPTY_USER_WORKOUT_SETTINGS);
+ const edit=settings.dateOverrides['2026-10-14']?.edit;
+ const custom=applyDayRoutineEdit({phases:[{exercises:[]}]},edit).phases[0].exercises;
+ if (${bodyAnalysis}) {const stores=readRecordStores(); return <main><BodyRecordCard dateKey="2025-04-08" weights={weights} inbody={inbody} onChange={next=>{setWeights(next.weights);setInbody(next.inbody)}}/><WeightChart weights={weights} inbody={inbody} goal={stores.weightGoal} year={2025} monthIndex={3} cutoffDateKey="2025-04-08" onGoalChange={()=>{}}/><RecordDashboard stores={stores} year={2025} monthIndex={3} view="body"/></main>;}
+ if (${realOcr || recordNavigation}) return <RecordCalendarView/>;
+ if (window.location.search === '?band-safety') {const current=workoutGroupToDayWorkout(getWorkoutGroupById('current-fullbody-strength-circuit'),'fixture','fixture').phases.flatMap(p=>p.exercises).find(e=>e.exerciseId==='band-row');const legacy=WORKOUTS.flatMap(d=>d.phases.flatMap(p=>p.exercises)).find(e=>e.name==='밴드 로우');return <main>{[current,legacy].map((e,i)=><div key={i} data-testid={'band-safety-'+i}><ExerciseCard exercise={e}/></div>)}</main>;}
+ if (window.location.search === '?missing-guide') return <main>{['rest','cardio-foam-recovery'].map(id=>{const exercise=workoutGroupToDayWorkout(getWorkoutGroupById(id),'fixture','fixture').phases.flatMap(p=>p.exercises).find(e=>e.exerciseId==='pullup-posture-only');return <div key={id} data-testid={'missing-'+id}><ExerciseCard exercise={exercise}/></div>;})}<div data-testid="registered-safety"><ExerciseCard exercise={safetyFixture}/></div><div data-testid="standalone-safety"><ExerciseGuidePanel exercise={safetyFixture}/></div><div data-testid="no-guide-safety"><ExerciseCard exercise={{name:'가이드 없는 운동',sets:0,restSeconds:0,details:[{type:'warn',text:'합성 가이드 없는 운동 주의사항'}]}}/></div></main>;
+ if (window.location.search === '?legacy') return <><InbodyRecordCard dateKey={date} records={inbody} onChange={setInbody}/><DataBackupPanel/></>;
+ return <main>{${trunkCheck} && <DataBackupPanel/>}<button onClick={()=>setDate('2026-10-13')}>달력 다른 날짜</button><output aria-label="선택 날짜">{date}</output>
+ <BodyRecordCard dateKey={date} weights={weights} inbody={inbody} onDateChange={setDate} onChange={next=>{setWeights(next.weights);setInbody(next.inbody)}} />
+ <DailyWorkoutEditor dayId="wed" dateKey="2026-10-14" defaultGroupId="current-fullbody-hamstring-circuit" recommendedGroupId="current-fullbody-hamstring-circuit" recommendationReason="합성 테스트" settings={settings} onChange={next=>{localStorage.setItem('fixture-settings',JSON.stringify(next));setSettings(next)}} onClose={()=>{}} />
+ {custom.map(e=><ExerciseGuidePanel key={e.exerciseId} exercise={e} />)}</main>
+} createRoot(document.getElementById('root')).render(<App/>);`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"', 'process.env': '{}' }, plugins: realOcr ? [] : [{ name: 'deferred-ocr-fixture', setup(b) {
+ b.onResolve({ filter: /oaReportParser$/ }, () => ({ path: 'ocr', namespace: 'fixture' }));
+ b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const parseOaReport = () => new Promise(resolve => { window.resolveOcr = resolve; });' }));
+} }] });
+const js = bundle.outputFiles[0].text;
+const css = (await postcss([tailwindcss({ content: ['./app/components/*.tsx'] })]).process('@tailwind base; @tailwind components; @tailwind utilities;', { from: undefined })).css;
+const server = createServer((req,res)=> { res.setHeader('Content-Type',req.url==='/app.js'?'text/javascript':'text/html; charset=utf-8'); res.end(req.url==='/app.js'?js:`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css} body{font-family:sans-serif;margin:12px} main{max-width:1100px;margin:auto}</style><div id="root"></div><script src="/app.js"></script>`); });
+await new Promise(r=>server.listen(0,'127.0.0.1',r));
+let browser;
+const checks=[];
+try {
+ browser=await chromium.launch({channel:'msedge',headless:true});
+ const context=await browser.newContext({viewport:{width:390,height:844}});
+ const page=await context.newPage();
+ const errors=[]; page.on('pageerror',e=>{errors.push(e.message); console.error('PAGE_ERROR',e.message);});
+ const origin=`http://127.0.0.1:${server.address().port}`;
+ const assetRequests=[];
+ await context.route('**/*', route=> {
+   const url=route.request().url();
+   if(url.startsWith(origin)) return route.continue();
+   const name=new URL(url).pathname.split('/').at(-1);
+   let file;
+   if(realOcr && route.request().method()==='GET') {
+     if(name==='worker.min.js') file=resolve('node_modules/tesseract.js/dist/worker.min.js');
+     if(/^tesseract-core[-a-z]*\.wasm(?:\.js)?$/.test(name)) file=resolve('node_modules/tesseract.js-core',name);
+     if(name==='kor.traineddata.gz') file=resolve('scripts/browser-qa/.generated/ocr-assets/kor.traineddata.gz');
+       if(name==='eng.traineddata.gz') file=resolve('scripts/browser-qa/.generated/ocr-assets/node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz');
+   }
+   if(file) { assetRequests.push(name); return route.fulfill({body:readFileSync(file),headers:{'Access-Control-Allow-Origin':'*'},contentType:name.endsWith('.js')?'text/javascript':name.endsWith('.wasm')?'application/wasm':'application/octet-stream'}); }
+   return route.abort();
+ });
+ await page.goto(origin);
+ await page.evaluate(()=>{localStorage.setItem('fitness-cloud-sync-user','fixture-A');localStorage.setItem('ai-fitness-inbody-records',JSON.stringify({'2026-10-01':{bodyAge:40,memo:'preserve synthetic memo'}}));});
+ await page.reload();
+ if(process.env.FITNESS_ALL_MOTIONS_LAYOUT === '1') {
+   const rows=JSON.parse(readFileSync('docs/exercise-motion/batch3-evidence/catalog.json','utf8')).rows
+     .filter(row=>!['dead-bug','foam-roller-recovery','ab-slider-ready-position'].includes(row.id));
+   await page.evaluate(rows=>{
+     localStorage.setItem('fixture-settings',JSON.stringify({
+       weeklyGroups:{},exerciseTargets:{},weeklyEdits:{},weeklyMethods:{},
+       dateOverrides:{'2026-10-14':{groupId:'rest',edit:{customExercises:rows.map(row=>({
+         id:'custom-layout-'+row.id,sourceExerciseId:row.id,name:row.name,
+       }))}}},
+     }));
+   },rows);
+   await page.reload();
+   await expect(page.getByRole('button',{name:'벽 푸시업 빼기',exact:true})).toBeVisible();
+   for(const width of [320,390,1280]) {
+     await page.setViewportSize({width,height:844});
+     const overflow=await page.locator('body *').evaluateAll(nodes=>nodes.map(node=>{
+       const r=node.getBoundingClientRect();return {right:r.right,width:r.width,html:node.outerHTML.slice(0,450)};
+     }).filter(row=>row.right>innerWidth+1 && row.width>0));
+     writeFileSync(resolve(output,`all-motions-overflow-${width}.json`),JSON.stringify(overflow,null,2));
+     await page.screenshot({path:resolve(output,`all-motions-layout-${width}.png`),fullPage:true});
+     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),JSON.stringify({width,overflow}));
+     checks.push(`all 27 selected motions fit ${width}px`);
+   }
+   assert.deepEqual(errors,[]);
+   console.log(JSON.stringify({passed:checks.length,checks}));
+ } else if(correctionCheck) {
+   const fixture={bodyFatPercent:20,muscleMass:50,musclePercent:60,fatMass:16,memo:'synthetic preserved memo',trunkMuscleMass:25,
+     metricSources:Object.fromEntries(OA_REPORT_INVENTORY.filter(([key])=>['bodyFatPercent','muscleMass','musclePercent','fatMass'].includes(key))
+       .map(([key,originalLabel,originalUnit])=>[key,{device:'OA long report',originalLabel,originalUnit,method:'ocr',mappingVersion:'oa-pro-v1'}]))};
+   await page.evaluate(fixture=>{localStorage.setItem('ai-fitness-inbody-records',JSON.stringify({'2026-10-14':fixture,'2026-10-01':{memo:'other record'}}));localStorage.setItem('ai-fitness-weight-records',JSON.stringify({'2026-10-14':{weight:80,recordedAt:'unchanged'}}));},fixture);
+   await page.reload();
+   const snapshot=()=>page.evaluate(()=>({inbody:localStorage.getItem('ai-fitness-inbody-records'),weight:localStorage.getItem('ai-fitness-weight-records')}));
+   const before=await snapshot();
+   const open=()=>page.getByRole('button',{name:'기기 정보 정정 검토'}).click();
+   const confirm=()=>page.getByRole('checkbox',{name:'이 날짜의 원본이 OA Smart Scale PRO 긴 건강보고서임을 직접 확인했어요.'}).check();
+   const save=()=>page.getByRole('button',{name:'기기 정보만 저장'}).click();
+   await open(); await expect(page.getByRole('button',{name:'기기 정보만 저장'})).toBeDisabled();
+   await confirm();await page.getByRole('button',{name:'정정 취소'}).click();assert.deepEqual(await snapshot(),before);
+   await open();await confirm();await page.evaluate(()=>{localStorage.setItem('fitness-cloud-sync-epoch','changed');localStorage.setItem('yeoni-storage-transaction-v1',JSON.stringify({'ai-fitness-inbody-records':'{}'}));});await save();
+   await expect(page.getByRole('alert')).toContainText('계정이나 기록이 바뀌었어요');assert.deepEqual(await snapshot(),before);
+   assert.notEqual(await page.evaluate(()=>localStorage.getItem('yeoni-storage-transaction-v1')),null);
+   await page.evaluate(()=>localStorage.removeItem('yeoni-storage-transaction-v1'));
+   await open();await confirm();await page.evaluate(()=>{const r=JSON.parse(localStorage.getItem('ai-fitness-inbody-records'));r['2026-10-14'].memo='concurrent edit';localStorage.setItem('ai-fitness-inbody-records',JSON.stringify(r));});await save();
+   await expect(page.getByRole('alert')).toContainText('계정이나 기록이 바뀌었어요');
+   await page.reload();await open();await confirm();
+   await page.evaluate(()=>{const key='ai-fitness-inbody-records';const before=localStorage.getItem(key);const partial=JSON.parse(before);partial['2026-10-14'].memo='interrupted write';localStorage.setItem('yeoni-storage-transaction-v1',JSON.stringify({[key]:before}));localStorage.setItem(key,JSON.stringify(partial));});
+   await save();
+   assert.equal(JSON.parse((await snapshot()).inbody)['2026-10-14'].memo,'concurrent edit');
+   assert.equal(await page.evaluate(()=>localStorage.getItem('yeoni-storage-transaction-v1')),null);
+   // Restore the fixture to test failure after a journal has been written.
+   await page.evaluate(fixture=>{const key='ai-fitness-inbody-records';const r=JSON.parse(localStorage.getItem(key));r['2026-10-14']={...fixture,memo:'concurrent edit'};localStorage.setItem(key,JSON.stringify(r));},fixture);
+   await page.reload();await open();await confirm();
+   await page.evaluate(()=>{window.originalSetItem=Storage.prototype.setItem;let once=true;Storage.prototype.setItem=function(key,value){if(key==='ai-fitness-inbody-records'&&once){once=false;throw new DOMException('synthetic write failure','QuotaExceededError');}return window.originalSetItem.call(this,key,value);};});
+   const beforeWriteFailure=await snapshot();await save();await expect(page.getByRole('alert')).toContainText('저장하지 못했어요');assert.deepEqual(await snapshot(),beforeWriteFailure);
+   await page.evaluate(()=>Storage.prototype.setItem=window.originalSetItem);
+   await page.reload();await open();await confirm();
+   await page.evaluate(()=>{window.originalSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='yeoni-storage-transaction-v1')throw new DOMException('synthetic quota','QuotaExceededError');return window.originalSetItem.call(this,key,value);};});
+   const beforeFailure=await snapshot();await save();await expect(page.getByRole('alert')).toContainText('저장하지 못했어요');assert.deepEqual(await snapshot(),beforeFailure);
+   await page.evaluate(()=>Storage.prototype.setItem=window.originalSetItem);await save();await page.reload();
+   const after=await snapshot(), records=JSON.parse(after.inbody);
+   assert.equal(after.weight,before.weight);assert.deepEqual(records['2026-10-01'],{memo:'other record'});
+   const expected={...fixture,memo:'concurrent edit',metricSources:Object.fromEntries(Object.entries(fixture.metricSources).map(([key,source])=>[key,{...source,device:'OA Smart Scale PRO'}]))};
+   assert.deepEqual(records['2026-10-14'],expected);
+   await expect(page.getByRole('button',{name:'기기 정보 정정 검토'})).toHaveCount(0);
+   await page.setViewportSize({width:320,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+   assert.deepEqual(errors,[]);
+   console.log(JSON.stringify({passed:9,checks:['explicit confirmation required','cancel preserves storage','account epoch change blocks save','concurrent record edit blocks save','interrupted transaction recovers before composing corrected record','data write failure rolls back journal','quota failure preserves storage and retries','reload preserves all values and changes only four devices','320px no overflow'],externalRequestsSent:0}));
+ } else if(bodyAnalysis) {
+   await page.evaluate(()=>{const source={device:'OA Smart Scale PRO',originalLabel:'근육량',originalUnit:'kg',method:'ocr',mappingVersion:'oa-pro-v1'};localStorage.setItem('ai-fitness-inbody-records',JSON.stringify({'2025-03-01':{skeletalMuscleMass:31},'2025-03-08':{skeletalMuscleMass:30},'2025-04-01':{muscleMass:51,musclePercent:60,fatMass:21,bodyFatPercent:25,metricSources:{muscleMass:source,musclePercent:{...source,originalLabel:'근육률',originalUnit:'%'}}},'2025-04-08':{muscleMass:50,musclePercent:61,trunkFatMass:9.7,fatMass:20,bodyFatPercent:24,reportedBodyAge:37,reportedBodyAgeUnit:'연령 단위',bodyAge:52,bodyFatMass:19,metricSources:{muscleMass:source,musclePercent:{...source,originalLabel:'근육률',originalUnit:'%'}}}}));localStorage.setItem('ai-fitness-weight-records',JSON.stringify({'2025-04-01':{weight:78,recordedAt:''},'2025-04-08':{weight:77,recordedAt:''}}));});
+   await page.reload();
+   const snapshot=()=>page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).sort())));const before=await snapshot();
+   assert.equal(await page.getByLabel('전체 근육량 (원문: 근육량)',{exact:false}).and(page.locator('input')).inputValue(),'50');
+   assert.equal(await page.getByLabel('전체 지방량 (원문: 지방량)',{exact:false}).and(page.locator('input')).inputValue(),'20');
+   const legacy=page.locator('details').filter({has:page.locator('summary').filter({hasText:'추가 체성분 항목'})});
+   assert.notEqual(await legacy.getAttribute('open'),null);
+   assert.equal(await page.getByLabel('신체연령 (기존 항목)',{exact:false}).and(page.locator('input')).inputValue(),'52');
+   assert.equal(await legacy.getByLabel('체지방량kg',{exact:true}).and(page.locator('input')).inputValue(),'19');
+   assert.equal(await page.getByLabel('신체연령 원문 숫자',{exact:true}).inputValue(),'37');
+   assert.equal(await page.getByLabel('신체연령 원문 단위',{exact:true}).inputValue(),'연령 단위');
+   assert.ok(await page.getByText('측정된 항목부터 확인해요',{exact:true}).isVisible());
+   assert.equal(await page.getByText('골격근 변화도 함께 확인하세요',{exact:true}).count(),0);
+   assert.equal(await page.getByText('지방은 줄고 근육은 지켜지고 있어요',{exact:true}).count(),0);
+   for(const title of ['전체 근육량 (원문: 근육량)','전체 지방량 (원문: 지방량)','몸통 근육량 (원문: 신체 근육량)','몸통 지방량 (원문: 체지방량)']) assert.ok(await page.getByText(title,{exact:true}).isVisible());
+   assert.equal(await snapshot(),before);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   const trend=page.getByRole('region',{name:'전체 근육량과 근육률 추세'});
+   assert.ok(await trend.getByText('전체 근육량 · 기록 수치 감소',{exact:true}).isVisible());
+   assert.ok(await trend.getByText('근육률 · 기록 수치 증가',{exact:true}).isVisible());
+   assert.ok(await trend.getByText('kg와 %의 방향이 달라요',{exact:true}).isVisible());
+   const criteria=page.getByTestId('body-analysis-criteria');
+   assert.equal(await criteria.count(),1);assert.equal(await criteria.getAttribute('open'),null);
+   const repeated='지표·기기 출처 표기·원문 단위가 같은 기록만 연결';
+   assert.equal(await page.locator('[data-trend-chart]').filter({hasText:repeated}).count(),0);
+   assert.equal(await criteria.getByText(repeated,{exact:false}).count(),1);
+   assert.equal(await criteria.getByText(repeated,{exact:false}).isVisible(),false);
+   assert.equal(await page.getByText('골격근량: 차이의 절댓값이 0.2kg',{exact:false}).count(),0);
+   const massChart=page.locator('[data-trend-chart="전체 근육량 (원문: 근육량)"]');
+   assert.equal(await massChart.locator('details').count(),0);
+   assert.ok(await massChart.getByText('2025-04-01 ~ 2025-04-08 · 2회',{exact:true}).isVisible());
+   assert.ok(await page.locator('[data-trend-chart="근육률 (원문: 근육률)"]').getByText('+1.0%p',{exact:true}).isVisible());
+   await criteria.locator('summary').focus();await page.keyboard.press('Enter');
+   assert.ok(await criteria.getByText('측정 조건 미확인:',{exact:false}).isVisible());
+   assert.ok(await criteria.getByText('의학적 판정이 아닙니다.',{exact:false}).isVisible());
+   assert.ok(await criteria.getByText('0.3%p 미만',{exact:false}).isVisible());
+   await criteria.locator('summary').focus();await page.keyboard.press('Space');
+   assert.equal(await criteria.getAttribute('open'),null);
+   await trend.getByText('상세 보기',{exact:true}).click();
+   assert.ok(await trend.getByText('kg와 %의 변화 방향이 다릅니다.',{exact:false}).isVisible());
+   await trend.getByText('상세 보기',{exact:true}).click();
+   await trend.screenshot({path:resolve(output,'whole-muscle-trend-mobile.png')});
+   await criteria.locator('..').screenshot({path:resolve(output,'body-charts-clean-mobile.png')});
+   assert.equal(await snapshot(),before);
+   await page.screenshot({path:resolve(output,'body-analysis-mobile.png'),fullPage:true});assert.deepEqual(errors,[]);
+   const groups=page.locator('[data-body-group]');
+   const legacyGroup=page.locator('[data-body-group="추가 체성분 항목"]');
+   for(const key of ['bodyFatMass','bodyAge','skeletalMuscleMass']) {
+     assert.equal(await groups.locator('[data-body-field="'+key+'"]').count(),1);
+     assert.equal(await legacyGroup.locator('[data-body-field="'+key+'"]').count(),1);
+     assert.equal(await page.locator('[data-body-group]:not([data-body-group="추가 체성분 항목"]) [data-body-field="'+key+'"]').count(),0);
+   }
+   assert.equal(await page.getByLabel('신체연령 원문',{exact:true}).count(),1);
+   assert.equal(await page.getByLabel('신체연령 원문',{exact:true}).textContent(),'37 연령 단위');
+   assert.ok(await page.getByLabel('신체연령 원문',{exact:true}).isVisible());
+   assert.equal(await page.getByLabel('체지방량 (몸통 항목)',{exact:false}).inputValue(),'9.7');
+   assert.ok(await page.getByLabel('체지방량 (몸통 항목)',{exact:false}).isVisible());
+   assert.equal(await page.getByLabel('신체연령 원문 숫자',{exact:true}).isVisible(),false);
+   assert.equal(await snapshot(),before);
+   await page.evaluate(()=>{const key='ai-fitness-inbody-records';const data=JSON.parse(localStorage.getItem(key));delete data['2025-04-08'].bodyAge;delete data['2025-04-08'].bodyFatMass;localStorage.setItem(key,JSON.stringify(data));});
+   await page.reload();const emptyLegacySnapshot=await snapshot();
+   assert.equal(await legacyGroup.getAttribute('open'),null);
+   assert.equal(await legacyGroup.locator('input:visible').count(),0);
+   assert.equal(await snapshot(),emptyLegacySnapshot);
+   await page.locator('[data-body-field="reportedBodyAge"] summary').click();
+   await page.getByLabel('신체연령 원문 숫자',{exact:true}).fill('38');
+   assert.equal(await page.getByLabel('신체연령 원문',{exact:true}).textContent(),'38 연령 단위');
+   await page.getByRole('button',{name:'체중·인바디 저장',exact:true}).click();await page.reload();
+   const edited=await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-inbody-records'))['2025-04-08']);
+   assert.equal(edited.reportedBodyAge,38);assert.equal(edited.reportedBodyAgeUnit,'연령 단위');assert.equal(edited.trunkFatMass,9.7);assert.equal(edited.bodyAge,undefined);assert.equal(edited.bodyFatMass,undefined);
+   await page.locator('[data-body-group="대사·종합 지표"]').screenshot({path:resolve(output,'oa-age-unified.png')});
+   await page.locator('[data-body-group="부위별 지방량"]').screenshot({path:resolve(output,'oa-fat-original.png')});
+   await page.evaluate(()=>localStorage.setItem('ai-fitness-inbody-records',JSON.stringify({'2025-04-08':{bodyAge:52,bodyFatMass:19,skeletalMuscleMass:31}})));
+   await page.reload();
+   assert.ok(await legacyGroup.getByLabel('신체연령 (기존 항목)',{exact:false}).isVisible());
+   await legacyGroup.getByLabel('신체연령 (기존 항목)',{exact:false}).fill('53');
+   await page.getByRole('button',{name:'체중·인바디 저장',exact:true}).click();await page.reload();
+   const manual=await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-inbody-records'))['2025-04-08']);
+   assert.equal(manual.bodyAge,53);assert.equal(manual.bodyFatMass,19);assert.equal(manual.skeletalMuscleMass,31);assert.equal(manual.reportedBodyAge,undefined);
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);
+   assert.equal(await page.getByTestId('body-display-thresholds').count(),0);
+   await page.evaluate(()=>{const key='ai-fitness-inbody-records';const data=JSON.parse(localStorage.getItem(key));data['2025-04-01']={skeletalMuscleMass:30};localStorage.setItem(key,JSON.stringify(data));});await page.reload();
+   const currentCriteria=page.getByTestId('body-analysis-criteria');
+   assert.equal(await currentCriteria.getAttribute('open'),null);
+   await currentCriteria.locator('summary').click();
+   assert.ok(await currentCriteria.getByText('0.2kg 미만',{exact:false}).isVisible());
+   assert.equal(await currentCriteria.getByText('0.3%p 미만',{exact:false}).count(),0);
+   await currentCriteria.locator('summary').click();
+   await page.setViewportSize({width:320,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   assert.equal(await page.getByText('±0.3%p',{exact:false}).count(),0);
+   const comparisonChecks=[];
+   for (const [scenario,count] of [['matching',3],['unit-change',1],['device-change',1],['missing',2],['duplicate',1]]) {
+     await page.evaluate(scenario=>{
+       const source={device:'OA Smart Scale PRO',originalLabel:'근육량',originalUnit:'kg',method:'manual',mappingVersion:'synthetic-v1'};
+       const record=value=>({muscleMass:value,metricSources:{muscleMass:{...source}}});
+       let data={'2025-04-01':record(50),'2025-04-04':record(51),'2025-04-08':record(52)};
+       if(scenario==='unit-change') data['2025-04-04'].metricSources.muscleMass.originalUnit='%';
+       if(scenario==='device-change') data['2025-04-04'].metricSources.muscleMass.device='OA long report';
+       if(scenario==='missing') data['2025-04-04']={};
+       if(scenario==='duplicate') {data={'2025-04-08':record(50)};data['2025-04-08']=record(52);}
+       localStorage.setItem('ai-fitness-inbody-records',JSON.stringify(data));
+     },scenario);
+     await page.reload();const storedBefore=await snapshot();
+     await expect(massChart.getByRole('img')).toHaveAttribute('aria-label',`전체 근육량 (원문: 근육량) 최근 ${count}회 변화`);
+     assert.equal(await massChart.locator('circle').count(),count);
+     if(count===1) await expect(massChart.getByText('2025-04-08 ~ 2025-04-08 · 1회',{exact:true})).toBeVisible();
+     assert.equal(await snapshot(),storedBefore);assert.deepEqual(errors,[]);
+     comparisonChecks.push(scenario);
+   }
+   console.log(JSON.stringify({passed:comparisonChecks.length,checks:comparisonChecks,scope:'synthetic comparison boundaries, missing and duplicate dates',externalRequestsSent:0}));
+   console.log(JSON.stringify({passed:24,checks:['OA whole-body fields are distinct','legacy manual values retained in separate group','raw age and unit retained','stale skeletal history does not trigger current loss or preservation claims','four distinct raw metric charts','390px no overflow and no storage mutations','kg trend works without current skeletal data','percent rise with kg fall marked divergent','unknown conditions and water effects explicit','comparison criteria visible without writes','legacy fields render only once in separate group','no legacy fields in OA main groups','raw age renders as one visible value with unit','raw age editing saves and reloads without legacy conversion','source body fat label shows trunk value','empty legacy inputs remain out of default OA view','populated legacy values remain visible and editable','non-OA manual edit and reload preserve all fields','common criteria once and collapsed, no repeated chart prose','criteria keyboard Enter and Space plus mobile tap','normal chart only values and full date range','percent change uses percentage points','thresholds conditional on comparable metric, no missing skeletal range','threshold boundaries explicit and 320px layout fits']}));
+ } else if(lateProCheck) {
+   const checkbox=page.getByRole('checkbox',{name:'사진이 오아 스마트 체중계 PRO의 긴 건강보고서임을 확인했어요.'});
+   const snapshot=()=>page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).sort())));
+   const before=await snapshot();
+   await page.locator('input[type=file]').last().setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:Buffer.from('fixture')});
+   await page.waitForFunction(()=>typeof window.resolveOcr==='function');
+   const values=Object.fromEntries(OA_REPORT_INVENTORY.slice(0,27).filter(([key])=>!['trunkMuscleMass','trunkFatMass'].includes(key)).map(([key],i)=>[key,i+10.5]));
+   const metricSources=Object.fromEntries(OA_REPORT_INVENTORY.filter(([key])=>!['trunkMuscleMass','trunkFatMass'].includes(key)).map(([key,originalLabel,originalUnit])=>[key,{device:'OA long report',originalLabel,originalUnit,method:'ocr',mappingVersion:'oa-pro-v1'}]));
+   await page.evaluate(({values,metricSources})=>window.resolveOcr({values,metricSources,recognizedCount:27,detectedDate:'2026-10-14',textValues:{reportedBodyAgeUnit:'연령 단위',bodyShape:'건강형',measurementTime:'08:12:34'},unmappedMeasurements:[{source:'OA',label:'신체 근육량',value:27.4,unit:'kg'},{source:'OA',label:'체지방량',value:11.8,unit:'kg'}]}),{values,metricSources});
+   await page.getByLabel('측정 날짜',{exact:true}).waitFor();
+   assert.equal(await checkbox.isEnabled(),true);
+   for(const key of ['trunkMuscleMass','trunkFatMass']) { const text=await page.locator('[data-oa-field="'+key+'"]').textContent(); assert.match(text,/읽음.*기기 확인 대기.*저장 제외/);assert.doesNotMatch(text,/미인식/); }
+   assert.equal(await page.getByLabel('저장 제외 원문 출처').locator('li').count(),2);
+   assert.ok(await page.getByText('저장 후보 28개',{exact:false}).isVisible());
+   await page.getByLabel('측정 날짜',{exact:true}).fill('2026-10-13');
+   await checkbox.check();
+   assert.equal(await page.getByLabel('몸통 근육량',{exact:false}).and(page.locator('input')).inputValue(),'27.4');
+   assert.equal(await page.getByLabel('체지방량 (몸통 항목)',{exact:false}).and(page.locator('input')).inputValue(),'11.8');
+   assert.ok(await page.getByText('저장 후보 30개',{exact:false}).isVisible());
+   assert.equal(await page.getByLabel('측정 날짜',{exact:true}).inputValue(),'2026-10-13');
+   assert.equal(await snapshot(),before);
+   await checkbox.uncheck();
+   assert.equal(await page.getByLabel('몸통 근육량',{exact:false}).and(page.locator('input')).inputValue(),'');
+   await checkbox.check();
+   await page.getByLabel('몸통 근육량',{exact:false}).fill('28.2');
+   await page.getByLabel('체지방량 (몸통 항목)',{exact:false}).fill('');
+   await checkbox.uncheck();
+   assert.equal(await page.getByLabel('몸통 근육량',{exact:false}).and(page.locator('input')).inputValue(),'28.2');
+   assert.equal(await page.getByLabel('체지방량 (몸통 항목)',{exact:false}).and(page.locator('input')).inputValue(),'');
+   await page.getByLabel('체지방량 (몸통 항목)',{exact:false}).fill('');
+   await checkbox.check();
+   assert.equal(await page.getByLabel('몸통 근육량',{exact:false}).and(page.locator('input')).inputValue(),'28.2');
+   assert.equal(await page.getByLabel('체지방량 (몸통 항목)',{exact:false}).and(page.locator('input')).inputValue(),'');
+   assert.equal(await snapshot(),before);
+   await page.getByRole('button',{name:'확인한 측정일에 저장'}).click();
+   const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-inbody-records'))['2026-10-13']);
+   assert.equal(saved.trunkMuscleMass,28.2);assert.equal(saved.trunkFatMass,undefined);assert.equal(saved.metricSources.trunkMuscleMass.method,'ocr-edited');
+   for(const key of ['bodyFatPercent','muscleMass','musclePercent','fatMass']) assert.equal(saved.metricSources[key].device,'OA Smart Scale PRO');
+   await page.reload();assert.equal(await page.getByLabel('몸통 근육량',{exact:false}).and(page.locator('input')).inputValue(),'');
+   assert.deepEqual(errors,[]);
+   console.log(JSON.stringify({passed:7,checks:['unconfirmed OCR references are read/pending, not missing','late checkbox enabled without image reselection','mapping and counts update with edited date retained','untouched automatic mappings reverse','manual edits and explicit blanks survive toggles','toggles do not write storage','explicit save preserves edited source'],externalRequestsSent:0}));
+ } else if(trunkCheck) {
+   await page.getByRole('checkbox',{name:'사진이 오아 스마트 체중계 PRO의 긴 건강보고서임을 확인했어요.'}).check();
+   await page.locator('input[type=file]').last().setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:Buffer.from('fixture')});
+   await page.waitForFunction(()=>typeof window.resolveOcr==='function');
+   const extras=Object.fromEntries(OA_REPORT_INVENTORY.slice(0,27).filter(([key])=>!['weight','trunkMuscleMass','trunkFatMass'].includes(key)).map(([key],i)=>[key,i+10.5])); extras.standardWeight=61.2; extras.reportedBodyAge=37; const textValues={reportedBodyAgeUnit:'연령 단위',bodyShape:'건강형',measurementTime:'08:12:34'};
+     const sources={trunkMuscleMass:{device:'OA Smart Scale PRO',originalLabel:'신체 근육량',method:'ocr',mappingVersion:'oa-pro-v1'},trunkFatMass:{device:'OA Smart Scale PRO',originalLabel:'체지방량',method:'ocr',mappingVersion:'oa-pro-v1'}};
+   for(const [key,label,unit] of OA_REPORT_INVENTORY) { const value=({weight:80,trunkMuscleMass:27.4,trunkFatMass:11.8,...extras,...textValues,measurementDate:'2026-10-14'})[key]; sources[key]={device:'OA Smart Scale PRO',originalLabel:label,originalUnit:unit,originalText:String(value)+unit,method:'ocr',mappingVersion:'oa-pro-v1'}; }
+     await page.evaluate(({sources,extras,textValues})=>window.resolveOcr({detectedDate:'2026-10-14',values:{weight:80,trunkMuscleMass:27.4,trunkFatMass:11.8,...extras},textValues,metricSources:sources,unmappedMeasurements:[],recognizedCount:27}),{sources,extras,textValues});
+   assert.equal(await page.locator('[data-oa-field]').count(),30);
+     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+     await page.screenshot({path:resolve(output,'complete-draft-mobile.png'),fullPage:true});
+   await page.getByLabel('몸통 근육량',{exact:false}).fill('27.5');
+   assert.equal(await page.locator('details').filter({has:page.locator('summary').filter({hasText:'추가 체성분 항목'})}).getByLabel('골격근량kg',{exact:true}).inputValue(),'');
+   assert.ok(await page.getByText('저장 후보 30개',{exact:false}).isVisible());
+   await page.getByRole('button',{name:'확인한 측정일에 저장'}).click();
+   await page.reload();
+   assert.equal(await page.getByLabel('몸통 근육량',{exact:false}).and(page.locator('input')).inputValue(),'27.5');
+   const read=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-inbody-records'))['2026-10-14']);
+   const saved=await read(); for(const [key,value] of Object.entries({...extras,...textValues})) assert.equal(saved[key],value);
+     assert.equal(await page.getByLabel('표준 체중',{exact:false}).and(page.locator('input')).inputValue(),String(extras.standardWeight));
+     assert.equal(await page.getByLabel('체형 원문',{exact:true}).inputValue(),textValues.bodyShape);
+     assert.equal(await page.getByLabel('측정 시간',{exact:true}).inputValue(),textValues.measurementTime); assert.equal(saved.metricSources.trunkMuscleMass.method,'ocr-edited'); assert.deepEqual(saved.metricSources.trunkFatMass,sources.trunkFatMass);
+   await page.getByLabel('BMI',{exact:true}).fill('24'); extras.bmi=24;
+   await page.getByRole('button',{name:'체중·인바디 저장',exact:true}).click();
+   saved.metricSources.bmi.method='ocr-edited'; assert.deepEqual((await read()).metricSources,saved.metricSources);
+   await page.goto(origin+'?legacy');
+   await page.getByRole('textbox').last().fill('legacy memo');
+   await page.getByRole('button',{name:'저장',exact:true}).click();
+   const legacy=await read(); for(const [key,value] of Object.entries({...extras,...textValues})) assert.equal(legacy[key],value); assert.equal(legacy.trunkMuscleMass,27.5); assert.equal(legacy.trunkFatMass,11.8); assert.deepEqual(legacy.metricSources,saved.metricSources);
+   const downloadPromise=page.waitForEvent('download');
+   await page.getByRole('button',{name:'전체 기록 백업',exact:true}).click();
+   const download=await downloadPromise; const exported=JSON.parse(readFileSync(await download.path(),'utf8'));
+   assert.deepEqual(exported.state['ai-fitness-inbody-records']['2026-10-14'],legacy);
+   const synced=await page.evaluate(()=>{const state=JSON.parse(JSON.stringify(window.cloudSnapshot())); return window.mergeSnapshot({},state,{});});
+   assert.deepEqual(synced['ai-fitness-inbody-records']['2026-10-14'],legacy);
+   assert.deepEqual(errors,[]);
+   console.log(JSON.stringify({passed:6,checks:['PRO confirmed draft save','edited source and reload','body editor preserves metadata','legacy editor preserves trunk and metadata','actual backup download JSON','cloud serialization and merge'],externalRequestsSent:0}));
+ } else if(recordNavigation) {
+   const tab = name => page.getByRole('tab',{name,exact:true});
+   const snapshot = () => page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).sort())));
+   const before = await snapshot();
+   assert.equal(await tab('통합 정보').getAttribute('aria-selected'),'true');
+   assert.equal(await page.getByRole('button',{name:'확인한 측정일에 저장'}).isVisible(),false);
+   await tab('체중관리').click();
+   const calendar=page.locator('[data-testid="record-shared-calendar"] > details');
+   assert.equal(await calendar.getAttribute('open'),null);
+   await calendar.locator(':scope > summary').click();
+   assert.equal(await calendar.getByRole('button',{name:'이전',exact:true}).isVisible(),true);
+   await calendar.locator(':scope > summary').click();
+   assert.equal(await snapshot(),before);
+   checks.push('calendar stays collapsed until requested; opening it writes nothing');
+   const weight = page.locator('input[placeholder="예: 82.4"]');
+   await weight.fill('81.4');
+   for(const name of ['운동기록','통합 정보','체중관리']) await tab(name).click();
+   assert.equal(await weight.inputValue(),'81.4');
+   assert.equal(await snapshot(),before);
+   checks.push('manual body draft survives tab round trip without any storage write');
+   await page.locator('input[type=file]').setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:Buffer.from('fixture')});
+   await page.waitForFunction(()=>typeof window.resolveOcr==='function');
+   await tab('운동기록').click();
+   await page.evaluate(()=>window.resolveOcr({detectedDate:'2026-10-01',values:{weight:79.2,bmi:23.4},recognizedCount:2}));
+   await tab('체중관리').click();
+   await page.getByLabel('측정 날짜',{exact:true}).waitFor();
+   assert.equal(await page.getByLabel('측정 날짜',{exact:true}).inputValue(),'2026-10-01');
+   assert.equal(await weight.inputValue(),'79.2');
+   await weight.fill('78.6');
+   await page.getByLabel('BMI',{exact:true}).fill('23.1');
+   for(const name of ['통합 정보','운동기록','체중관리']) await tab(name).click();
+   assert.equal(await weight.inputValue(),'78.6');
+   assert.equal(await page.getByLabel('BMI',{exact:true}).inputValue(),'23.1');
+   assert.equal(await snapshot(),before);
+   checks.push('OCR finishes while hidden; reviewed date and edited values survive tabs without autosave');
+   page.once('dialog',dialog=>dialog.accept());
+   await page.getByRole('button',{name:'확인한 측정일에 저장'}).click();
+   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-weight-records'))['2026-10-01'].weight),78.6);
+   assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-inbody-records'))['2026-10-01']),{bodyAge:40,memo:'preserve synthetic memo',bmi:23.1});
+   await weight.fill('77.8');
+   await tab('운동기록').click();
+   await page.getByPlaceholder('오늘 컨디션, 허기, 운동 느낌 등을 적어주세요.').fill('separate synthetic note');
+   await page.getByRole('button',{name:'저장',exact:true}).click();
+   await tab('체중관리').click();
+   assert.equal(await weight.inputValue(),'77.8');
+   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-weight-records'))['2026-10-01'].weight),78.6);
+   checks.push('saving a note in another tab preserves unsaved manual body edits without saving them');
+   await page.reload(); await tab('체중관리').click();
+   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-weight-records'))['2026-10-01'].weight),78.6);
+   checks.push('only explicit reviewed save writes the selected date; existing memo preserved after reload');
+   await page.locator('input[type=file]').setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:Buffer.from('fixture')});
+   await page.waitForFunction(()=>typeof window.resolveOcr==='function');
+   await tab('운동기록').click();
+   await page.evaluate(()=>{localStorage.setItem('fitness-cloud-sync-user','fixture-B');window.dispatchEvent(new Event('yeoni-cloud-session-changed'));window.resolveOcr({detectedDate:'2026-10-01',values:{weight:99},recognizedCount:1});});
+   await tab('체중관리').click();
+   assert.equal(await page.getByLabel('측정 날짜',{exact:true}).count(),0);
+   checks.push('account change invalidates OCR even while body panel is hidden');
+   const beforeEmpty = await snapshot();
+   await page.locator('input[type=file]').setInputFiles({name:'empty-synthetic.png',mimeType:'image/png',buffer:Buffer.from('fixture')});
+   await page.evaluate(()=>window.resolveOcr({values:{},recognizedCount:0}));
+   await page.getByText('사진에서 숫자를 읽지 못했어요.',{exact:false}).waitFor();
+   assert.equal(await page.getByRole('button',{name:'확인한 측정일에 저장'}).isDisabled(),true);
+   await page.getByRole('button',{name:'사진 입력 취소',exact:true}).click();
+   assert.equal(await snapshot(),beforeEmpty);
+   checks.push('unreadable photo uses plain failure text; cancel writes nothing');
+   await tab('운동기록').click();
+   const unchanged = await snapshot();
+   await page.getByRole('button',{name:'운동 기록 시작하기',exact:true}).click();
+   await page.getByPlaceholder('운동 이름 (예: 버드독)').fill('합성 동작 초안');
+   await page.getByPlaceholder('오늘 컨디션, 허기, 운동 느낌 등을 적어주세요.').fill('합성 메모 초안');
+   for(const name of ['체중관리','통합 정보','운동기록']) await tab(name).click();
+   assert.equal(await page.getByPlaceholder('운동 이름 (예: 버드독)').inputValue(),'합성 동작 초안');
+   assert.equal(await page.getByPlaceholder('오늘 컨디션, 허기, 운동 느낌 등을 적어주세요.').inputValue(),'합성 메모 초안');
+   assert.equal(await snapshot(),unchanged);
+   checks.push('workout and daily note drafts survive tab switches without writes');
+   await tab('통합 정보').focus(); await page.keyboard.press('ArrowRight');
+   assert.equal(await tab('체중관리').getAttribute('aria-selected'),'true');
+   await page.keyboard.press('End');
+   assert.equal(await tab('운동기록').getAttribute('aria-selected'),'true');
+   await page.keyboard.press('Home');
+   assert.equal(await tab('통합 정보').getAttribute('aria-selected'),'true');
+   assert.equal(await page.getByRole('tabpanel').count(),1);
+   checks.push('keyboard tabs activate exactly one accessible panel');
+   for(const name of ['통합 정보','체중관리','운동기록']) {
+     await tab(name).click();
+     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+     await page.screenshot({path:resolve(output,`record-nav-${name}.png`),fullPage:true});
+     await page.screenshot({path:resolve(output,`record-nav-${name}-viewport.png`),fullPage:false});
+   }
+   checks.push('all three record tabs fit 390px with screenshot evidence');
+   assert.deepEqual(errors,[]);
+   const result={passed:checks.length,checks,scope:'Local component with mocked OCR and synthetic localStorage; no cloud writes or OCR accuracy claim'};
+   writeFileSync(resolve(output,'record-navigation-result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+ } else if(realOcr) {
+   await page.evaluate(()=>localStorage.setItem('ai-fitness-inbody-records',JSON.stringify({'2026-10-02':{memo:'keep real OCR fixture memo',bodyAge:39}})));
+   await page.reload();
+   await page.getByRole('tab',{name:'체중관리',exact:true}).click();
+   const clearDecimal=process.env.FITNESS_OCR_CLEAR==='1';
+   const data=await page.evaluate(clearDecimal=>{
+     if(clearDecimal) {
+       const canvas=document.createElement('canvas'); canvas.width=1000;canvas.height=6000;
+       const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1000,6000);ctx.fillStyle='black';ctx.textBaseline='middle';ctx.font='65px Arial';
+       ctx.fillText('2026-10-01 08:12:34',100,240);ctx.fillText('83.0',80,630);ctx.fillText('76',80,2412);ctx.fillText('24.5',650,2874);ctx.fillText('9',760,3416);
+       return canvas.toDataURL('image/png').split(',')[1];
+     }
+     const canvas=document.createElement('canvas'); canvas.width=320; canvas.height=2048;
+     const ctx=canvas.getContext('2d'); ctx.fillStyle='#171717';ctx.fillRect(0,0,320,2048);ctx.fillStyle='#bababa';ctx.font='11px Arial';ctx.textBaseline='middle';
+     ctx.fillText('fixture@example.test',90,28);ctx.fillText('2026-10-01 08:12:34',90,54);
+     ctx.font='26px Arial';ctx.fillText('83.0',25,2048*.105);
+     ctx.font='18px Arial';ctx.fillText('A+',20,2048*.38);ctx.fillText('76',26,2048*.402);
+     ctx.font=clearDecimal?'16px Arial':'12px Arial';ctx.fillText('24.5',240,2048*.479);ctx.fillText('9',250,2048*.5693);
+     ctx.fillText('30s category',200,2048*.5923);
+     return canvas.toDataURL('image/png').split(',')[1];
+   },clearDecimal);
+   await page.locator('input[type=file]').setInputFiles({name:'synthetic-oa-layout.png',mimeType:'image/png',buffer:Buffer.from(data,'base64')});
+   await page.getByLabel('측정 날짜',{exact:true}).waitFor({timeout:90000});
+   assert.equal(await page.getByLabel('측정 날짜',{exact:true}).inputValue(),'2026-10-01');
+   assert.equal(await page.locator('input[inputmode=decimal]').first().inputValue(),'83');
+   assert.equal(await page.getByLabel('BMI',{exact:true}).inputValue(),clearDecimal?'24.5':'');
+   assert.equal(await page.getByLabel('점수',{exact:false}).and(page.locator('input')).inputValue(),'76');
+   assert.equal(await page.getByLabel('내장 지방 지수',{exact:false}).and(page.locator('input')).inputValue(),'9');
+   assert.equal(await page.getByLabel('신체연령 (기존 항목)세',{exact:true}).inputValue(),'');
+   assert.ok(await page.getByText('숫자 '+(clearDecimal?4:3)+'개를 읽었어요.',{exact:false}).isVisible());
+   if(!clearDecimal) { await page.getByLabel('BMI',{exact:true}).fill('24.5'); await page.getByLabel('내장 지방 지수',{exact:false}).fill('9'); }
+   await page.getByLabel('측정 날짜',{exact:true}).fill('2026-10-02');
+   await page.locator('input[inputmode=decimal]').first().fill('82.7');
+   page.once('dialog',dialog=>dialog.accept());
+   await page.getByRole('button',{name:'확인한 측정일에 저장'}).click();
+   await page.reload();
+   await page.getByRole('tab',{name:'체중관리',exact:true}).click();
+   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-weight-records'))['2026-10-02'].weight),82.7);
+   const ocrSaved=await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-inbody-records'))['2026-10-02']); const {metricSources,...ocrFields}=ocrSaved; assert.deepEqual(ocrFields,{memo:'keep real OCR fixture memo',bodyAge:39,bmi:24.5,bodyScore:76,visceralFatLevel:9,measurementTime:'08:12:34'}); assert.equal(metricSources.measurementDate.method,'ocr-edited'); assert.equal(metricSources.weight.method,'ocr-edited');
+   await page.locator('[data-testid="record-shared-calendar"] > details > summary').click();
+   await page.locator('button').filter({has:page.locator('span').filter({hasText:/^2$/})}).first().click();
+   await expect(page.locator('input[inputmode=decimal]').first()).toHaveValue('82.7');
+   await page.screenshot({path:resolve(output,'real-calendar-ocr.png'),fullPage:true});
+   assert.deepEqual(errors,[]);
+   const result={passed:1,scope:'Actual RecordCalendarView + browser image/canvas + OA parser/Tesseract worker and model; date/value edit, existing-record confirmation, memo preservation, save, reload and calendar re-query. Synthetic OA-layout image only, not real report accuracy.',assetRequests,externalRequestsSent:0};
+   result.decimalCase=clearDecimal?'clear decimal recognized':'uncertain decimal left blank; integer recovered by agreeing smaller crops';
+   writeFileSync(resolve(output,clearDecimal?'real-ocr-clear-result.json':'real-ocr-result.json'),JSON.stringify(result,null,2)); console.log(JSON.stringify(result));
+ } else {
+ const upload=async(result)=>{ await page.locator('input[type=file]').setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:Buffer.from('fixture')}); await page.waitForFunction(()=>typeof window.resolveOcr==='function'); if(result) await page.evaluate(r=>window.resolveOcr(r),result); };
+ const result={detectedDate:'2026-10-01',values:{weight:79.2,bmi:23},recognizedCount:4,unmappedMeasurements:[{source:'OA',label:'신체 근육량',value:27.4,unit:'kg'},{source:'OA',label:'체지방량',value:11.8,unit:'kg'}]};
+ await upload(result);
+ assert.ok(await page.getByLabel('OA 원문 참고값').isVisible());
+ assert.equal(await page.locator('details').filter({has:page.locator('summary').filter({hasText:'추가 체성분 항목'})}).getByLabel('골격근량kg',{exact:true}).inputValue(),'');
+ await page.getByLabel('측정 날짜',{exact:true}).waitFor();
+ assert.equal(await page.getByLabel('측정 날짜',{exact:true}).inputValue(),'2026-10-01');
+ await page.getByRole('button',{name:'달력 다른 날짜'}).click();
+ assert.equal(await page.getByLabel('측정 날짜',{exact:true}).inputValue(),'2026-10-01');
+ checks.push('detected date and draft survive calendar change');
+ page.once('dialog',d=>d.dismiss());
+ await page.getByRole('button',{name:'확인한 측정일에 저장'}).click();
+ assert.equal(await page.evaluate(()=>localStorage.getItem('ai-fitness-weight-records')),null);
+ checks.push('conflict cancellation leaves storage unchanged');
+ page.once('dialog',d=>d.accept());
+ await page.getByRole('button',{name:'확인한 측정일에 저장'}).click();
+ const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-inbody-records')));
+ assert.deepEqual(stored['2026-10-01'],{bodyAge:40,memo:'preserve synthetic memo',bmi:23});
+ assert.equal(await page.getByLabel('선택 날짜').textContent(),'2026-10-01');
+ await page.reload();
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-weight-records'))['2026-10-01'].weight),79.2);
+ checks.push('measurement date save, memo preservation and reload');
+ await upload({...result,detectedDate:'2026-02-30'});
+ assert.equal(await page.getByLabel('측정 날짜',{exact:true}).inputValue(),'');
+ assert.equal(await page.getByRole('button',{name:'확인한 측정일에 저장'}).isDisabled(),true);
+ await page.getByLabel('측정 날짜',{exact:true}).fill('2026-10-02');
+ await page.getByRole('button',{name:'확인한 측정일에 저장'}).click();
+ checks.push('invalid date requires explicit correction');
+ await upload({values:{weight:80},recognizedCount:1});
+ assert.equal(await page.getByLabel('측정 날짜',{exact:true}).inputValue(),'');
+ assert.equal(await page.getByRole('button',{name:'확인한 측정일에 저장'}).isDisabled(),true);
+ await page.getByLabel('측정 날짜',{exact:true}).fill('2026-10-05');
+ await page.getByRole('button',{name:'확인한 측정일에 저장'}).click();
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-weight-records'))['2026-10-05'].weight),80);
+ checks.push('missing OCR date remains blank until user supplies the save date');
+ await upload();
+ await page.evaluate(()=>{localStorage.setItem('fitness-cloud-sync-user','fixture-B');localStorage.setItem('fitness-cloud-sync-epoch','2');window.dispatchEvent(new Event('yeoni-cloud-session-changed'));window.resolveOcr({detectedDate:'2026-10-03',values:{weight:99},recognizedCount:1});});
+ await page.waitForTimeout(100);
+ assert.equal(await page.getByLabel('측정 날짜',{exact:true}).count(),0);
+ checks.push('late OCR discarded after session change');
+ await upload(result);
+ assert.ok(await page.getByLabel('OA 원문 참고값').isVisible());
+ assert.equal(await page.locator('details').filter({has:page.locator('summary').filter({hasText:'추가 체성분 항목'})}).getByLabel('골격근량kg',{exact:true}).inputValue(),'');
+ const other=await page.context().newPage(); await other.goto(origin);
+ await other.evaluate(()=>localStorage.setItem('fitness-cloud-sync-user','fixture-C'));
+ await page.getByLabel('측정 날짜',{exact:true}).waitFor({state:'detached'});
+ await other.close();
+ checks.push('cross-tab account switch clears completed draft');
+ await upload();
+ await page.getByRole('button',{name:'달력 다른 날짜'}).click();
+ await page.evaluate(r=>window.resolveOcr(r),result);
+ await page.waitForTimeout(50);
+ assert.equal(await page.getByLabel('측정 날짜',{exact:true}).count(),0);
+ checks.push('late OCR discarded after calendar navigation');
+ await upload({...result,detectedDate:'2026-10-04'});
+ await page.locator('input[inputmode=decimal]').first().fill('77.3');
+ const beforeFailure=await page.evaluate(()=>[localStorage.getItem('ai-fitness-weight-records'),localStorage.getItem('ai-fitness-inbody-records')]);
+ await page.evaluate(()=>{ const original=Storage.prototype.setItem; window.restoreStorage=()=>Storage.prototype.setItem=original; let fail=true; Storage.prototype.setItem=function(key,value){if(fail && key==='ai-fitness-inbody-records'){fail=false;throw new DOMException('Synthetic quota error','QuotaExceededError');} return original.call(this,key,value);}; });
+ await page.getByRole('button',{name:'확인한 측정일에 저장'}).click();
+ assert.deepEqual(await page.evaluate(()=>[localStorage.getItem('ai-fitness-weight-records'),localStorage.getItem('ai-fitness-inbody-records')]),beforeFailure);
+ assert.equal(await page.getByLabel('측정 날짜',{exact:true}).inputValue(),'2026-10-04');
+ await page.evaluate(()=>window.restoreStorage());
+ await page.getByRole('button',{name:'확인한 측정일에 저장'}).click();
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('ai-fitness-weight-records'))['2026-10-04'].weight),77.3);
+ checks.push('edited value and draft survive transactional quota failure, retry saves');
+ const beforeScope=await page.evaluate(()=>localStorage.getItem('fixture-settings'));
+ const dateScope=page.getByRole('button',{name:'이 날짜만',exact:true}), weeklyScope=page.getByRole('button',{name:/^매주 /});
+ await expect(dateScope).toHaveAttribute('aria-pressed','true');
+ await weeklyScope.focus();await page.keyboard.press('Enter');
+ await expect(weeklyScope).toHaveAttribute('aria-pressed','true');await expect(dateScope).toHaveAttribute('aria-pressed','false');
+ await dateScope.click();assert.equal(await page.evaluate(()=>localStorage.getItem('fixture-settings')),beforeScope);
+ checks.push('scope buttons expose selected state and changing scope alone does not save');
+ await page.getByLabel('운동 도구 고르기',{exact:true}).selectOption('맨몸');
+ const settingsBeforeGuide=await page.evaluate(()=>localStorage.getItem('fixture-settings'));
+ const oldGuide=page.locator('summary').filter({hasText:'운동 방법 보기 · 벽 푸시업'});
+ await oldGuide.click();
+ assert.ok(await page.getByText('벽에서 팔 길이 정도 떨어져 섭니다.',{exact:false}).isVisible());
+ assert.equal(await page.evaluate(()=>localStorage.getItem('fixture-settings')),settingsBeforeGuide);
+ await oldGuide.click();
+ checks.push('existing exercise method opens without changing or saving the routine');
+ await page.getByRole('button',{name:'내 운동에 추가 · 벽 푸시업',exact:true}).click();
+ assert.equal(await page.getByRole('button',{name:'이미 추가한 운동 · 벽 푸시업',exact:true}).isDisabled(),true);
+ await page.reload();
+ assert.ok((await page.getByText('벽에서 팔 길이 정도 떨어져 섭니다.',{exact:false}).count())>0);
+ const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('fixture-settings')));
+ assert.equal(saved.dateOverrides['2026-10-14'].edit.customExercises[0].sourceExerciseId,'wall-pushup');
+ checks.push('equipment selection source ID and guide survive reload');
+ const removeWall=page.getByRole('button',{name:'벽 푸시업 빼기',exact:true});
+ const removeBox=await removeWall.boundingBox();assert.ok(removeBox.width>=44&&removeBox.height>=44);
+ await removeWall.focus();await page.keyboard.press('Enter');
+ await expect(page.getByRole('button',{name:'내 운동에 추가 · 벽 푸시업',exact:true})).toBeEnabled();
+ await page.getByRole('button',{name:'내 운동에 추가 · 벽 푸시업',exact:true}).click();await page.reload();
+ assert.equal(await page.getByRole('button',{name:'벽 푸시업 빼기',exact:true}).count(),1);
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('fixture-settings')).dateOverrides['2026-10-14'].edit.customExercises[0].sourceExerciseId),'wall-pushup');
+ checks.push('named 44px remove control works by keyboard and re-added exercise retains its guide after reload');
+ const demo=page.getByRole('region',{name:'벽 푸시업 측면 도해'});
+ await demo.waitFor();
+ // Installing alone leaves time advancing during screenshots and assertions.
+ // Freeze before playback so machine load cannot change the measured interval.
+ const motionClockStart = Date.now();
+ await page.clock.install({time:motionClockStart});
+ await page.clock.pauseAt(motionClockStart + 60_000);
+ const position=demo.getByRole('slider',{name:'동작 위치'});
+ assert.equal(await position.inputValue(),'0');
+ await demo.screenshot({path:resolve(output,'wall-pushup-start.png')});
+ await demo.getByRole('button',{name:'재생',exact:true}).click();
+ await page.clock.runFor(1000);
+ const normal=Number(await position.inputValue());
+ assert.ok(normal>.12 && normal<.2);
+ await demo.getByRole('button',{name:'일시정지',exact:true}).click();
+ const paused=Number(await position.inputValue());
+ await page.clock.runFor(500);
+ assert.equal(Number(await position.inputValue()),paused);
+ checks.push('wall pushup starts paused, advances and pauses on request');
+ await demo.getByRole('button',{name:'시작 자세 보기'}).click();
+ await demo.getByLabel('느리게 (0.5배)').check();
+ await demo.getByRole('button',{name:'재생',exact:true}).click();
+ await page.clock.runFor(1000);
+ const slow=Number(await position.inputValue());
+ assert.ok(Math.abs(slow/normal-.5)<.1);
+ checks.push('wall pushup half-speed advances at half the normal rate');
+ await demo.getByRole('button',{name:'굽힌 자세 보기'}).click();
+ assert.equal(await position.inputValue(),'0.5');
+ await demo.screenshot({path:resolve(output,'wall-pushup-bent.png')});
+ await page.clock.runFor(500);
+ assert.equal(await position.inputValue(),'0.5');
+ await position.fill('0.75');
+ await demo.screenshot({path:resolve(output,'wall-pushup-return.png')});
+ checks.push('wall pushup static keyframes and manual scrubbing stay paused');
+ await demo.getByLabel('느리게 (0.5배)').uncheck();
+ await demo.getByLabel('반복',{exact:true}).uncheck();
+ await position.fill('0.99');
+ await demo.getByRole('button',{name:'재생',exact:true}).click();
+ await page.clock.runFor(250);
+ assert.equal(await position.inputValue(),'1');
+ await demo.getByRole('button',{name:'재생',exact:true}).waitFor();
+ checks.push('wall pushup stops at cycle end when repeat is disabled');
+ await demo.getByLabel('반복',{exact:true}).check();
+ await position.fill('0.99');
+ await demo.getByRole('button',{name:'재생',exact:true}).click();
+ await page.clock.runFor(500);
+ assert.ok(Number(await position.inputValue())<.1);
+ await demo.getByRole('button',{name:'일시정지',exact:true}).click();
+ checks.push('wall pushup repeat wraps continuously to the start');
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await page.reload();
+ assert.equal(await position.inputValue(),'0');
+ await demo.getByRole('button',{name:'재생',exact:true}).waitFor();
+ assert.ok(await demo.getByText('정지 안내:',{exact:false}).isVisible());
+ checks.push('reduced-motion reload remains paused with static text available');
+ // Use a base routine without the target exercises for the custom-ID round trip.
+ // Re-adding a removed base exercise correctly restores its original ID instead.
+ await page.evaluate(()=>{
+   const settings=JSON.parse(localStorage.getItem('fixture-settings'));
+   settings.dateOverrides['2026-10-14'].groupId='rest';
+   localStorage.setItem('fixture-settings',JSON.stringify(settings));
+ });
+ await page.reload();
+ const additions=[["맨몸","맨몸 스쿼트","bodyweight-squat"],["맨몸","지지형 햄스트링 컬","supported-hamstring-curl"],["맨몸","실내 걷기","indoor-walk"],["맨몸","기본 몸풀기","basic-warmup"],["맨몸","기본 정리운동","basic-cooldown"],["맨몸","지지형 양발 종아리 들기","supported-calf-raise"],["맨몸","지지형 옆 다리 들기","supported-side-leg-raise"],["맨몸","앉아서 무릎 펴기","seated-knee-extension"],["요가매트","버드독","bird-dog"],["요가매트","골반 기울이기","pelvic-tilt"],["요가매트","캣카우","cat-cow"],["요가매트","무릎 사이드 플랭크","knee-side-plank"],["덤벨 · 1kg 아령","덤벨 고블릿 스쿼트","dumbbell-goblet-squat"],["덤벨 · 1kg 아령","덤벨 플로어프레스","dumbbell-floor-press"],["덤벨 · 1kg 아령","의자/테이블 지지 원암 덤벨 로우","one-arm-dumbbell-row-supported"],["덤벨 · 1kg 아령","가벼운 덤벨 컬","light-dumbbell-curl"],["BELLE 풀업밴드","밴드 로우","band-row"],["BELLE 풀업밴드","롱밴드 랫풀다운","longband-lat-pulldown"],["BELLE 풀업밴드","롱밴드 페이스풀","longband-face-pull"],["BELLE 풀업밴드","밴드 풀어파트","band-pull-apart"],["BELLE 풀업밴드","밴드 팔로프 프레스","band-pallof-press"],["BELLE 풀업밴드","팔 붙인 밴드 외회전","band-external-rotation-at-side"],["코멧 루프밴드","루프밴드 사이드워크","loopband-sidewalk"],["코멧 루프밴드","루프밴드 몬스터워크","loopband-monster-walk"],["철봉","턱걸이 초기자세","pullup-basic-posture"],["폼롤러","폼롤러 준비","foam-roller-prep"]];
+ for(const [equipment,name,id] of additions) {
+   await page.getByLabel('운동 도구 고르기',{exact:true}).selectOption(equipment);
+   const beforeGuide=await page.evaluate(()=>localStorage.getItem('fixture-settings'));
+   const preview=page.locator('details').filter({has:page.locator('summary').filter({hasText:name})});
+   await preview.locator('summary').click();
+   await expect(preview.getByText('자세 가이드',{exact:true})).toBeVisible();
+   await expect(preview.getByText('7) 즉시 중단 기준',{exact:true})).toBeVisible();
+   if(['supported-hamstring-curl','bodyweight-squat','indoor-walk','bird-dog','band-row'].includes(id)) {
+     await expect(preview.getByRole('link',{name:/동작 원리 참고:/})).toBeVisible();
+   } else if(['supported-calf-raise','supported-side-leg-raise','seated-knee-extension','light-dumbbell-curl','band-external-rotation-at-side'].includes(id)) {
+     await expect(preview.getByText('선택용 동작 안내입니다.',{exact:false})).toBeVisible();
+     await expect(preview.getByRole('link',{name:/참고 안내:/})).toBeVisible();
+   }
+   if(id==='band-external-rotation-at-side') await preview.screenshot({path:resolve(output,'expanded-band-guide.png')});
+   assert.equal(await page.evaluate(()=>localStorage.getItem('fixture-settings')),beforeGuide);
+   await page.getByRole('button',{name:'내 운동에 추가 · '+name,exact:true}).click();
+   await page.reload();
+   const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('fixture-settings')));
+   assert.ok(stored.dateOverrides['2026-10-14'].edit.customExercises.some(x=>x.sourceExerciseId===id));
+   if(!['basic-warmup','basic-cooldown','foam-roller-prep'].includes(id)) {
+     const motion=page.getByRole('region',{name:name+' 자체 시범'});
+     await expect(motion).toHaveCount(1);
+     await expect(motion).toBeVisible();
+     const slider=motion.getByRole('slider',{name:name+' 동작 위치'});
+     await expect(slider).toHaveValue('0');
+     await expect(motion.getByRole('button',{name:'재생',exact:true})).toBeDisabled();
+     await slider.focus(); await page.keyboard.press('ArrowRight');
+     await expect(slider).toHaveValue('0.01');
+     await page.emulateMedia({reducedMotion:'no-preference'});
+     await motion.getByRole('button',{name:'시작 자세 보기'}).click();
+     await motion.getByRole('button',{name:'재생',exact:true}).focus();
+     await page.keyboard.press('Enter'); await expect(motion.getByRole('button',{name:'일시정지',exact:true})).toBeVisible(); await page.clock.runFor(1000);
+     const regular=Number(await slider.inputValue()); assert.ok(regular>.12&&regular<.2,JSON.stringify({id,regular}));
+     await motion.getByRole('button',{name:'일시정지',exact:true}).click();
+     const held=Number(await slider.inputValue());
+     await page.clock.runFor(500); assert.equal(Number(await slider.inputValue()),held);
+     await motion.getByRole('button',{name:'시작 자세 보기'}).click();
+     await motion.getByLabel('느리게 (0.5배)').check();
+     await motion.getByRole('button',{name:'재생',exact:true}).click(); await page.clock.runFor(1000);
+     assert.ok(Math.abs(Number(await slider.inputValue())/regular-.5)<.1);
+     const alternating=id==='indoor-walk'||id==='bird-dog'||id==='cat-cow';
+     await motion.getByRole('button').filter({hasText:alternating?(id==='cat-cow'?'가슴 열기 보기':'첫쪽 자세 보기'):/보기$/}).last().click();
+     await expect(slider).toHaveValue(alternating?'0.25':'0.5');
+     if(alternating) {await motion.getByRole('button',{name:id==='cat-cow'?'등 둥글게 보기':'반대쪽 자세 보기'}).click();await expect(slider).toHaveValue('0.75');}
+     await page.setViewportSize({width:390,height:844});
+     await motion.screenshot({path:resolve(output,id+'-integrated.png')});
+     await motion.getByLabel('느리게 (0.5배)').uncheck();
+     await slider.fill('0.99'); await motion.getByRole('button',{name:'재생',exact:true}).click();
+     await page.clock.runFor(250); await expect(slider).toHaveValue('1');
+     await motion.getByLabel('반복',{exact:true}).check();
+     await motion.getByRole('button',{name:'재생',exact:true}).click(); await page.clock.runFor(6500);
+     assert.ok(Number(await slider.inputValue())<.15);
+     await page.emulateMedia({reducedMotion:'reduce'});
+     await expect(motion.getByRole('button',{name:'재생',exact:true})).toBeDisabled();
+     assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('fixture-settings'))),stored);
+     checks.push(id+': restored source ID, keyboard, pause, half speed, repeat, reduced motion and unchanged routine');
+   } else {
+     const motion=page.getByRole('region',{name:name+' 단계별 자체 시범'});
+     await expect(motion).toBeVisible();
+     const select=motion.getByRole('combobox');
+     await expect(select.locator('option')).toHaveCount(id==='basic-warmup'?7:id==='basic-cooldown'?8:14);
+     await select.selectOption('1');await expect(motion.getByRole('slider')).toHaveValue('0');
+     await expect(motion.getByRole('button',{name:'재생',exact:true})).toBeDisabled();
+     assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('fixture-settings'))),stored);
+     checks.push(id+': source ID reload, staged guide, reduced motion and unchanged routine');
+   }
+ }
+ checks.push('all 26 additional sourced guides can be reviewed, selected and restored after reload');
+ for(const equipment of await page.getByLabel('운동 도구 고르기',{exact:true}).locator('option').allTextContents()) {
+   await page.getByLabel('운동 도구 고르기',{exact:true}).selectOption(equipment);
+   assert.equal(await page.getByRole('button',{name:/^(내 운동에 추가|바로 추가).*(슬라이딩\s*보드|힙\s*브[릿리]지)/}).count(),0);
+ }
+ checks.push('every equipment category excludes sliding board and hip bridge');
+ for(const width of [320,390,1280]) {
+   await page.setViewportSize({width,height:844});
+   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`overflow at ${width}`);
+   await page.screenshot({path:resolve(output,`viewport-${width}.png`),fullPage:true});
+ }
+ checks.push('styled 320/390/1280px layout has no horizontal overflow');
+ const storageBeforeMissing=await page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).sort())));
+ await page.goto(origin+'?missing-guide');
+ for(const id of ['rest','cardio-foam-recovery']) {
+   const card=page.getByTestId('missing-'+id);
+   await card.getByText(id==='rest'?'턱걸이 자세 연습 1~2분':'턱걸이 자세 연습',{exact:true}).click();
+   await expect(card.getByText('목적 정보가 등록되지 않았습니다.',{exact:true})).toBeVisible();
+   await expect(card.getByText('사용 근육 정보가 등록되지 않았습니다.',{exact:true})).toBeVisible();
+   await expect(card.getByText('동작 방법이 등록되지 않아 이 안내만으로 따라 할 수 없습니다.',{exact:false}).first()).toBeVisible();
+   await expect(card.getByRole('button',{name:'8) 영상 준비중'})).toBeDisabled();
+   assert.equal(await card.getByRole('link').count(),0);
+   const safety=card.locator('section').filter({has:page.getByText('7) 즉시 중단 기준',{exact:true})});
+   await expect(safety).toHaveCount(1);
+   for(const text of ['통증이 있으면 즉시 중단하세요.','허리 통증이나 다리 저림이 있으면 회복 모드로 전환하세요.','반동으로 하지 말고 천천히 진행하세요.']) {
+     await expect(card.getByText('• '+text,{exact:true})).toHaveCount(1);
+     await expect(safety.getByText('• '+text,{exact:true})).toBeVisible();
+   }
+
+   const context='휴식을 우선하고, 원할 때만 자세 연습을 선택합니다. 쉬고 싶으면 건너뛰세요.';
+   assert.equal(await card.getByText(context,{exact:true}).count(),id==='rest'?1:0);
+ }
+ await page.getByTestId('registered-safety').getByText('등록 운동 안전 안내',{exact:true}).click();
+ for(const id of ['registered-safety','standalone-safety']) {
+   const scope=page.getByTestId(id);
+   const safety=scope.locator('section').filter({has:page.getByText('7) 즉시 중단 기준',{exact:true})});
+   await expect(safety).toHaveCount(1);
+   const warnings=await safety.locator('li').allTextContents();
+   assert.equal(new Set(warnings).size,warnings.length);
+   assert.deepEqual(warnings.map(t=>t.replace(/^• /,'')).sort(),(await page.evaluate(()=>window.expectedSafetyCriteria)).sort());
+   assert.ok(warnings.some(t=>t.includes('가슴 답답함')));
+   for(const text of warnings) await expect(scope.getByText(text,{exact:true})).toHaveCount(1);
+   await expect(safety.getByText('• 합성 루틴 고유 주의사항',{exact:true})).toBeVisible();
+ }
+ await page.getByTestId('no-guide-safety').getByText('가이드 없는 운동',{exact:true}).click();
+ await expect(page.getByTestId('no-guide-safety').getByText('합성 가이드 없는 운동 주의사항',{exact:true})).toBeVisible();
+ checks.push('safety criteria appear once in one section for registered/fallback cards and standalone guide; unique routine and no-guide warnings remain');
+ for(const width of [320,390]) {
+   await page.setViewportSize({width,height:844});
+   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   await page.screenshot({path:resolve(output,'missing-pullup-'+width+'.png'),fullPage:true});
+ }
+ await page.reload();
+ await page.getByTestId('missing-rest').getByText('턱걸이 자세 연습 1~2분',{exact:true}).click();
+ await expect(page.getByTestId('missing-rest').getByText('사용 근육 정보가 등록되지 않았습니다.',{exact:true})).toBeVisible();
+ assert.equal(await page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).sort()))),storageBeforeMissing);
+ checks.push('missing pullup guide: rest context once, explicit missing purpose/movement/muscles, no guessed video, mobile/reload and no writes');
+ await page.goto(origin+'?band-safety');
+ for(const i of [0,1]) {
+   const card=page.getByTestId('band-safety-'+i);
+   await card.getByText('밴드 로우',{exact:true}).click();
+   assert.doesNotMatch(await card.innerText(),/통증이 있으면 앉아서|통증이 있으면 밴드 장력을 낮|통증이나 팔 저림이 생기면 장력을 낮추고/);
+   await expect(card.getByText('7) 즉시 중단 기준',{exact:true})).toHaveCount(1);
+ }
+ const currentBand=page.getByTestId('band-safety-0');
+ for(const text of ['허리 통증이 생기면 즉시 중단하세요.','어깨 앞쪽 통증이나 팔 저림이 생기면 즉시 중단하세요.','밴드 고정이 불안하면 중단하세요.','밴드 고정점이 흔들리거나 풀릴 가능성이 보이면 즉시 놓고 다시 고정하세요.']) await expect(currentBand.getByText('• '+text,{exact:true})).toHaveCount(1);
+ await expect(page.getByTestId('band-safety-1').getByText('통증이 있으면 즉시 중단합니다.',{exact:false})).toBeVisible();
+ await page.screenshot({path:resolve(output,'band-row-safety-390.png'),fullPage:true});
+ assert.equal(await page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).sort()))),storageBeforeMissing);
+ checks.push('registered and legacy band row stop on pain, preserve anchor warnings and do not write records');
+ assert.deepEqual(errors,[]);
+ await page.screenshot({path:resolve(output,'mobile.png'),fullPage:true});
+ writeFileSync(resolve(output,'result.json'),JSON.stringify({passed:checks.length,checks,scope:'Local actual React components; synthetic OCR and storage. Not authenticated Next app or real OCR accuracy.'},null,2));
+ console.log(JSON.stringify({passed:checks.length,checks}));
+ }
+} finally { await browser?.close(); server.close(); }

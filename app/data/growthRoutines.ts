@@ -1,8 +1,8 @@
 export const GROWTH_ROUTINES_STORAGE_KEY = "ai-yeoni-growth-routines:v1";
 export const GROWTH_ROUTINE_LIMIT = 12;
 
-const RETIRED_GROWTH_ROUTINE_TITLES = new Set(["28회 그림 기초 연습"]);
-const RETIRED_GROWTH_CONTENT_MARKERS = ["그림 기초", "그림 연습", "드로잉", "drawing-foundations"];
+const RETIRED_GROWTH_ROUTINE_TITLES = new Set(["28회 그림 기초 연습", "정확도 중심 타자 연습"]);
+const RETIRED_GROWTH_CONTENT_MARKERS = ["그림 기초", "그림 연습", "드로잉", "drawing-foundations", "정확도 중심 타자 연습"];
 
 export function isRetiredGrowthRoutine(routine: { title: string }) {
   return RETIRED_GROWTH_ROUTINE_TITLES.has(routine.title.trim());

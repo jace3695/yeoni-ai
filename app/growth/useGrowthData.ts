@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import {
@@ -21,6 +21,8 @@ import {
   type GrowthCategoryId,
   type GrowthRoutine,
 } from "../data/growthRoutines";
+import { createGrowthRoutineSafely, GrowthRoutineResetConfirmation, readPendingGrowthRoutine, type NewGrowthRoutine, type PendingGrowthRoutine } from "@/lib/growth-routine-create";
+import { setChecklistCompletion } from "@/lib/growth-checklist";
 import { getLocalDateKey } from "@/utils/dateKey";
 import { normalizeGrowthPreferredDays, normalizeGrowthWeeklyTarget } from "../data/growthSchedule";
 import { clearGrowthRecordBackup } from "../lib/resetAppRecords";
@@ -130,8 +132,34 @@ export function useGrowthData(historyDays = 90) {
   const [workoutRecords, setWorkoutRecords] = useState<unknown>(undefined);
   const [notice, setNotice] = useState("");
   const [legacyBackupAvailable, setLegacyBackupAvailable] = useState(false);
+  const [pendingRoutineCreate, setPendingRoutineCreate] = useState<PendingGrowthRoutine | null>(null);
+  const [routineCreateBlocked, setRoutineCreateBlocked] = useState(false);
+  const [routineCreateReset, setRoutineCreateReset] = useState(false);
+
+  const lifetime = useRef({ active: false, epoch: 0, owner: null as string | null });
+  const loadSequence = useRef(0);
+  const stale = () => new Error("화면이나 계정이 바뀌었어요. 현재 화면에서 다시 확인해 주세요.");
+  const beginScope = useCallback((expectedOwner?: string) => {
+    const epoch = lifetime.current.epoch;
+    const check = () => {
+      if (!lifetime.current.active || lifetime.current.epoch !== epoch || (expectedOwner && lifetime.current.owner !== expectedOwner)) throw stale();
+    };
+    const wait = async <T,>(task: PromiseLike<T>): Promise<T> => {
+      check();
+      const value = await task;
+      check();
+      return value;
+    };
+    return { check, wait };
+  }, []);
 
   const load = useCallback(async () => {
+    const scope = beginScope();
+    const sequence = ++loadSequence.current;
+    const check = () => { scope.check(); if (sequence !== loadSequence.current) throw stale(); };
+    const wait = async <T,>(task: PromiseLike<T>): Promise<T> => { check(); const value = await task; check(); return value; };
+    try {
+    check();
     setDataReady(false);
     setWorkoutRecords(undefined);
     if (!supabase) {
@@ -142,7 +170,7 @@ export function useGrowthData(historyDays = 90) {
     const growthClient = supabase;
     setLoading(true);
     setNotice("");
-    const { data: auth, error: authError } = await supabase.auth.getUser();
+    const { data: auth, error: authError } = await wait(supabase.auth.getUser());
     if (authError || !auth.user) {
       setUser(null);
       setRoutines([]);
@@ -152,11 +180,21 @@ export function useGrowthData(historyDays = 90) {
       setLoading(false);
       return;
     }
+    if (lifetime.current.owner && lifetime.current.owner !== auth.user.id) return;
+    lifetime.current.owner = auth.user.id;
     setUser(auth.user);
+    try {
+      setPendingRoutineCreate(readPendingGrowthRoutine(window.sessionStorage, auth.user.id));
+      setRoutineCreateBlocked(false);
+    } catch {
+      setRoutineCreateBlocked(true);
+      setNotice("이 탭의 저장 복구 정보를 확인하지 못해 새 활동 추가를 잠시 막았어요. 기존 활동은 확인할 수 있어요.");
+    }
     const userId = auth.user.id;
-    await withGrowthSyncLock(userId, async () => {
+    await wait(withGrowthSyncLock(userId, async () => {
+    check();
     const storageKey = getGrowthRoutinesStorageKey(userId);
-    const resetState = await growthClient.from("user_app_state").select("state").eq("user_id", userId).maybeSingle();
+    const resetState = await wait(growthClient.from("user_app_state").select("state").eq("user_id", userId).maybeSingle());
     if (resetState.error) {
       setNotice("기록 초기화 상태를 확인하지 못했어요. 연결 후 다시 열어 주세요.");
       setLoading(false);
@@ -184,10 +222,10 @@ export function useGrowthData(historyDays = 90) {
       .gte("session_date", periodStart(getLocalDateKey(), historyDays))
       .order("session_date", { ascending: false })
       .order("created_at", { ascending: false });
-    const [routineResult, initialSessionResult] = await Promise.all([
+    const [routineResult, initialSessionResult] = await wait(Promise.all([
       growthClient.from("growth_routines").select("*").eq("user_id", userId).order("sort_order").order("created_at"),
       loadSessions(),
-    ]);
+    ]));
     if (routineResult.error || initialSessionResult.error) {
       setNotice("클라우드 기록을 모두 불러오지 못했어요. 잠시 후 새로고침해 주세요.");
       setLoading(false);
@@ -201,18 +239,18 @@ export function useGrowthData(historyDays = 90) {
         ? parseGrowthRoutines(pendingImport.raw)
         : scopedRaw !== null
           ? parseGrowthRoutines(scopedRaw)
-          : cloudRoutines.length === 0 ? parseGrowthRoutines(null) : []
+          : []
       : [];
 
     if (needsMigration && localSource.length) {
       const missing: GrowthRoutine[] = [];
       for (const routine of localSource) {
-        if (!await resolveCloudRoutineId(userId, routine, cloudRoutines, localSource)) missing.push(routine);
+        if (!await wait(resolveCloudRoutineId(userId, routine, cloudRoutines, localSource))) missing.push(routine);
       }
       if (missing.length) {
-        const rows = await localRoutineRows(userId, missing, cloudRoutines.length);
-        await growthClient.from("growth_routines").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
-        const refreshed = await growthClient.from("growth_routines").select("*").eq("user_id", userId).order("sort_order").order("created_at");
+        const rows = await wait(localRoutineRows(userId, missing, cloudRoutines.length));
+        await wait(growthClient.from("growth_routines").upsert(rows, { onConflict: "id", ignoreDuplicates: true }));
+        const refreshed = await wait(growthClient.from("growth_routines").select("*").eq("user_id", userId).order("sort_order").order("created_at"));
         if (refreshed.error) {
           setNotice("기기 루틴을 클라우드로 옮기지 못했어요. 계정별 기기 저장값은 그대로 유지됩니다.");
           setLoading(false);
@@ -220,7 +258,7 @@ export function useGrowthData(historyDays = 90) {
         }
         cloudRoutines = (refreshed.data ?? []) as GrowthRoutineRow[];
       }
-      const unresolved = (await Promise.all(localSource.map((routine) => resolveCloudRoutineId(userId, routine, cloudRoutines, localSource)))).some((id) => !id);
+      const unresolved = (await wait(Promise.all(localSource.map((routine) => resolveCloudRoutineId(userId, routine, cloudRoutines, localSource))))).some((id) => !id);
       if (unresolved) {
         setNotice("기기 루틴을 클라우드로 옮기지 못했어요. 기존 기기 저장값은 그대로 유지됩니다.");
         setLoading(false);
@@ -232,7 +270,7 @@ export function useGrowthData(historyDays = 90) {
       const targets = new Map<string, string>();
       const queries = [];
       for (const routine of source) {
-        const routineId = await resolveCloudRoutineId(userId, routine, cloudRoutines, source);
+        const routineId = await wait(resolveCloudRoutineId(userId, routine, cloudRoutines, source));
         if (!routineId) continue;
         targets.set(routine.id, routineId);
         if (routine.completedDates.length) {
@@ -244,7 +282,7 @@ export function useGrowthData(historyDays = 90) {
             .in("session_date", routine.completedDates));
         }
       }
-      const results = await Promise.all(queries);
+      const results = await wait(Promise.all(queries));
       const failed = results.some((result) => result.error);
       const keys = new Set(results.flatMap((result) => result.data ?? [])
         .flatMap((session) => session.routine_id ? [`${session.routine_id}:${session.session_date}`] : []));
@@ -253,7 +291,7 @@ export function useGrowthData(historyDays = 90) {
 
     if (needsMigration) {
       const legacySessions: Array<Record<string, unknown>> = [];
-      const existingCompletions = await lookupCompletedDates(localSource);
+      const existingCompletions = await wait(lookupCompletedDates(localSource));
       if (existingCompletions.failed) {
         setNotice("기기의 이전 완료 기록과 클라우드 기록을 안전하게 비교하지 못했어요. 원본은 보존했으며 다음에 다시 시도합니다.");
         setLoading(false);
@@ -263,7 +301,7 @@ export function useGrowthData(historyDays = 90) {
         const routineId = existingCompletions.targets.get(routine.id);
         if (!routineId) continue;
         const missingDates = routine.completedDates.filter((date) => !existingCompletions.keys.has(`${routineId}:${date}`));
-        const ids = await Promise.all(missingDates.map((date) => getGrowthLegacySessionCloudId(userId, routineId, date)));
+        const ids = await wait(Promise.all(missingDates.map((date) => getGrowthLegacySessionCloudId(userId, routineId, date))));
         missingDates.forEach((date, index) => legacySessions.push({
           id: ids[index],
           user_id: userId,
@@ -278,13 +316,13 @@ export function useGrowthData(historyDays = 90) {
         }));
       }
       if (legacySessions.length) {
-        const migrated = await growthClient.from("growth_sessions").upsert(legacySessions, { onConflict: "id", ignoreDuplicates: true });
+        const migrated = await wait(growthClient.from("growth_sessions").upsert(legacySessions, { onConflict: "id", ignoreDuplicates: true }));
         if (migrated.error) {
           setNotice("기기의 이전 완료 기록을 클라우드로 옮기지 못했어요. 계정별 원본은 보존했으며 다음에 다시 시도합니다.");
           setLoading(false);
           return;
         }
-        const refreshedSessions = await loadSessions();
+        const refreshedSessions = await wait(loadSessions());
         if (refreshedSessions.error) {
           setNotice("이전 기록은 보존했지만 최신 목록을 다시 불러오지 못했어요. 잠시 후 새로고침해 주세요.");
           setLoading(false);
@@ -310,7 +348,7 @@ export function useGrowthData(historyDays = 90) {
       const legacyOwner = readLocalValue(legacyOwnerKey);
       if (legacyRaw && (!legacyOwner || legacyOwner === userId)) {
         const legacyRoutines = parseGrowthRoutines(legacyRaw);
-        const existingCompletions = await lookupCompletedDates(legacyRoutines);
+        const existingCompletions = await wait(lookupCompletedDates(legacyRoutines));
         if (existingCompletions.failed) {
           setLegacyBackupAvailable(false);
           setNotice("이전 기기 백업과 클라우드 기록을 비교하지 못했어요. 이전 백업은 변경하지 않았으니 잠시 후 새로고침해 주세요.");
@@ -319,7 +357,7 @@ export function useGrowthData(historyDays = 90) {
         }
         let ownershipVerified = legacyOwner === userId;
         if (!legacyOwner) {
-          const strongMatches = await Promise.all(legacyRoutines.map((routine) => resolveStrongOwnershipRoutineId(userId, routine, cloudRoutines)));
+          const strongMatches = await wait(Promise.all(legacyRoutines.map((routine) => resolveStrongOwnershipRoutineId(userId, routine, cloudRoutines))));
           if (strongMatches.some(Boolean)) ownershipVerified = writeLocalValue(legacyOwnerKey, userId);
         }
         if (!ownershipVerified) {
@@ -357,17 +395,53 @@ export function useGrowthData(historyDays = 90) {
         cloudRoutines.map((routine) => cloudRoutineToLocal(routine, Array.from(new Set(completedByRoutine.get(routine.id) ?? [])))),
       ))) throw new Error("offline-backup-write-failed");
     } catch {
+      check();
       setNotice((current) => current || "클라우드는 동기화했지만 이 기기의 오프라인 백업을 갱신하지 못했어요.");
     }
     setLoading(false);
-    });
-  }, [historyDays]);
+    }));
+    } catch (error) {
+      if (!lifetime.current.active || sequence !== loadSequence.current) return;
+      try { scope.check(); } catch { return; }
+      setDataReady(false);
+      setLoading(false);
+      setNotice(error instanceof Error ? "기록을 불러오지 못했어요. 다시 확인해 주세요." : "연결을 확인해 주세요.");
+    }
+  }, [historyDays, beginScope]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const lifecycle = lifetime.current;
+    lifecycle.active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const subscription = supabase?.auth.onAuthStateChange((_event, session) => {
+      const owner = session?.user.id ?? null;
+      if (owner === lifecycle.owner) return;
+      lifecycle.epoch += 1;
+      lifecycle.owner = owner;
+      loadSequence.current += 1;
+      setUser(null); setRoutines([]); setSessions([]); setWorkoutRecords(undefined);
+      setDataReady(false); setLoading(true); setLegacyBackupAvailable(false); setNotice("");
+      setPendingRoutineCreate(null); setRoutineCreateBlocked(false); setRoutineCreateReset(false);
+      clearTimeout(timer);
+      // Leave the auth callback before asking the SDK to verify the new owner.
+      timer = setTimeout(() => { void load(); }, 0);
+    });
+    void load();
+    return () => {
+      lifecycle.active = false;
+      lifecycle.epoch += 1;
+      loadSequence.current += 1;
+      clearTimeout(timer);
+      subscription?.data.subscription.unsubscribe();
+    };
+  }, [load]);
 
   const importLegacyBackup = useCallback(async () => {
+    const { check, wait } = beginScope(user?.id);
+    check();
     if (!user) return { error: new Error("로그인이 필요합니다.") };
-    const prepared = await withGrowthSyncLock(user.id, async () => {
+    const prepared = await wait(withGrowthSyncLock(user.id, async () => {
+      check();
       const ownerKey = `${GROWTH_ROUTINES_STORAGE_KEY}:owner`;
       const owner = readLocalValue(ownerKey);
       if (owner !== user.id) return { error: new Error(owner ? "다른 계정이 이미 확인한 백업입니다." : "소유 계정을 확인하지 못한 백업은 안전을 위해 가져올 수 없습니다."), token: null, storageKey: null, syncKey: null };
@@ -385,57 +459,73 @@ export function useGrowthData(historyDays = 90) {
       }
       removeLocalValue(`${storageKey}:cloud-migrated`);
       return { error: null, token, storageKey, syncKey };
-    });
+    }));
     if (prepared.error || !prepared.token || !prepared.storageKey || !prepared.syncKey) return { error: prepared.error ?? new Error("가져오기를 준비하지 못했습니다.") };
     try {
       setLegacyBackupAvailable(false);
-      await load();
+      await wait(load());
     } finally {
-      await withGrowthSyncLock(user.id, async () => {
+      await wait(withGrowthSyncLock(user.id, async () => {
+        check();
         if (readLocalValue(prepared.syncKey!) === prepared.token) removeLocalValue(prepared.syncKey!);
-      });
+      }));
     }
     if (readLocalValue(`${prepared.storageKey}:cloud-migrated`) !== `legacy:${prepared.token}`) {
       return { error: new Error("이전 백업을 모두 확인하지 못했습니다. 원본을 보존했으니 다시 시도해 주세요.") };
     }
     setNotice((current) => current || "이전 기기 루틴과 완료 기록을 이 계정으로 가져왔어요.");
     return { error: null };
-  }, [load, user]);
+  }, [load, user, beginScope]);
 
-  const addRoutine = useCallback(async (input: { id?: string; title: string; category: GrowthCategoryId; targetMinutes: number; preferredDays: number[]; targetSessionsPerWeek: number }) => {
-    if (!supabase || !user) return { error: new Error("로그인이 필요합니다.") };
-    const now = new Date().toISOString();
-    const result = await supabase.from("growth_routines").insert({
-      ...(input.id ? { id: input.id } : {}),
-      user_id: user.id,
-      title: input.title.trim().slice(0, 60),
-      category: input.category,
-      target_minutes: Math.min(240, Math.max(5, Math.round(input.targetMinutes))),
-      preferred_days: normalizeGrowthPreferredDays(input.preferredDays),
-      target_sessions_per_week: normalizeGrowthWeeklyTarget(input.targetSessionsPerWeek, input.preferredDays),
-      enabled: true,
-      sort_order: routines.length,
-      updated_at: now,
-    }).select("*").single();
-    if (!result.error) setRoutines((current) => [...current, result.data as GrowthRoutineRow]);
-    return result;
-  }, [routines.length, user]);
+  const createRoutine = useCallback(async (input: NewGrowthRoutine | null, confirmAfterReset = false) => {
+    const { check, wait } = beginScope(user?.id);
+    check();
+    if (!supabase || !user || !dataReady) return { error: new Error("로그인과 활동 목록을 먼저 확인해 주세요.") };
+    const client = supabase;
+    try {
+      const row = await wait(withGrowthSyncLock(user.id, () => createGrowthRoutineSafely(client, user.id, window.sessionStorage, input, routines.length, check, confirmAfterReset)));
+      setRoutines(current => [...current.filter(routine => routine.id !== row.id), row].sort((a, b) => a.sort_order - b.sort_order));
+      setRoutineCreateReset(false);
+      return { data: row, error: null };
+    } catch (error) {
+      check();
+      setRoutineCreateReset(error instanceof GrowthRoutineResetConfirmation);
+      return { error: error instanceof Error ? error : new Error("활동 저장 결과를 확인하지 못했어요.") };
+    } finally {
+      // A departing view/account must not expose another owner's recovery title.
+      try {
+        check();
+        setPendingRoutineCreate(readPendingGrowthRoutine(window.sessionStorage, user.id));
+        setRoutineCreateBlocked(false);
+      } catch {
+        try { check(); setRoutineCreateBlocked(true); } catch { /* Stale view. */ }
+      }
+    }
+  }, [routines.length, user, dataReady, beginScope]);
+  const addRoutine = useCallback((input: NewGrowthRoutine) => createRoutine(input), [createRoutine]);
+  const recoverRoutineCreate = useCallback((confirmAfterReset = false) => createRoutine(null, confirmAfterReset), [createRoutine]);
 
   const updateRoutine = useCallback(async (routineId: string, updates: Partial<Pick<GrowthRoutineRow, "title" | "category" | "target_minutes" | "preferred_days" | "target_sessions_per_week" | "enabled" | "sort_order">>) => {
+    const { check, wait } = beginScope(user?.id);
+    check();
     if (!supabase || !user) return { error: new Error("로그인이 필요합니다.") };
-    const result = await supabase.from("growth_routines").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", routineId).eq("user_id", user.id).select("*").single();
+    const result = await wait(supabase.from("growth_routines").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", routineId).eq("user_id", user.id).select("*").single());
     if (!result.error) setRoutines((current) => current.map((routine) => routine.id === routineId ? result.data as GrowthRoutineRow : routine));
     return result;
-  }, [user]);
+  }, [user, beginScope]);
 
   const removeRoutine = useCallback(async (routineId: string) => {
+    const { check, wait } = beginScope(user?.id);
+    check();
     if (!supabase || !user) return { error: new Error("로그인이 필요합니다.") };
-    const result = await supabase.from("growth_routines").delete().eq("id", routineId).eq("user_id", user.id);
+    const result = await wait(supabase.from("growth_routines").delete().eq("id", routineId).eq("user_id", user.id));
     if (!result.error) setRoutines((current) => current.filter((routine) => routine.id !== routineId));
     return result;
-  }, [user]);
+  }, [user, beginScope]);
 
   const saveSession = useCallback(async (input: NewSession) => {
+    const { check, wait } = beginScope(user?.id);
+    check();
     if (!supabase || !user) return { error: new Error("로그인이 필요합니다.") };
     const payload = {
       ...(input.id ? { id: input.id } : {}),
@@ -452,25 +542,36 @@ export function useGrowthData(historyDays = 90) {
       ended_at: input.endedAt ?? null,
       updated_at: new Date().toISOString(),
     };
-    let result = await supabase.from("growth_sessions").insert(payload).select("*").abortSignal(AbortSignal.timeout(15000)).single();
+    let result = await wait(supabase.from("growth_sessions").insert(payload).select("*").abortSignal(AbortSignal.timeout(15000)).single());
     // A caller retaining a session ID can recover a committed write after a
     // lost response. Never upsert: later changes must remain untouched.
     if (result.error && input.id) {
-      const recovered = await supabase.from("growth_sessions").select("*").eq("id", input.id).eq("user_id", user.id).abortSignal(AbortSignal.timeout(15000)).maybeSingle();
+      const recovered = await wait(supabase.from("growth_sessions").select("*").eq("id", input.id).eq("user_id", user.id).abortSignal(AbortSignal.timeout(15000)).maybeSingle());
       const row = recovered.data as GrowthSessionRow | null;
       const canonical = (value: unknown): string => JSON.stringify(value, (_key, nested) => nested && typeof nested === 'object' && !Array.isArray(nested) ? Object.fromEntries(Object.entries(nested).sort(([a], [b]) => a.localeCompare(b))) : nested);
       if (!recovered.error && row && row.routine_id === payload.routine_id && row.session_date === payload.session_date && row.status === payload.status && row.actual_minutes === payload.actual_minutes && row.planned_minutes === payload.planned_minutes && row.source === payload.source && row.memo === payload.memo && canonical(row.metrics) === canonical(payload.metrics)) result = { ...result, data: row, error: null, success: true };
     }
     if (!result.error) setSessions((current) => [result.data as GrowthSessionRow, ...current.filter(row => row.id !== result.data.id)]);
     return result;
-  }, [user]);
+  }, [user, beginScope]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
+    const { check, wait } = beginScope(user?.id);
+    check();
     if (!supabase || !user) return { error: new Error("로그인이 필요합니다.") };
-    const result = await supabase.from("growth_sessions").delete().eq("id", sessionId).eq("user_id", user.id);
+    const result = await wait(supabase.from("growth_sessions").delete().eq("id", sessionId).eq("user_id", user.id));
     if (!result.error) setSessions((current) => current.filter((session) => session.id !== sessionId));
     return result;
-  }, [user]);
+  }, [user, beginScope]);
 
-  return { user, routines, sessions, dataReady, workoutRecords, loading, notice, setNotice, legacyBackupAvailable, importLegacyBackup, refresh: load, addRoutine, updateRoutine, removeRoutine, saveSession, deleteSession };
+  const setCompleted = useCallback(async (routine: GrowthRoutineRow, date: string, completed: boolean) => {
+    const { check, wait } = beginScope(user?.id);
+    check();
+    if (!supabase || !user || !dataReady) throw new Error("기록을 불러온 뒤 다시 시도해 주세요.");
+    const client = supabase;
+    await wait(withGrowthSyncLock(user.id, () => { check(); return setChecklistCompletion(client, user.id, routine, date, completed, check); }));
+    await wait(load());
+  }, [user, dataReady, load, beginScope]);
+
+  return { pendingRoutineCreate, routineCreateBlocked, routineCreateReset, recoverRoutineCreate, setCompleted, user, routines, sessions, dataReady, workoutRecords, loading, notice, setNotice, legacyBackupAvailable, importLegacyBackup, refresh: load, addRoutine, updateRoutine, removeRoutine, saveSession, deleteSession };
 }

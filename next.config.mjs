@@ -10,12 +10,25 @@ if (process.env.YEONI_E2E === '1' && (
 const nextConfig = {
   // Vercel에서 자동 최적화
   reactStrictMode: true,
+  outputFileTracingIncludes: {
+    "/api/qa/memory": ["./.generated/memory-preview/payload.json"],
+    "/api/qa/growth": ["./.generated/growth-preview/payload.json"],
+    "/api/qa/japanese": ["./.generated/japanese-preview/payload.json"],
+  },
   // 이미지 최적화 (필요시 도메인 추가)
   images: {
     unoptimized: true,
   },
   async headers() {
     return [
+      {
+        source: "/language/practice/access-check/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
       {
         source: "/assistant/connect",
         headers: [

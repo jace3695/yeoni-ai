@@ -18,7 +18,7 @@ test('last-meal clock review cancels, recovers lost reply, persists fasting prev
   await page.setViewportSize({width:320,height:844});await login(page,qa.account);await synced(page);const before=await qa.read();
   await openCommand(page);const review=reviewFor(page);await expect(review).toContainText('마지막 식사 19:10');await expect(review).toContainText('마지막 식사 00:00');expect(await qa.read()).toEqual(before);
   await review.getByRole('button',{name:'취소',exact:true}).click();await page.reload();await expect(review).toHaveCount(0);expect(await qa.read()).toEqual(before);
-  await page.goto('/assistant');const input=page.getByLabel('연이에게 보낼 명령');await expect(input).toBeEnabled();await input.fill('오늘 마지막 식사 00:00 기록해줘');await input.press('Enter');await expect(review).toBeVisible();
+  await page.goto('/assistant');const input=page.getByLabel('연이에게 하고 싶은 말', { exact: true });await expect(input).toBeEnabled();await input.fill('오늘 마지막 식사 00:00 기록해줘');await input.press('Enter');await expect(review).toBeVisible();
   await page.goto('/assistant/quick');await expect(review).toBeVisible();const draft=await page.evaluate(()=>sessionStorage.getItem('yeoni:task-command-drafts:v1'));await page.reload();await expect(review).toBeVisible();expect(await page.evaluate(()=>sessionStorage.getItem('yeoni:task-command-drafts:v1'))).toBe(draft);
   let lose=true;await page.context().route('**/api/assistant/diet-commands',async route=>{if(route.request().method()==='POST'&&route.request().postDataJSON().decision==='apply'&&lose){lose=false;const response=await route.fetch();expect(response.status()).toBe(200);await route.abort('failed');}else await route.fallback();});
   await review.getByRole('button',{name:'확인하고 저장'}).click();await expect(review.getByRole('alert')).toBeVisible();expect(day(await qa.read()).lastMealTime).toBe('00:00');
@@ -41,7 +41,7 @@ test('time and water commands share history, protect ordering and restore the or
 
 test('stale clock confirmations and later manual meal edits cannot overwrite current records',async({page,qa,browser})=>{
   expect((await qa.account.client.from('user_app_state').update({state:seed()}).eq('user_id',qa.account.id)).error).toBeNull();await login(page,qa.account);await synced(page);await openCommand(page);await expect(reviewFor(page)).toBeVisible();
-  const context=await browser.newContext({viewport:{width:390,height:844},timezoneId:'Asia/Seoul'});await qa.traffic.install(context);
+  const context=await browser.newContext({ serviceWorkers: 'block',viewport:{width:390,height:844},timezoneId:'Asia/Seoul'});await qa.traffic.install(context);
   try{const second=await context.newPage();await login(second,qa.account);await synced(second);await openCommand(second);await expect(reviewFor(second)).toBeVisible();
     await reviewFor(page).getByRole('button',{name:'확인하고 저장'}).click();await expect(receiptFor(page)).toContainText('식단 기록 저장');await reviewFor(second).getByRole('button',{name:'확인하고 저장'}).click();await expect(reviewFor(second).getByRole('alert')).toContainText('다른 곳에서 오늘 식단 기록이 변경');await reviewFor(second).getByRole('button',{name:'확인 화면 닫기',exact:true}).click();
     await second.goto('/diet');await expect(second.getByLabel('마지막 음식·프로틴 섭취시간')).toHaveValue('00:00');await second.getByLabel('마지막 음식·프로틴 섭취시간').fill('00:01');await saveMeal(second,'CI 이후 직접 시각 수정');await mealSaved(second,qa,'CI 이후 직접 시각 수정');const modified=await qa.read();

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useUnsavedChanges } from "../../components/useUnsavedChanges";
 import type {
   InbodyRecordStore,
   WeightGoal,
@@ -35,8 +36,8 @@ function directionLabel(direction: ChangeDirection) {
 }
 
 function metricLabel(metric: MetricChange, unit: string) {
-  if (metric.change === undefined) return "비교 기록 부족";
-  return `${signed(metric.change, unit)} · ${directionLabel(metric.direction)}`;
+  if (metric.change === undefined) return metric.latest === undefined ? "기록 없음" : metric.previous === undefined ? "비교 자료 부족" : "최근 비교 자료 부족";
+  return `${signed(metric.change, unit)} · ${directionLabel(metric.direction)}${metric.sourceVerified ? "" : " · 출처 미확인"}`;
 }
 
 const assessmentTone = {
@@ -55,8 +56,17 @@ export default function WeightChart({
   cutoffDateKey,
   onGoalChange,
 }: Props) {
-  const [minimumDraft, setMinimumDraft] = useState(String(goal.minKg));
-  const [maximumDraft, setMaximumDraft] = useState(String(goal.maxKg));
+  // Pristine inputs follow saved-goal hydration. Once edited, keep the complete
+  // pair until saved or explicitly returned to the currently saved values.
+  const [goalDraft, setGoalDraft] = useState<{ minimum: string; maximum: string } | null>(null);
+  const updateGoalDraft = (next: { minimum: string; maximum: string }) => {
+    const matchesSaved = next.minimum.trim() !== "" && next.maximum.trim() !== ""
+      && Number(next.minimum) === goal.minKg && Number(next.maximum) === goal.maxKg;
+    setGoalDraft(matchesSaved ? null : next);
+  };
+  const minimumDraft = goalDraft?.minimum ?? String(goal.minKg);
+  const maximumDraft = goalDraft?.maximum ?? String(goal.maxKg);
+  useUnsavedChanges(goalDraft !== null);
   const [goalMessage, setGoalMessage] = useState("");
 
   const summary = getWeightManagementSummary(
@@ -136,7 +146,13 @@ export default function WeightChart({
       setGoalMessage("최소 목표는 최대 목표보다 작게, 30~250kg 안에서 입력해주세요.");
       return;
     }
-    onGoalChange({ minKg, maxKg });
+    try {
+      onGoalChange({ minKg, maxKg });
+    } catch {
+      setGoalMessage("목표를 저장하지 못했어요. 입력한 값은 그대로예요. 저장 공간을 확인한 뒤 다시 저장해 주세요.");
+      return;
+    }
+    setGoalDraft(null);
     setGoalMessage(`목표를 ${minKg.toFixed(1)}~${maxKg.toFixed(1)}kg로 저장했습니다.`);
   };
 
@@ -155,7 +171,7 @@ export default function WeightChart({
         <div>
           <p className="text-[12px] font-bold text-[#534AB7]">체중관리</p>
           <h2 className="mt-1 text-[19px] font-extrabold text-gray-900">
-            체중·체지방·골격근을 함께 봐요
+            체중과 측정된 체성분을 봐요
           </h2>
           <p className="mt-1 text-[12px] leading-5 text-gray-500">
             하루 수치보다 7일 평균과 같은 조건의 인바디 변화를 우선합니다.
@@ -363,6 +379,7 @@ export default function WeightChart({
         <summary className="cursor-pointer px-3 py-3 text-[12px] font-bold text-gray-600">
           목표 체중 바꾸기
         </summary>
+        {goalDraft !== null && <p role="status" className="px-3 pt-3 text-[12px] text-amber-800">아직 저장하지 않았어요. 목표를 확인하고 ‘목표 저장’을 눌러 주세요.</p>}
         <form
           onSubmit={saveGoal}
           className="grid gap-3 border-t border-gray-100 p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
@@ -378,7 +395,7 @@ export default function WeightChart({
                 required
                 value={minimumDraft}
                 onChange={(event) => {
-                  setMinimumDraft(event.target.value);
+                  updateGoalDraft({ minimum: event.target.value, maximum: maximumDraft });
                   setGoalMessage("");
                 }}
                 className="min-w-0 flex-1 py-2 text-[14px] outline-none"
@@ -397,7 +414,7 @@ export default function WeightChart({
                 required
                 value={maximumDraft}
                 onChange={(event) => {
-                  setMaximumDraft(event.target.value);
+                  updateGoalDraft({ minimum: minimumDraft, maximum: event.target.value });
                   setGoalMessage("");
                 }}
                 className="min-w-0 flex-1 py-2 text-[14px] outline-none"
@@ -422,9 +439,6 @@ export default function WeightChart({
           </p>
         )}
       </details>
-      <p className="mt-3 text-[10px] leading-4 text-gray-400">
-        인바디의 작은 변화는 수분·식사·측정 시간에 따라 달라질 수 있어 체지방률 ±0.3%p, 골격근량 ±0.2kg 이내는 유지로 표시합니다.
-      </p>
     </section>
   );
 }

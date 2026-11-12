@@ -55,7 +55,7 @@ test('shortcut auto-parses without saving; cancel and reload stay unchanged, con
 test('chat creates a reviewed task; two browser sessions cannot confirm stale changes, and update undo restores reviewed fields', async ({ page, qa, browser }) => {
   await login(page, qa.account); await synced(page);
   await page.goto('/assistant');
-  const input = page.getByLabel('연이에게 보낼 명령');
+  const input = page.getByLabel('연이에게 하고 싶은 말', { exact: true });
   await expect(input).toBeEnabled();
   await input.fill('오늘 할 일에 합성 보고서 추가해줘');
   await input.press('Enter');
@@ -70,7 +70,7 @@ test('chat creates a reviewed task; two browser sessions cannot confirm stale ch
   await expect(page.getByText(/할 일 추가 완료/)).toBeVisible();
   const before = (await qa.account.client.from('assistant_items').select('*').single()).data!;
 
-  const second = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const second = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } });
   await qa.traffic.install(second);
   const otherPage = await second.newPage();
   try {

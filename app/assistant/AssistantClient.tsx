@@ -1,11 +1,21 @@
 "use client";
 
+import readability from "./assistant-readability.module.css";
+import RecordReplyStatus from '@/components/yeoni/RecordReplyStatus';
+import { rollingReplySource } from '@/lib/yeoni/record-reply-sources';
+import { assistantGuidance, guidanceText } from "@/lib/yeoni/record-guidance";
+import CommonCharacterSlot from '@/components/yeoni/CommonCharacterSlot';
 import { useUnsavedChanges } from "@/components/useUnsavedChanges";
+import { clearAssistantChatInputDraft, openAssistantChatInputDraft, updateAssistantChatInputDraft, type AssistantChatDraftLease } from '@/lib/assistant-chat-input-draft';
+import { stageBodyArchiveDraft } from '@/lib/body-archive-draft';
+import type { BodyAnalysisSnapshot } from '@/lib/body-analysis-history';
+import AssistantListEmptyState, { type AssistantListFilter } from "@/components/AssistantListEmptyState";
 import AppCompanion from "@/components/AppCompanion";
 import dynamic from 'next/dynamic';
 import { adviceSpokenText, type ReplyPlan } from '@/lib/yeoni/reply-plan';
 import { stopAllSpeech } from '@/lib/yeoni/speech-focus';
 import DailyBriefing from "@/components/DailyBriefing";
+import HomeOverview from "@/components/HomeOverview";
 import { ADVICE_QUESTIONS } from '@/lib/assistant-advice-intent';
 import { isFreeAdviceScope, type FreeAdviceScope, type FreeAdviceContext } from '@/lib/free-advice-context';
 import type { FreeAdvice } from '@/lib/free-advice';
@@ -14,6 +24,7 @@ import ZephyrReadButton from '@/components/ZephyrReadButton';
 import { AssistantCommandReview } from '@/components/AssistantCommandReview';
 import type { AssistantCommandProposal } from '@/lib/assistant-command-drafts';
 import { useTaskCommandDrafts } from '@/hooks/useTaskCommandDrafts';
+import { createManualEntryAttempt, sendManualEntry, checkManualEntry, waitForManualEntryAuth, ManualEntryTimeoutError, type ManualEntryAttempt, type ManualEntryResult, type ManualEntryTransport } from '@/lib/assistant-entry-recovery';
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
@@ -43,8 +54,11 @@ import {
 } from "../data/assistantWeeklyBriefing";
 import { isGrowthRoutineScheduled, summarizeGrowthRoutineWeek } from "../data/growthSchedule";
 import { isRetiredGrowthRoutine } from "../data/growthRoutines";
+import { buildLocalBodyNarrative, isLocalBodyQuestion, shouldUseLocalBodyConversation, LOCAL_BODY_NOTICE, remoteChatHistory } from '../data/localBodyConversation';
+import { readLocalBodyReview } from '../data/readLocalBodyReview';
+import { RECORDS_CHANGED_EVENT } from '../data/storageTransaction';
 
-type Filter = "all" | "task" | "project" | "waiting" | "memory";
+type Filter = AssistantListFilter;
 type Item = {
   id: string;
   user_id: string;
@@ -80,7 +94,7 @@ type BriefingSnapshot = {
   language: LanguageDailyStatus;
   growth: { completed: number; total: number; minutes: number };
 };
-type ChatMessage = { id: string; role: "user" | "assistant"; text: string; action?: { label: string; href: string }; proposal?: AssistantCommandProposal };
+type ChatMessage = { id: string; role: "user" | "assistant"; text: string; localOnly?: boolean; historyOnly?: boolean; ownerId?: string; action?: { label: string; href: string }; proposal?: AssistantCommandProposal };
 type StoredChatMessage = { id: string; role: "user" | "assistant"; content: string; action_label: string | null; action_href: string | null };
 
 const EMPTY_BRIEFING: BriefingSnapshot = {
@@ -122,6 +136,12 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
   const [weeklyBriefing, setWeeklyBriefing] = useState<AssistantWeeklyBriefing | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [title, setTitle] = useState("");
+  const entryDetailsRef = useRef<HTMLDetailsElement>(null);
+  const entryInputRef = useRef<HTMLInputElement>(null);
+  const showEntryForm = () => {
+    if (entryDetailsRef.current) entryDetailsRef.current.open = true;
+    entryInputRef.current?.focus();
+  };
   const [kind, setKind] = useState<Exclude<Filter, "all">>("task");
   const [entryPriority, setEntryPriority] = useState(3);
   const [entryDueDate, setEntryDueDate] = useState("");
@@ -132,7 +152,12 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
   const [lastLoadedAt, setLastLoadedAt] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [chatInput, setChatInput] = useState("");
+  const [chatInput, setChatInputState] = useState("");
+  const chatDraftLease = useRef<AssistantChatDraftLease | null>(null);
+  const setChatInput = useCallback((value: string, userEdit = false) => {
+    setChatInputState(value);
+    if (chatDraftLease.current) updateAssistantChatInputDraft(chatDraftLease.current, value, userEdit);
+  }, []);
   const [chatSending, setChatSending] = useState(false);
   const [activeAdvice, setActiveAdvice] = useState<{ id: string; scope: FreeAdviceScope; question: string } | null>(null);
   const [adviceBusy, setAdviceBusy] = useState(false);
@@ -140,6 +165,17 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
   const [chatHistoryLoading, setChatHistoryLoading] = useState(true);
   const [chatHistoryNotice, setChatHistoryNotice] = useState("");
   const pending = useTaskCommandDrafts();
+  const entryLock = useRef<object | null>(null);
+  const entryAttempt = useRef<ManualEntryAttempt | null>(null);
+  const [entryRecovery, setEntryRecovery] = useState<{ attempt: ManualEntryAttempt; result: ManualEntryResult } | null>(null);
+  const entryDraftSignature = useRef("");
+  const dashboardRead = useRef({ version: 0, mounted: true });
+  useEffect(() => {
+    const lifecycle = dashboardRead.current;
+    lifecycle.mounted = true;
+    return () => { lifecycle.mounted = false; lifecycle.version++; };
+  }, []);
+  entryDraftSignature.current = JSON.stringify([title, kind, entryPriority, entryDueDate, entryProjectId, entryRecurrence]);
   const [characterReply, setCharacterReply] = useState<{ ownerId: string | null; value: unknown } | null>(null);
   const clearCharacter = useCallback(() => { stopAllSpeech(); setCharacterReply(null); }, []);
   const changeAdviceBusy = useCallback((busy: boolean) => {
@@ -148,26 +184,99 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
   }, [clearCharacter]);
   useEffect(() => () => stopAllSpeech(), [pending.ownerId]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
+  const localBodySessionInvalid = useRef(false);
+  const localBodyOwner = useRef<string | null>(null);
+  const chatEpoch = useRef(0);
+  const chatSendId = useRef(0);
+  const chatHistoryId = useRef(0);
+  const [localBodyActive, setLocalBodyActive] = useState(false);
+  const [localBodyCandidate, setLocalBodyCandidate] = useState<{ ownerId: string; snapshot: BodyAnalysisSnapshot; question?: string } | null>(null);
+  useEffect(() => {
+    chatDraftLease.current = null;
+    const resetManualEntry = () => {
+      entryAttempt.current = null; setEntryRecovery(null);
+      entryLock.current = null; setSaving(false); setTitle(""); setMessage("");
+      setEntryDueDate(""); setEntryProjectId(""); setEntryPriority(3); setEntryRecurrence("none");
+    };
+    const resetDashboard = () => {
+      dashboardRead.current.version++;
+      setItems([]); setProjects([]); setMemories([]);
+      setBriefing(EMPTY_BRIEFING); setWeeklyBriefing(null);
+      setLastLoadedAt(""); setLoadFailures([]); setLoading(Boolean(pending.ownerId));
+    };
+    resetManualEntry();
+    resetDashboard();
+    if (localBodyOwner.current && localBodyOwner.current !== pending.ownerId) localBodySessionInvalid.current = true;
+    localBodyOwner.current = pending.ownerId;
+    const clear = () => { setLocalBodyCandidate(null); setChatMessages(items => items.filter(item => !item.localOnly)); };
+    const invalidate = () => {
+      clearAssistantChatInputDraft(); chatDraftLease.current = null;
+      resetManualEntry();
+      resetDashboard();
+      localBodySessionInvalid.current = true;
+      chatEpoch.current += 1;
+      chatSendId.current += 1;
+      setLocalBodyCandidate(null); setChatMessages([WELCOME_MESSAGE]); setChatInput(''); setActiveAdvice(null); setAdviceBusy(false);
+      clearCharacter(); chatLock.current = false; setChatSending(false); setChatHistoryLoading(false);
+    };
+    const storage = (event: StorageEvent) => {
+      if (event.key === null || event.key === 'fitness-cloud-sync-user' || event.key === 'fitness-cloud-sync-epoch') invalidate();
+      else clear();
+    };
+    chatEpoch.current += 1;
+    chatSendId.current += 1;
+    setLocalBodyCandidate(null); setChatMessages([WELCOME_MESSAGE]); setChatInput(''); setActiveAdvice(null); setAdviceBusy(false);
+    clearCharacter(); chatLock.current = false; setChatSending(false);
+    if (pending.ownerId) {
+      chatDraftLease.current = openAssistantChatInputDraft(pending.ownerId);
+      setChatInputState(chatDraftLease.current.text);
+    }
+    const authSubscription = supabase?.auth.onAuthStateChange((event, session) => {
+      if (pending.ownerId && (event === 'SIGNED_OUT' || session?.user.id !== pending.ownerId)) invalidate();
+    });
+    window.addEventListener(RECORDS_CHANGED_EVENT, clear);
+    window.addEventListener('yeoni-cloud-session-changed', invalidate);
+    window.addEventListener('storage', storage);
+    return () => {
+      // Revoke pending chat/advice work before this owner view leaves.
+      chatEpoch.current += 1;
+      chatSendId.current += 1;
+      chatDraftLease.current = null;
+      authSubscription?.data.subscription.unsubscribe();
+      entryLock.current = null;
+      window.removeEventListener(RECORDS_CHANGED_EVENT, clear);
+      window.removeEventListener('yeoni-cloud-session-changed', invalidate);
+      window.removeEventListener('storage', storage);
+    };
+  }, [pending.ownerId, clearCharacter, setChatInput]);
   const mutationLocks = useRef(new Set<string>());
   const [busyIds, setBusyIds] = useState<string[]>([]);
-  useUnsavedChanges(Boolean(title.trim() || chatInput.trim() || saving || chatSending || adviceBusy));
+  useUnsavedChanges(Boolean(title.trim() || chatInput.trim() || saving || chatSending || adviceBusy || entryRecovery));
   const chatBoxRef = useRef<HTMLDivElement>(null);
 
+  const initialAdviceApplied = useRef(false);
   useEffect(() => {
+    // Initial auth clears drafts. Prefill afterwards, once per mounted page;
+    // an account change must never restore the previous entry question.
+    if (!pending.ready || !pending.ownerId || initialAdviceApplied.current) return;
+    initialAdviceApplied.current = true;
+    if (localBodySessionInvalid.current) return;
     const scope = new URLSearchParams(window.location.search).get('advice');
-    if (isFreeAdviceScope(scope)) setChatInput(ADVICE_QUESTIONS[scope]);
-  }, []);
+    if (isFreeAdviceScope(scope) && !chatDraftLease.current?.text.trim()) setChatInput(ADVICE_QUESTIONS[scope]);
+  }, [pending.ready, pending.ownerId, setChatInput]);
 
   const finishAdvice = async (advice: FreeAdvice, source: FreeAdviceContext['recordSource'], performance?: ReplyPlan) => {
     if (!supabase) return;
+    const epoch = chatEpoch.current;
     const text = [source === 'example' ? '【가상 예시 기록의 AI 조언】' : '【내 기록을 바탕으로 한 AI 조언】',
       advice.summary, ...advice.nextSteps.map((step, index) => `${index + 1}. ${step}`),
       `기록 근거: ${advice.basis}`, advice.limitations, '조언은 기록이나 계획을 자동으로 바꾸지 않아요.'].join('\n');
     const id = crypto.randomUUID();
     const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user || auth.user.id !== pending.ownerId) throw new Error('로그인 계정이 바뀌었어요. 기록을 다시 확인해 주세요.');
+    if (!auth.user || auth.user.id !== pending.ownerId || auth.user.id !== localBodyOwner.current || epoch !== chatEpoch.current) throw new Error('로그인 계정이 바뀌었어요. 기록을 다시 확인해 주세요.');
     const { error } = await supabase.from('assistant_chat_messages').insert({ id, user_id: auth.user.id, role: 'assistant', content: text });
-    setChatMessages(current => [...current, { id, role: 'assistant', text }]);
+    if (auth.user.id !== localBodyOwner.current || epoch !== chatEpoch.current) return;
+    setChatMessages(current => [...current, { id, role: 'assistant', text, ownerId: auth.user.id }]);
     if (characterAudio && performance) setCharacterReply({ ownerId: auth.user.id, value: { reply: adviceSpokenText(advice), performance } });
     setActiveAdvice(null);
     setAdviceBusy(false);
@@ -180,18 +289,23 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
     window.location.reload();
   };
 
-  const loadChatHistory = useCallback(async () => {
+  const loadChatHistory = useCallback(async (ownerId: string) => {
     if (!supabase) return;
+    const requestId = ++chatHistoryId.current;
+    const epoch = chatEpoch.current;
+    const isCurrent = () => requestId === chatHistoryId.current && epoch === chatEpoch.current && localBodyOwner.current === ownerId;
     setChatHistoryLoading(true);
     setChatHistoryNotice("");
+    try {
     const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) { setChatHistoryLoading(false); return; }
+    if (auth.user?.id !== ownerId || !isCurrent()) return;
     const { data, error } = await supabase
       .from("assistant_chat_messages")
       .select("id,role,content,action_label,action_href")
       .eq("user_id", auth.user.id)
       .order("created_at", { ascending: false })
       .limit(40);
+    if (!isCurrent()) return;
     if (error) {
       setChatHistoryNotice("지난 대화를 불러오지 못했어요. 새 대화는 계속할 수 있습니다.");
     } else {
@@ -199,51 +313,98 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
         id: row.id,
         role: row.role,
         text: row.content,
-        action: row.action_label && row.action_href && row.action_href !== "/growth/drawing" ? { label: row.action_label, href: row.action_href } : undefined,
+        historyOnly: true,
+        ownerId,
       }));
+      if (restored.some(item => isLocalBodyQuestion(item.text))) setLocalBodyActive(true);
       setChatMessages([WELCOME_MESSAGE, ...restored]);
     }
-    setChatHistoryLoading(false);
+    } catch {
+      if (isCurrent()) setChatHistoryNotice("지난 대화를 불러오지 못했어요. 화면을 다시 열어 확인해 주세요.");
+    } finally {
+      if (isCurrent()) setChatHistoryLoading(false);
+    }
   }, []);
 
   const sendChat = async (command?: string) => {
     const value = (command ?? chatInput).trim();
     if (!value || !supabase || chatLock.current || adviceBusy || chatHistoryLoading || !pending.ready) return;
+    if (shouldUseLocalBodyConversation(value, localBodyActive)) {
+      setLocalBodyActive(true);
+      clearCharacter();
+      setActiveAdvice(null);
+      setChatInput('');
+      let text: string;
+      try {
+        if (localBodySessionInvalid.current || !pending.ownerId || localBodyOwner.current !== pending.ownerId || window.localStorage.getItem('fitness-cloud-sync-user') !== pending.ownerId) {
+          throw new Error('계정의 로컬 기록을 확인할 수 없습니다. 화면을 새로 열고 동기화 상태를 확인해 주세요.');
+        }
+        if (isLocalBodyQuestion(value)) {
+          const review = readLocalBodyReview(), narrative = buildLocalBodyNarrative(review);
+          setLocalBodyCandidate({ ownerId: pending.ownerId, snapshot: { version: 1, source: 'local-rules', date: review.body.today, text: narrative }, question: value });
+          text = `${LOCAL_BODY_NOTICE}\n\n${narrative}`;
+        } else text = '체성분 대화의 후속 질문은 서버로 보내지 않습니다. 수치의 의미나 의료적 판단을 추측하지 않겠습니다. 현재 기록을 다시 보려면 “체성분 점검”을 입력하세요. 다른 주제라면 “기존 일반 대화로 돌아가기”를 선택하세요.';
+      } catch {
+        setLocalBodyCandidate(null);
+        text = '계정 또는 로컬 기록을 확인하지 못했습니다. 화면을 새로 열고 기록을 확인해 주세요. 이 질문은 서버로 보내거나 저장하지 않았습니다.';
+      }
+      const ownerId = pending.ownerId ?? undefined;
+      setChatMessages(items => {
+        const retained = new Set(items.filter(item => item.localOnly && item.ownerId === ownerId).slice(-18).map(item => item.id));
+        return [
+          ...items.filter(item => !item.localOnly || retained.has(item.id)),
+          { id: crypto.randomUUID(), role: 'user', text: value, localOnly: true, ownerId },
+          { id: crypto.randomUUID(), role: 'assistant', text, localOnly: true, ownerId },
+        ];
+      });
+      return;
+    }
     chatLock.current = true;
     clearCharacter();
     const replyOwner = pending.ownerId;
+    const epoch = chatEpoch.current;
+    const sendId = ++chatSendId.current;
+    const isCurrent = () => epoch === chatEpoch.current && localBodyOwner.current === replyOwner && sendId === chatSendId.current;
     setActiveAdvice(null);
     setChatInput("");
     setChatSending(true);
-    const history = chatMessages.filter((chat) => chat.id !== "welcome").slice(-8).map(({ role, text }) => ({ role, text }));
-    setChatMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", text: value }]);
+    const history = remoteChatHistory(chatMessages);
+    setChatMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", text: value, ownerId: replyOwner ?? undefined }]);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
+      if (!isCurrent() || sessionData.session?.user.id !== replyOwner) return;
       if (!token) throw new Error("로그인이 필요합니다.");
       const response = await fetch("/api/assistant/chat", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ message: value, history }) });
       const data = await response.json();
+      if (!isCurrent()) return;
       if (!response.ok) throw new Error(data.error || "응답을 받지 못했습니다.");
-      if (data.adviceRequest && isFreeAdviceScope(data.adviceRequest.scope)) {
+      if (!isLocalBodyQuestion(String(data.reply ?? '')) && data.adviceRequest && isFreeAdviceScope(data.adviceRequest.scope)) {
         setActiveAdvice({ id: crypto.randomUUID(), scope: data.adviceRequest.scope, question: value });
       }
       if (data.proposal) await pending.add(data.proposal, sessionData.session!.user.id);
-      setChatMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: data.reply, action: data.adviceRequest ? undefined : data.action }]);
-      if (characterAudio) setCharacterReply({ ownerId: replyOwner, value: { reply: data.reply, performance: data.performance, historySaved: data.historySaved } });
+      const protectedReply = isLocalBodyQuestion(String(data.reply ?? ''));
+      if (protectedReply) setLocalBodyActive(true);
+      setChatMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: data.reply, ownerId: replyOwner ?? undefined, localOnly: protectedReply, action: data.adviceRequest || protectedReply ? undefined : data.action }]);
+      if (characterAudio && !protectedReply) setCharacterReply({ ownerId: replyOwner, value: { reply: data.reply, performance: data.performance, historySaved: data.historySaved } });
       if (data.historySaved === false) setChatHistoryNotice("응답은 받았지만 대화 이력을 저장하지 못했어요. 새로고침하면 이 대화가 보이지 않을 수 있어요.");
       if (data.changed) await load();
     } catch (error) {
-      setChatMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: error instanceof Error ? error.message : "잠시 후 다시 시도해 주세요." }]);
-    } finally { chatLock.current = false; setChatSending(false); }
+      if (isCurrent()) setChatMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: error instanceof Error ? error.message : "잠시 후 다시 시도해 주세요.", ownerId: replyOwner ?? undefined, localOnly: true }]);
+    } finally { if (isCurrent()) { chatLock.current = false; setChatSending(false); } }
   };
 
-  const load = useMemo(() => createQueuedRefresh(async () => {
-    if (!supabase) return;
+  const load = useMemo(() => {
+    const refresh = createQueuedRefresh(async () => {
+    const version = dashboardRead.current.version, epoch = chatEpoch.current, owner = localBodyOwner.current;
+    const isCurrent = () => dashboardRead.current.mounted && version === dashboardRead.current.version && epoch === chatEpoch.current && owner === localBodyOwner.current;
+    if (!supabase || !owner || !isCurrent()) return;
     setLoading(true);
-    setMessage("");
+    // A background list refresh must not erase an explicit save result.
     try {
     const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) { setLoadFailures(["로그인 확인"]); return; }
+    if (!isCurrent()) return;
+    if (auth.user?.id !== owner) { setLoadFailures(["로그인 확인"]); return; }
 
     const now = new Date();
     const todayKey = getLocalDateKey(now);
@@ -261,6 +422,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
       supabase.from("growth_routines").select("*").eq("user_id", auth.user.id).eq("enabled", true),
       supabase.from("growth_sessions").select("routine_id,session_date,actual_minutes,status").eq("user_id", auth.user.id).gte("session_date", weeklyStartKey).lte("session_date", todayKey),
     ]);
+    if (!isCurrent()) return;
     const failures = [
       itemResult.error && '할 일', projectResult.error && '프로젝트', memoryResult.error && '기억',
       (budgetResult.error || monthlyBudgetResult.error) && '가계부', fitnessResult.error && '운동·식단',
@@ -312,39 +474,144 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
       },
     }));
     if (!failures.length) setLastLoadedAt(new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
-    } catch { setLoadFailures(['연결 확인']); }
-    finally { setLoading(false); }
-  }), []);
+    } catch { if (isCurrent()) setLoadFailures(['연결 확인']); }
+    finally { if (isCurrent()) setLoading(false); }
+    });
+    return () => {
+      // Invalidate the old response as soon as a refresh is requested, even
+      // while the coalescer is waiting for the previous request to finish.
+      dashboardRead.current.version++;
+      return refresh();
+    };
+  }, []);
 
-  useEffect(() => { void load(); void loadChatHistory(); }, [load, loadChatHistory]);
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible') void load(); };
+    if (pending.ready && pending.ownerId) void load();
+    else if (pending.ready) setLoading(false);
+  }, [load, pending.ready, pending.ownerId]);
+  useEffect(() => {
+    if (!pending.ready) return;
+    if (pending.ownerId) void loadChatHistory(pending.ownerId);
+    else setChatHistoryLoading(false);
+  }, [pending.ready, pending.ownerId, loadChatHistory]);
+  useEffect(() => {
+    let observedDay = getLocalDateKey();
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      observedDay = getLocalDateKey();
+      void load();
+    };
+    // Browsers may throttle hidden tabs; visibility refresh catches missed midnight checks.
+    const dayTimer = window.setInterval(() => {
+      if (getLocalDateKey() !== observedDay) refresh();
+    }, 30_000);
     window.addEventListener('focus', refresh);
     window.addEventListener('online', refresh);
     document.addEventListener('visibilitychange', refresh);
-    return () => { window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
+    return () => { window.clearInterval(dayTimer); window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [load]);
   useEffect(() => {
     const box = chatBoxRef.current;
-    if (box) box.scrollTop = box.scrollHeight;
+    if (!box) return;
+    const messages = box.querySelectorAll<HTMLElement>('[data-chat-message]');
+    const latest = messages[messages.length - 1];
+    // Start a new answer at its beginning, not at the controls after a long reply.
+    if (!chatSending && latest?.dataset.chatRole === 'assistant') {
+      const padding = Number.parseFloat(getComputedStyle(box).paddingTop) || 0;
+      box.scrollTop = Math.max(0, box.scrollTop + latest.getBoundingClientRect().top - box.getBoundingClientRect().top - padding);
+    } else box.scrollTop = box.scrollHeight;
   }, [chatHistoryLoading, chatMessages, chatSending]);
 
+  const entryTransport: ManualEntryTransport = {
+    insert: async (attempt) => {
+      const { error, status } = await supabase!.from(attempt.table).insert(attempt.payload);
+      return { error, status };
+    },
+    find: async (attempt) => {
+      const { data, error } = await supabase!.from(attempt.table).select(Object.keys(attempt.payload).join(','))
+        .eq('user_id', attempt.owner).eq('id', attempt.id).maybeSingle();
+      return { data, error };
+    },
+  };
+  const finishManualEntry = async (attempt: ManualEntryAttempt, result: ManualEntryResult, isCurrent: () => boolean) => {
+    if (!isCurrent() || result.state === 'stale') return;
+    if (result.state === 'saved') {
+      entryAttempt.current = null; setEntryRecovery(null);
+      if (entryDraftSignature.current === attempt.signature) {
+        setTitle(""); setEntryDueDate(""); setEntryProjectId(""); setEntryPriority(3); setEntryRecurrence("none");
+      }
+      // Saving is already acknowledged. A slow dashboard read must not keep
+      // this independent form locked or turn success into an uncertain save.
+      void load();
+      if (isCurrent()) setMessage("항목 저장을 확인했어요.");
+    } else if (result.state === 'rejected') {
+      entryAttempt.current = null; setEntryRecovery(null);
+      setMessage("서버가 저장을 거절했어요. 입력을 확인한 뒤 다시 추가해 주세요.");
+    } else {
+      setEntryRecovery({ attempt, result });
+      setMessage("저장을 확인하지 못했어요. 아래에서 저장 결과부터 확인해 주세요.");
+    }
+  };
   const addEntry = async (event: FormEvent) => {
     event.preventDefault();
     const value = title.trim();
-    if (!value || !supabase) return;
+    const owner = pending.ownerId;
+    if (!value || !supabase || !pending.ready || !owner || entryLock.current || entryAttempt.current) return;
+    const ticket = {}, epoch = chatEpoch.current, submittedDraft = entryDraftSignature.current;
+    entryLock.current = ticket;
+    const isCurrent = () => entryLock.current === ticket && chatEpoch.current === epoch && localBodyOwner.current === owner;
     setSaving(true);
     setMessage("");
-    const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) { setSaving(false); return; }
-    const result = kind === "project"
-      ? await supabase.from("assistant_projects").insert({ user_id: auth.user.id, name: value, status: "active", priority: 3 })
+    try {
+      const { data: auth } = await waitForManualEntryAuth(supabase.auth.getUser());
+      if (!isCurrent()) return;
+      if (auth.user?.id !== owner) throw Error('owner changed');
+      const table = kind === 'project' ? 'assistant_projects' : kind === 'memory' ? 'assistant_memories' : 'assistant_items';
+      const values = kind === "project"
+      ? { name: value, status: "active", priority: 3 }
       : kind === "memory"
-        ? await supabase.from("assistant_memories").insert({ user_id: auth.user.id, topic: "일반", content: value, source: "manual", tags: [] })
-      : await supabase.from("assistant_items").insert({ user_id: auth.user.id, title: value, kind, status: kind === "waiting" ? "waiting" : "open", priority: entryPriority, due_at: entryDueDate ? `${entryDueDate}T23:59:00+09:00` : null, project_id: entryProjectId || null, recurrence_rule: entryRecurrence });
-    if (result.error) setMessage("저장하지 못했습니다. 입력 내용을 확인해 주세요.");
-    else { setTitle(""); setEntryDueDate(""); setEntryProjectId(""); setEntryPriority(3); setEntryRecurrence("none"); await load(); }
-    setSaving(false);
+        ? { topic: "일반", content: value, source: "manual", tags: [] }
+      : { title: value, kind, status: kind === "waiting" ? "waiting" : "open", priority: entryPriority, due_at: entryDueDate ? `${entryDueDate}T23:59:00+09:00` : null, project_id: entryProjectId || null, recurrence_rule: entryRecurrence };
+      const attempt = createManualEntryAttempt(owner, table, values, submittedDraft, value);
+      entryAttempt.current = attempt;
+      await finishManualEntry(attempt, await sendManualEntry(attempt, entryTransport, isCurrent), isCurrent);
+    } catch (error) {
+      if (isCurrent()) setMessage(error instanceof ManualEntryTimeoutError && error.stage === 'auth'
+        ? "로그인 확인이 오래 걸려 멈췄어요. 저장은 시작하지 않았고 입력은 그대로예요. 로그인 상태를 확인한 뒤 다시 시도해 주세요."
+        : "저장을 확인하지 못했어요. 입력은 유지했어요. 목록을 확인한 뒤 다시 시도해 주세요.");
+    } finally {
+      if (entryLock.current === ticket) {
+        const current = isCurrent();
+        entryLock.current = null;
+        if (current) setSaving(false);
+      }
+    }
+  };
+
+  const recoverManualEntry = async (mode: 'check' | 'retry') => {
+    const attempt = entryAttempt.current, owner = pending.ownerId;
+    if (!supabase || !pending.ready || !owner || !attempt || attempt.owner !== owner || entryLock.current) return;
+    if (mode === 'retry' && (entryRecovery?.attempt !== attempt || entryRecovery.result.state !== 'missing')) return;
+    const ticket = {}, epoch = chatEpoch.current;
+    entryLock.current = ticket;
+    const isCurrent = () => entryLock.current === ticket && chatEpoch.current === epoch && localBodyOwner.current === owner;
+    setSaving(true); setMessage("");
+    try {
+      const { data: auth } = await waitForManualEntryAuth(supabase.auth.getUser());
+      if (!isCurrent()) return;
+      if (auth.user?.id !== owner) throw Error('owner changed');
+      const result = mode === 'check' ? await checkManualEntry(attempt, entryTransport, isCurrent) : await sendManualEntry(attempt, entryTransport, isCurrent);
+      await finishManualEntry(attempt, result, isCurrent);
+    } catch (error) { if (isCurrent()) setMessage(error instanceof ManualEntryTimeoutError && error.stage === 'auth'
+      ? "로그인 확인이 오래 걸려 멈췄어요. 이전 저장 여부는 아직 몰라요. 확인 번호는 유지했으니 로그인 상태를 확인한 뒤 결과 확인을 다시 눌러 주세요."
+      : "저장 결과를 확인하지 못했어요. 새 항목으로 다시 추가하지 말고 로그인과 연결 상태를 확인해 주세요."); }
+    finally {
+      if (entryLock.current === ticket) {
+        const current = chatEpoch.current === epoch && localBodyOwner.current === owner;
+        entryLock.current = null;
+        if (current) setSaving(false);
+      }
+    }
   };
 
   const toggleItem = async (item: Item) => {
@@ -377,7 +644,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
   };
 
   const clearChatHistory = async () => {
-    if (!supabase || chatSending || adviceBusy || chatMessages.length <= 1 || !window.confirm("연이와 나눈 지난 대화를 모두 지울까요? 할 일·기억·운동 기록은 지워지지 않습니다.")) return;
+    if (!supabase || chatSending || adviceBusy || chatMessages.filter(item => !item.localOnly).length <= 1 || !window.confirm("연이와 나눈 지난 대화를 모두 지울까요? 할 일·기억·운동 기록은 지워지지 않습니다.")) return;
     const { data: auth } = await supabase.auth.getUser();
     if (!auth.user) return;
     const { error } = await supabase.from("assistant_chat_messages").delete().eq("user_id", auth.user.id);
@@ -407,6 +674,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
   const waiting = items.filter((item) => item.kind === "waiting" && !["completed", "cancelled"].includes(item.status)).length;
   const todayKey = getLocalDateKey();
   const unavailableAll = loadFailures.includes('연결 확인') || loadFailures.includes('로그인 확인');
+  const welcomeText = guidanceText(assistantGuidance(loading || !pending.ready ? "loading" : !pending.ownerId || unavailableAll || loadFailures.includes("할 일") ? "error" : "ready", items.filter(item => item.user_id === pending.ownerId && item.kind !== "waiting" && !["completed", "cancelled"].includes(item.status)).length));
   const nextActionInput = {
     items,
     budget: briefing.budget,
@@ -443,74 +711,82 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
     </header>
 
     <div className="yeoni-page-content">
-      <section id="yeoni-chat" aria-label="연이에게 말하기" className="scroll-mt-24 rounded-[28px] border border-white bg-white p-4 shadow-sm sm:p-6">
+      <HomeOverview action={nextAction} loading={loading} failures={loadFailures} lastLoadedAt={lastLoadedAt} onRetry={() => void load()} />
+      <section id="yeoni-chat" aria-label="연이에게 말하기" className="mt-5 scroll-mt-24 rounded-[28px] border border-white bg-white p-4 shadow-sm sm:p-6">
         <div className="flex items-start justify-between gap-3">
-          <div><h2 className="text-xl font-bold">연이에게 말하기</h2><p className="mt-1 text-sm text-gray-500">기록 확인·입력·무료 AI 조언을 한곳에서.</p></div>
+          <div><h2 className="text-xl font-bold">연이에게 말하기</h2><p id="assistant-start-help" className="mt-1 text-sm text-gray-500">하고 싶은 일을 적은 뒤, 보내기를 눌러 주세요.</p></div>
         </div>
-        <div className="mt-3">{characterAudio ? <AssistantCharacter key={pending.ownerId ?? 'signed-out'} audio={characterAudio}
-          incoming={characterReply?.ownerId === pending.ownerId ? characterReply : null} busy={chatSending || adviceBusy} />
-          : <AppCompanion compact embedded quiet={chatSending}>오늘은 무엇을 도와드릴까요?</AppCompanion>}</div>
         <form onSubmit={(event) => { event.preventDefault(); void sendChat(); }} className="mt-3 flex gap-2">
-          <label htmlFor="assistant-chat-input" className="sr-only">연이에게 보낼 명령</label><input id="assistant-chat-input" value={chatInput} disabled={chatHistoryLoading || adviceBusy} onChange={(event) => setChatInput(event.target.value)} maxLength={500} placeholder="예: 오늘 운동 알려줘 / 요즘 운동 잘하고 있어?" className="min-w-0 flex-1 rounded-2xl border-0 bg-yeoni-bg px-4 py-3 text-base outline-none ring-1 ring-gray-100 focus:ring-[#7F77DD] disabled:opacity-50" />
-          <button disabled={chatSending || adviceBusy || chatHistoryLoading || !chatInput.trim()} className="rounded-2xl bg-[#5146A6] px-5 py-3 text-sm font-bold text-white disabled:bg-gray-300">전송</button>
+          <label htmlFor="assistant-chat-input" className="sr-only">연이에게 하고 싶은 말</label><input id="assistant-chat-input" aria-describedby="assistant-start-help" value={chatInput} disabled={chatHistoryLoading || adviceBusy} onChange={(event) => setChatInput(event.target.value, true)} maxLength={500} placeholder="예: 오늘 운동 계획 알려줘" className="min-w-0 flex-1 rounded-2xl border-0 bg-yeoni-bg px-4 py-3 text-base outline-none ring-1 ring-gray-100 focus:ring-[#7F77DD] disabled:opacity-50" />
+          <button disabled={chatSending || adviceBusy || chatHistoryLoading || !chatInput.trim()} className="rounded-2xl bg-[#5146A6] px-5 py-3 text-sm font-bold text-white disabled:bg-gray-300">보내기</button>
         </form>
-        <div ref={chatBoxRef} aria-live="polite" className="mt-4 max-h-56 space-y-3 sm:max-h-80 overflow-y-auto rounded-2xl bg-[#F7F6FF] p-3 sm:p-4">
+        <CommonCharacterSlot>
+        <div ref={chatBoxRef} aria-live="polite" role="region" aria-label="연이와 대화 내역" tabIndex={0} className="mt-0 max-h-56 space-y-3 sm:max-h-80 overflow-y-auto rounded-2xl border border-[#D8D0E8] bg-[#F7F6FF] p-3 sm:p-4">
           {chatHistoryLoading && <p className="text-xs font-semibold text-[#766DB8]">지난 대화를 불러오고 있어요…</p>}
-          {chatMessages.map((chat) => <div key={chat.id} className={`flex ${chat.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${chat.role === "user" ? "bg-[#5146A6] text-white" : "bg-white text-gray-700 shadow-sm"}`}><p className="whitespace-pre-wrap break-words">{chat.text}</p>{chat.action && <Link href={chat.action.href} onClick={(event) => {
+          {chatMessages.filter(chat => !chat.ownerId || chat.ownerId === pending.ownerId).map((chat) => <div key={chat.id} data-chat-message data-chat-role={chat.role} className={`flex ${chat.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${chat.role === "user" ? "bg-[#5146A6] text-white" : "bg-white text-gray-700 shadow-sm ring-1 ring-inset ring-[#C9C1DF]"}`}>{chat.localOnly && <p className="text-xs font-bold">이 화면에서만 보는 로컬 대화</p>}<p className="whitespace-pre-wrap break-words">{chat.id === "welcome" ? welcomeText : chat.text}</p>{chat.action && <Link href={chat.action.href} onClick={(event) => {
                 if (!chat.action?.href.startsWith('/assistant?advice=')) return;
                 const scope = new URLSearchParams(chat.action.href.split('?')[1].split('#')[0]).get('advice');
                 if (isFreeAdviceScope(scope)) {
                   event.preventDefault();
                   if (!chatSending && !adviceBusy) setChatInput(ADVICE_QUESTIONS[scope]);
                 }
-              }} className="mt-2 inline-block rounded-full bg-[#F1EFFF] px-3 py-1.5 text-xs font-bold text-[#5146A6]">{chat.action.label} →</Link>}{chat.role === 'assistant' && chat.id !== 'welcome' && <ZephyrReadButton text={chat.text} />}</div></div>)}
+              }} className="mt-2 inline-block rounded-full bg-[#F1EFFF] px-3 py-1.5 text-xs font-bold text-[#5146A6]">{chat.action.label} →</Link>}{chat.role === 'assistant' && chat.id !== 'welcome' && !chat.localOnly && !chat.historyOnly && <ZephyrReadButton text={chat.text} />}</div></div>)}
           {pending.error && <p role="alert" className="text-red-700">{pending.error}</p>}
-          {pending.drafts.map(draft => <AssistantCommandReview key={`${pending.ownerId}:${draft.proposal.requestId}`} proposal={draft.proposal} ownerId={pending.ownerId ?? undefined} initiallyAttempted={draft.attempted} onAttempt={() => pending.markAttempted(draft.proposal.requestId)} onSettled={() => pending.remove(draft.proposal.requestId)} onChanged={load} />)}
-          {chatSending && <p className="text-xs font-semibold text-[#766DB8]">답변을 준비하고 있어요…</p>}
+          {pending.drafts.map(draft => <AssistantCommandReview key={`${pending.ownerId}:${draft.proposal.requestId}`} proposal={draft.proposal} ownerId={pending.ownerId ?? undefined} initiallyAttempted={draft.attempted} onAttempt={(signal) => pending.markAttempted(draft.proposal.requestId, signal)} onSettled={(signal) => pending.remove(draft.proposal.requestId, signal)} onChanged={load} />)}
+          {(chatSending || adviceBusy) && <p role="status" className="text-xs font-semibold text-[#766DB8]">답변을 준비하고 있어요…</p>}
         </div>
+        </CommonCharacterSlot>
+        <RecordReplyStatus source={rollingReplySource(pending.ownerId, "assistant", items.filter(item => item.user_id === pending.ownerId), !loading && pending.ready)} />
+        <div className="mt-3">{characterAudio ? <AssistantCharacter key={pending.ownerId ?? 'signed-out'} audio={characterAudio}
+          incoming={characterReply?.ownerId === pending.ownerId ? characterReply : null} busy={chatSending || adviceBusy} />
+          : <AppCompanion compact embedded quiet={chatSending}>{welcomeText}</AppCompanion>}</div>
         {activeAdvice && <div aria-label="대화 중 조언 확인">
           <FreeAdvicePanel key={activeAdvice.id} scope={activeAdvice.scope} initialQuestion={activeAdvice.question} onComplete={finishAdvice} onBusyChange={changeAdviceBusy} />
           <button type="button" disabled={adviceBusy} onClick={() => { clearCharacter(); setActiveAdvice(null); }} className="min-h-11 rounded-xl px-4 py-2 text-sm font-bold text-gray-600 disabled:opacity-40">조언 취소</button>
         </div>}
         {chatHistoryNotice && <p role="status" className="mt-2 text-xs font-semibold text-amber-700">{chatHistoryNotice}</p>}
-        <div aria-label="추천 질문" className="mt-3 flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">{["내 기록을 보고 오늘 할 일을 조언해줘", "오늘 자기계발 현황 알려줘", "타자 연습 완료했어", "오늘 일본어 학습 진도 알려줘", "오늘 운동 계획 보여줘"].map((sample) => <button key={sample} type="button" disabled={chatSending || adviceBusy || chatHistoryLoading} onClick={() => void sendChat(sample)} className="min-h-11 shrink-0 whitespace-nowrap rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6] disabled:opacity-50">{sample}</button>)}</div>
-        <p className="mt-2 text-xs leading-5 text-gray-500">저장하거나 AI에 보낼 내용은 먼저 보여드려요.</p>
         <details className="mt-2 border-t border-gray-100 pt-2">
-          <summary className="cursor-pointer py-2 text-sm font-semibold text-gray-600">대화 메뉴</summary>
-          <div className="flex flex-wrap gap-2"><button type="button" onClick={() => void clearChatHistory()} disabled={chatHistoryLoading || chatSending || adviceBusy || chatMessages.length <= 1} className="rounded-full bg-gray-100 px-3 py-2 text-xs font-bold text-gray-600 disabled:opacity-40">대화 지우기</button><Link href="/assistant/advice" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">ChatGPT 조언 →</Link><Link href="/assistant/history" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">실행 이력 →</Link><Link href="/assistant/quick" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">Siri 빠른 명령 설정 →</Link></div>
+          <summary className="cursor-pointer py-2 text-sm font-semibold text-gray-600">대화 도구</summary>
+          {localBodyActive && <button type="button" className="min-h-11 px-3 text-xs" onClick={() => { setLocalBodyCandidate(null); setLocalBodyActive(false); setChatInput(''); }}>기존 일반 대화로 돌아가기</button>}
+          {chatMessages.some(item => item.localOnly) && <button type="button" className="min-h-11 px-3 text-xs" onClick={() => { setLocalBodyCandidate(null); setChatMessages(items => items.filter(item => !item.localOnly)); }}>로컬 대화만 비우기</button>}
+          {localBodyCandidate?.ownerId === pending.ownerId && localBodyCandidate && <Link href="/settings/privacy" className="inline-flex min-h-11 items-center px-3 text-xs" onClick={event => { if (!stageBodyArchiveDraft(localBodyCandidate)) event.preventDefault(); }}>설정에서 현재 체성분 답변 보관</Link>}
+
+          <div className="grid grid-cols-2 gap-2 pt-2 sm:grid-cols-4"><button type="button" onClick={() => void clearChatHistory()} disabled={chatHistoryLoading || chatSending || adviceBusy || chatMessages.filter(item => !item.localOnly).length <= 1} className="rounded-full bg-gray-100 px-3 py-2 text-xs font-bold text-gray-600 disabled:opacity-40">대화 지우기</button><Link href="/assistant/advice" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">ChatGPT 조언 →</Link><Link href="/assistant/history" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">실행 이력 →</Link><Link href="/assistant/quick" className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">Siri 빠른 명령 설정 →</Link></div>
         </details>
       </section>
 
-      {loadFailures.length > 0 && <div role="status" className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm text-amber-800"><p>{loadFailures.join(' · ')} 정보를 불러오지 못했어요. {lastLoadedAt ? `마지막 정상 확인 ${lastLoadedAt}의 값을 유지합니다.` : '아래 숫자를 현재 기록으로 판단하지 마세요.'}</p><button type="button" disabled={loading} onClick={() => void load()} className="mt-2 min-h-11 rounded-xl bg-white px-4 font-bold">다시 불러오기</button></div>}
-      {nextAction && <section aria-label="연이가 고른 다음 한 걸음" className="mt-5 overflow-hidden rounded-[28px] bg-gradient-to-br from-[#5146A6] via-[#665CC0] to-[#7F77DD] p-5 text-white shadow-[0_18px_46px_rgba(81,70,166,0.24)] sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0"><p className="text-xs font-bold text-white/70">연이가 고른 다음 한 걸음 · {nextAction.eyebrow}</p><h2 className="mt-2 break-words text-xl font-extrabold sm:text-2xl">{nextAction.title}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">{nextAction.detail}</p><p className="mt-2 text-[11px] font-semibold text-white/60">저장된 일정과 앱 상태만으로 순서를 정했어요.</p></div>
-          <Link href={nextAction.href} className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-extrabold text-[#3C3489] shadow-sm">{nextAction.label} →</Link>
-        </div>
-      </section>}
-
-      <section id="assistant-list" className="mt-5 scroll-mt-24 rounded-[28px] border border-white bg-white p-4 shadow-sm sm:p-6">
+      <section id="assistant-list" className={`${readability.list} mt-5 scroll-mt-24 rounded-[28px] border border-white bg-white p-4 shadow-sm sm:p-6`}>
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><h2 className="text-xl font-bold">해야 할 일</h2><div className="flex flex-wrap gap-2">{(Object.keys(filterLabels) as Filter[]).map((value) => <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-full px-3 py-2 text-xs font-bold ${filter === value ? "bg-[#5146A6] text-white" : "bg-gray-100 text-gray-600"}`}>{filterLabels[value]}</button>)}</div></div>
         <div className="mt-4 grid grid-cols-3 gap-2">
           {[{ label: "미완료 할 일", value: openTasks }, { label: "진행 프로젝트", value: openProjects }, { label: "회신 대기", value: waiting }].map((stat) => <article key={stat.label} className="rounded-2xl bg-[#F7F6FF] p-3"><span className="break-keep text-xs font-semibold text-gray-500">{stat.label}</span><b className="mt-2 block text-2xl text-[#5146A6]">{loading || (!lastLoadedAt && loadFailures.length > 0) ? "—" : stat.value}</b></article>)}
         </div>
 
-        <details className="mt-4 rounded-2xl border border-gray-100 p-3">
+        <details id="assistant-entry-form" ref={entryDetailsRef} className="mt-4 rounded-2xl border border-gray-100 p-3">
           <summary className="cursor-pointer py-2 text-sm font-bold text-[#5146A6]">직접 추가하기</summary>
         <form onSubmit={addEntry} className="mt-5 grid gap-2 rounded-2xl bg-yeoni-bg p-2 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto_auto]">
-          <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={kind === "project" ? 120 : 240} placeholder={kind === "memory" ? "예: 다음 일본 출장에서는 간사이 공항 이용" : "예: 금요일까지 일본 본사 결과 확인하기"} className="min-w-0 rounded-xl border-0 bg-white px-4 py-3 text-sm outline-none ring-1 ring-gray-100 focus:ring-[#7F77DD]" />
+          <input ref={entryInputRef} aria-label="추가할 내용" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={kind === "project" ? 120 : 240} placeholder={kind === "memory" ? "예: 다음 일본 출장에서는 간사이 공항 이용" : "예: 금요일까지 일본 본사 결과 확인하기"} className="min-w-0 rounded-xl border-0 bg-white px-4 py-3 text-sm outline-none ring-1 ring-gray-100 focus:ring-[#7F77DD]" />
           <select value={kind} onChange={(event) => setKind(event.target.value as Exclude<Filter, "all">)} className="rounded-xl border-0 bg-white px-3 py-3 text-sm font-semibold outline-none ring-1 ring-gray-100"><option value="task">할 일</option><option value="project">프로젝트</option><option value="waiting">회신 대기</option><option value="memory">기억</option></select>
           <select aria-label="우선순위" value={entryPriority} disabled={kind === "project" || kind === "memory"} onChange={(event) => setEntryPriority(Number(event.target.value))} className="rounded-xl border-0 bg-white px-3 py-3 text-sm outline-none ring-1 ring-gray-100 disabled:opacity-50"><option value={5}>긴급</option><option value={4}>중요</option><option value={3}>보통</option><option value={2}>낮음</option></select>
           <input aria-label="마감일" type="date" value={entryDueDate} disabled={kind === "project" || kind === "memory"} onChange={(event) => setEntryDueDate(event.target.value)} className="rounded-xl border-0 bg-white px-3 py-3 text-sm outline-none ring-1 ring-gray-100 disabled:opacity-50" />
           <select aria-label="반복" value={entryRecurrence} disabled={kind === "project" || kind === "memory"} onChange={(event) => setEntryRecurrence(event.target.value as RecurrenceRule)} className="rounded-xl border-0 bg-white px-3 py-3 text-sm outline-none ring-1 ring-gray-100 disabled:opacity-50"><option value="none">반복 없음</option><option value="daily">매일</option><option value="weekly">매주</option><option value="monthly">매월</option></select>
           <select aria-label="연결 프로젝트" value={entryProjectId} disabled={kind === "project" || kind === "memory"} onChange={(event) => setEntryProjectId(event.target.value)} className="rounded-xl border-0 bg-white px-3 py-3 text-sm outline-none ring-1 ring-gray-100 disabled:opacity-50"><option value="">프로젝트 없음</option>{projects.filter((project) => project.status !== "completed" && project.status !== "archived").map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-          <button disabled={saving || !title.trim()} className="rounded-xl bg-[#5146A6] px-5 py-3 text-sm font-bold text-white disabled:bg-gray-300">{saving ? "저장 중…" : "추가"}</button>
+          <button disabled={saving || !title.trim() || !pending.ready || !pending.ownerId || Boolean(entryRecovery)} className="rounded-xl bg-[#5146A6] px-5 py-3 text-sm font-bold text-white disabled:bg-gray-300">{saving ? "저장 중…" : entryRecovery ? "아래에서 저장 확인" : "추가"}</button>
         </form>
         </details>
+        {entryRecovery?.attempt.owner === pending.ownerId && <section aria-label="추가한 항목 저장 확인" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+          <p className="break-words font-bold">저장 확인: {entryRecovery.attempt.label}</p>
+          <p className="mt-2">{entryRecovery.result.state === 'missing' ? '아직 항목이 보이지 않아요. 서버가 처리 중일 수도 있어요.' : entryRecovery.result.state === 'conflict' ? '같은 확인 번호의 내용이 달라요. 목록에서 확인해 주세요. 덮어쓰지는 않아요.' : entryRecovery.result.reason === 'lookup' ? '저장 여부를 조회하지 못했어요. 저장되지 않았다고 단정할 수 없어요.' : entryRecovery.result.reason === 'accepted' ? '요청은 접수됐지만 저장 완료는 확인되지 않았어요.' : entryRecovery.result.reason === 'pending' ? '응답을 기다리는 시간이 지났어요. 서버에서 아직 처리 중일 수도 있어요.' : '응답을 받지 못했어요. 이미 저장됐을 수도 있어요.'}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" disabled={saving} onClick={() => void recoverManualEntry('check')} className="min-h-11 rounded-xl bg-white px-4 font-bold disabled:opacity-50">{saving ? '확인 중…' : '저장 결과 확인'}</button>
+            {entryRecovery.result.state === 'missing' && <button type="button" disabled={saving} onClick={() => void recoverManualEntry('retry')} className="min-h-11 rounded-xl border border-amber-400 bg-white px-4 font-bold disabled:opacity-50">같은 항목 다시 저장</button>}
+          </div>
+          <p className="mt-2 text-xs leading-5">확인 버튼은 새로 저장하지 않아요. 다시 저장은 같은 확인 번호를 사용해요. 목록에서 직접 삭제했다면 다시 저장하지 마세요. 새로고침·화면 이동 뒤에는 이 확인 번호를 기억하지 못하니 먼저 결과를 확인해 주세요.</p>
+          <p className="mt-2 text-xs leading-5">이 새 확인 기능은 실제 서버에서 중복 방지와 내 계정만의 조회를 아직 검증하지 않았어요. 같은 번호를 사용해도 중복 저장을 완전히 막는다고 보장하지 않아요.</p>
+        </section>}
         {message && <p role="status" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</p>}
 
         <div className="mt-5 grid gap-2">
-          {loading ? <p className="py-10 text-center text-sm text-gray-400">동기화 중…</p> : rows.length === 0 ? <p className="py-10 text-center text-sm leading-6 text-gray-400">{loadFailures.length ? "목록 조회를 확인하지 못했습니다." : "등록된 항목이 없습니다."}<br />떠오르는 일을 자연스럽게 적어보세요.</p> : rows.map((row) => <article key={`${row.kind}-${row.id}`} className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border border-gray-100 p-4 ${row.done ? "opacity-50" : ""}`}>
+          {loading ? <p className="py-10 text-center text-sm text-gray-400">동기화 중…</p> : rows.length === 0 ? <AssistantListEmptyState filter={filter} loadFailures={loadFailures} entryFormId="assistant-entry-form" onAdd={showEntryForm} onRetry={() => void load()} /> : rows.map((row) => <article key={`${row.kind}-${row.id}`} className={`${readability.item} grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border border-gray-100 p-4 ${row.done ? "opacity-50" : ""}`}>
             {row.kind === "memory" ? <span aria-hidden="true" className="h-3 w-3 justify-self-center rounded-full bg-amber-400" /> : <button type="button" aria-label="완료 전환" disabled={busyIds.includes(row.id)} onClick={() => void (row.kind === "project" ? toggleProject(row.source as Project) : toggleItem(row.source as Item))} className={`h-11 w-11 rounded-full border-2 disabled:opacity-50 ${row.done ? "border-[#5146A6] bg-[#5146A6]" : "border-gray-300"}`}>{row.done && <span className="text-xs text-white">✓</span>}</button>}
             <div className="min-w-0"><p className={`truncate font-bold ${row.done ? "line-through" : ""}`}>{row.title}</p><div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-400"><span>{new Date(row.created).toLocaleString("ko-KR")}</span>{row.kind === "task" || row.kind === "waiting" ? <><span className={(row.source as Item).priority >= 4 ? "font-bold text-red-500" : ""}>우선순위 {priorityLabel((row.source as Item).priority)}</span>{(row.source as Item).due_at && <span className={!row.done && new Date((row.source as Item).due_at as string) < new Date() ? "font-bold text-red-500" : ""}>마감 {new Date((row.source as Item).due_at as string).toLocaleDateString("ko-KR")}</span>}{(row.source as Item).recurrence_rule !== "none" && <span className="font-bold text-[#766DB8]">{recurrenceLabel((row.source as Item).recurrence_rule)} 반복</span>}{(row.source as Item).project_id && <span>프로젝트 {projectNames.get((row.source as Item).project_id as string)}</span>}</> : null}</div></div>
             <div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${row.kind === "waiting" ? "bg-orange-50 text-orange-700" : row.kind === "project" ? "bg-blue-50 text-blue-700" : row.kind === "memory" ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{filterLabels[row.kind]}</span><button type="button" aria-label="삭제" onClick={() => void remove(row.kind === "project" ? "assistant_projects" : row.kind === "memory" ? "assistant_memories" : "assistant_items", row.id)} className="px-1 text-xl text-gray-300 hover:text-red-500">×</button></div>

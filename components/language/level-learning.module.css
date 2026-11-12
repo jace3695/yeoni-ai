@@ -1,0 +1,44 @@
+.page { max-width: 920px; margin: 0 auto; padding: 24px 16px 48px; color: #263349; line-height: 1.7; overflow-wrap: anywhere; }
+.page h1 { font-size: clamp(25px, 5vw, 34px); line-height: 1.3; margin: 6px 0 12px; color: #213551; }
+.page h2 { font-size: 22px; margin: 0 0 8px; }
+.page h3 { font-size: 18px; margin: 6px 0; }
+.page p { margin: 8px 0 14px; }
+.eyebrow { color: #6252a0; font-size: 14px; font-weight: 700; }
+.muted { color: #526078; font-size: 14px; }
+.current { padding: 14px 18px; border-radius: 14px; background: #f1eefb; margin: 20px 0; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 22px 0; }
+.card { border: 1px solid #d8e0eb; border-radius: 18px; padding: 20px; background: #fff; }
+.card[data-active=true] { border-color: #7660b0; background: #f9f7ff; box-shadow: 0 0 0 1px #7660b0; }
+.tag { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 10px; color: #564284; background: #ebe4fa; }
+.button, .primary { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 15px; border: 1px solid #a6b3c7; border-radius: 11px; background: white; color: #283b59; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; text-align: center; }
+.primary { background: #655096; color: white; border-color: #655096; }
+.button[aria-pressed=true] { background: #ebe4fa; border-color: #655096; }
+.target { background: #fff0ae; color: #263349; text-decoration: underline; text-underline-offset: 4px; }
+.button:disabled, .primary:disabled { opacity: .55; cursor: default; }
+.button:focus-visible, .primary:focus-visible, .choice:focus-visible, .page input:focus-visible { outline: 3px solid #8971c7; outline-offset: 3px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.section { border: 1px solid #d8e0eb; border-radius: 18px; padding: 22px; margin: 20px 0; background: #fff; }
+.list { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 12px; }
+.lesson { border: 1px solid #dee4ed; border-radius: 12px; padding: 15px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.lesson > div { min-width: 0; }
+.lesson p { margin: 4px 0; }
+.notice { padding: 14px; background: #f7f8fb; border-radius: 10px; font-size: 14px; }
+.error { padding: 14px; background: #fff1ee; border: 1px solid #e8b5ab; border-radius: 10px; color: #8c2c1c; }
+.japanese { font-size: 19px; line-height: 2; word-break: normal; overflow-wrap: anywhere; }
+.choices { display: grid; gap: 10px; margin: 15px 0; }
+.choice { text-align: left; min-height: 48px; padding: 12px; border: 1px solid #a6b3c7; border-radius: 10px; background: white; font: inherit; color: #263349; cursor: pointer; }
+.choice[data-correct=true] { border-color: #287553; background: #eef8f2; }
+.choice[data-wrong=true] { border-color: #bd715f; background: #fff4ef; }
+.choice:disabled { cursor: default; }
+.feedback { padding: 14px; background: #f0f5fa; border-radius: 10px; }
+.page summary { min-height: 36px; cursor: pointer; }
+.page label { display: block; margin: 10px 0; }
+.page input[type=checkbox] { margin-right: 8px; width: 18px; height: 18px; vertical-align: middle; }
+@media (max-width: 650px) { .cards { grid-template-columns: 1fr; } .lesson { align-items: stretch; flex-direction: column; } .page { padding: 18px 12px 36px; } .section { padding: 17px; } }
+
+.progress { border: 1px solid #d8e0eb; border-radius: 12px; padding: 12px 14px; margin: 16px 0; background: #f7f8fb; }
+.progressSteps { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
+.progressSteps li[aria-current=step] { font-weight: 700; color: #514076; text-decoration: underline; text-underline-offset: 3px; }
+.evidenceQuote { margin: 8px 0 14px; padding-left: 12px; border-left: 3px solid #a6b3c7; font-size: 18px; line-height: 1.9; }
+.patternComparison { border: 1px solid #d8e0eb; border-radius: 12px; padding: 12px 14px; margin: 14px 0; }
+.page summary:focus-visible { outline: 3px solid #8971c7; outline-offset: 3px; }

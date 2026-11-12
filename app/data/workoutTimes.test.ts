@@ -19,3 +19,28 @@ test('다른 계정과 바뀐 revision은 성공으로 표시하지 않는다',a
  let calls=0;const client=createClient('https://example.test','test-key',{auth:{persistSession:false},global:{fetch:async()=>{calls++;return new Response(JSON.stringify({...row,revision:'00000000-0000-4000-8000-000000000104'}),{status:200,headers:{'Content-Type':'application/json'}});}}});
  assert.equal(await writeWorkoutTime(client,'other',{before:null,after:row}),'invalid');assert.equal(calls,0);assert.equal(await confirmWorkoutTime(client,row.user_id,{before:null,after:row}),'changed');assert.equal(await confirmWorkoutTime(client,row.user_id,{before:row,after:null}),'changed');
 });
+
+test('cancelled workout operation dispatches neither write nor confirmation read',async()=>{
+ let calls=0;const client=createClient('https://example.test','test-key',{auth:{persistSession:false},global:{fetch:async()=>{calls++;throw Error('must not dispatch');}}});
+ const request={before:null,after:row};
+ assert.equal(await writeWorkoutTime(client,row.user_id,request,()=>false),'cancelled');
+ assert.equal(await confirmWorkoutTime(client,row.user_id,request,()=>false),'cancelled');assert.equal(calls,0);
+});
+test('leaving during dispatched workout write prevents follow-up query without claiming rollback',async()=>{
+ let current=true;let release!:(response:Response)=>void;const methods:string[]=[];
+ const client=createClient('https://example.test','test-key',{auth:{persistSession:false},global:{fetch:async(_url,options)=>{methods.push(options?.method??'GET');return new Promise<Response>(resolve=>{release=resolve;});}}});
+ const task=writeWorkoutTime(client,row.user_id,{before:null,after:row},()=>current);
+ await new Promise(resolve=>setImmediate(resolve));current=false;release(new Response(null,{status:201}));
+ assert.equal(await task,'cancelled');assert.deepEqual(methods,['POST']);
+});
+test('late confirmation cannot report success for an expired workout UI scope',async()=>{
+ let current=true;let release!:(response:Response)=>void;
+ const client=createClient('https://example.test','test-key',{auth:{persistSession:false},global:{fetch:async()=>new Promise<Response>(resolve=>{release=resolve;})}});
+ const task=confirmWorkoutTime(client,row.user_id,{before:null,after:row},()=>current);
+ await new Promise(resolve=>setImmediate(resolve));current=false;release(new Response(JSON.stringify(row),{headers:{'Content-Type':'application/json'}}));
+ assert.equal(await task,'cancelled');
+});
+test('current workout scope still writes once and confirms exact row',async()=>{
+ const methods:string[]=[];const client=createClient('https://example.test','test-key',{auth:{persistSession:false},global:{fetch:async(_url,options)=>{const method=options?.method??'GET';methods.push(method);return method==='GET'?new Response(JSON.stringify(row),{headers:{'Content-Type':'application/json'}}):new Response(null,{status:201});}}});
+ assert.equal(await writeWorkoutTime(client,row.user_id,{before:null,after:row},()=>true),'confirmed');assert.deepEqual(methods,['POST','GET']);
+});

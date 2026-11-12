@@ -16,11 +16,14 @@ export default defineConfig([
   },
   globalIgnores([
     ".next/**",
+    ".generated/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
     "public/sw.js",
     "public/workbox-*.js",
     "scripts/browser-qa/.generated/**",
+    ".e2e/component-browser/site/**",
+    ".e2e/component-browser/ocr-assets/**",
   ]),
 ]);

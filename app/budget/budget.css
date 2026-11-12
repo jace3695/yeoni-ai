@@ -67,7 +67,7 @@ button, input, textarea, select { font: inherit; }
   border-color: var(--border) !important;
 }
 
-.living-finance-home > div:not(:first-child) {
+.living-finance-home > div:not(:first-child):not([data-yeoni-guide]) {
   box-shadow: var(--shadow-sm) !important;
 }
 
@@ -101,14 +101,14 @@ button, input, textarea, select { font: inherit; }
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
 }
 .home-title-copy { flex: 1; min-width: 0; }
-.home-title-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 7px; }
+.home-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 7px; }
 .home-title-row .home-eyebrow { margin: 0; }
 .home-month-picker { display: inline-flex; align-items: center; flex-shrink: 0; gap: 8px; color: #77736C; font-size: 12px; }
 .home-month-picker input { min-width: 0; max-width: 150px; min-height: 34px; box-sizing: border-box; border: 1px solid #D8D2C7; border-radius: 10px; padding: 6px 8px; background: var(--surface); color: #302E2A; font-size: 12px; font-weight: 700; }
-.home-header h1 { margin: 0; font-size: clamp(26px, 4vw, 36px); line-height: 1.2; letter-spacing: -0.04em; }
+.home-header h1 { min-width: 0; margin: 0; font-size: clamp(1.375rem, 2.5vw, 1.75rem); line-height: 1.3; letter-spacing: -0.04em; overflow-wrap: anywhere; }
 .home-eyebrow, .home-section-label { margin: 0 0 7px; color: var(--sage-dark); font-size: 12px; font-weight: 750; letter-spacing: 0.04em; }
 .home-greeting { margin: 8px 0 0; color: var(--foreground-muted); font-size: 14px; }
 .home-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
@@ -1860,3 +1860,42 @@ button, input, textarea, select { font: inherit; }
 .living-finance-app .budget-plan-form input:not([type='checkbox']) { display: block; width: 100%; min-width: 0; min-height: 44px; padding: 8px; border: 1px solid #71877b; border-radius: 8px; background: #fff; color: #172320; }
 .living-finance-app .budget-plan-form input[type='checkbox'] { width: 22px; height: 22px; margin: 11px 0; }
 .living-finance-app .budget-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Consultation shares the established portrait/reply footprint; only its
+   response scrolls, so input and question controls remain easy to reach. */
+.budget-app-shell .ai-screen .budget-consultation-response {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-muted);
+}
+.budget-app-shell .ai-screen .budget-consultation-bubble { min-width: 0; padding: 4px; }
+.budget-app-shell .ai-screen .budget-consultation-copy {
+  color: var(--foreground);
+  font-size: var(--yeoni-guidance-font-size);
+  font-weight: 550;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.budget-app-shell .ai-screen .budget-consultation-actions { margin-top: 12px; min-width: 0; }
+.budget-app-shell .ai-screen .budget-consultation-actions button { max-width: 100%; overflow-wrap: anywhere; }
+.budget-app-shell .record-screen .budget-sentence-entry { margin-bottom: 20px; }
+
+.budget-app-shell .ai-screen .budget-consultation-follow-up {
+  color: var(--sage-dark) !important;
+  background: var(--surface-muted) !important;
+  border-color: var(--border) !important;
+}
+
+/* The local record-based summary is the home companion's single guidance surface. */
+.budget-app-shell .home-yeoni-diagnosis { display: block; min-width: 0; padding: 12px; }
+.budget-app-shell .home-yeoni-diagnosis h2,
+.budget-app-shell .home-yeoni-diagnosis .home-ai-summary,
+.budget-app-shell .home-yeoni-diagnosis .home-ai-action-line strong {
+  font-size: var(--yeoni-guidance-font-size);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.budget-app-shell .home-yeoni-diagnosis .home-ai-summary { display: block; overflow: visible; -webkit-line-clamp: unset; }
+.budget-app-shell .home-yeoni-diagnosis .home-diagnosis-basis { font-size: .75rem; line-height: 1.5; }
+.budget-app-shell .home-yeoni-diagnosis .home-text-action { min-height: 44px; flex-wrap: wrap; }

@@ -16,7 +16,7 @@ test("일본어 자료는 필수 필드와 고유 식별자를 유지한다", ()
   assert.equal(WORDS.length, new Set(WORDS.map((item) => item.word)).size);
   assert.equal(SENTENCES.length, new Set(SENTENCES.map((item) => item.japanese)).size);
   assert.equal(CURRICULUM.length, 62);
-  assert.equal(GRAMMAR_LESSONS.length, 40);
+  assert.equal(GRAMMAR_LESSONS.length, 51);
   for (const word of WORDS) assert.ok(word.word && word.meaning && word.reading && word.exampleReading && word.exampleMeaning);
   for (const sentence of SENTENCES) assert.ok(sentence.japanese && sentence.meaning && sentence.reading);
   for (const lesson of CURRICULUM) {
@@ -183,4 +183,40 @@ test("직접 입력은 공백·문장 부호와 단어 읽기 입력을 허용�
   const reading = lesson.words.find((word) => word.japanese === expected)!.reading;
   assert.equal(isTypedAnswerCorrect(lesson, index, " " + reading + "。"), true);
   assert.equal(isTypedAnswerCorrect(lesson, index, "아무 답"), false);
+});
+
+ test("첫걸음 12수업은 순서별 설명과 서로 다른 직접 쓰기 재시도를 갖춘다", async () => {
+ const { BEGINNER_ORDER, BEGINNER_GUIDES } = await import("../../data/grammarBeginnerGuide.ts");
+ const { GRAMMAR_WRITING_PRACTICE: primary, GRAMMAR_WRITING_ALTERNATES: alternate, normalizeGrammarInput } = await import("../../data/grammarWritingPractice.ts");
+ assert.equal(BEGINNER_ORDER.length, 12);
+ assert.equal(new Set(GRAMMAR_LESSONS.map(x => x.id)).size, GRAMMAR_LESSONS.length);
+ for (const id of BEGINNER_ORDER) {
+ const lesson = GRAMMAR_LESSONS.find(x => x.id === id);
+ assert.ok(lesson && lesson.examples.length >= 2 && BEGINNER_GUIDES[id].steps.length >= 2, id);
+ assert.ok(lesson.quiz.choices.some(x => (typeof x === 'string' ? x : x.text) === lesson.quiz.answer), id);
+ for (const exercise of [primary[id], alternate[id]]) {
+ assert.ok(exercise.context && exercise.words && exercise.reason && exercise.answers.length, id);
+ assert.ok(exercise.answers.some(answer => exercise.before + answer + exercise.after === exercise.result), id);
+ }
+ assert.notEqual(primary[id].result, alternate[id].result, id);
+ }
+ assert.ok(BEGINNER_ORDER.indexOf('desu-negative') < BEGINNER_ORDER.indexOf('masu'));
+ assert.ok(BEGINNER_ORDER.indexOf('na-adjective') < BEGINNER_ORDER.indexOf('masu'));
+ assert.equal(normalizeGrammarInput(' です '), 'です');
+ });
+
+ test("목적지와 명사 부정의 유효한 대체 표현을 인정한다", async () => {
+ const { GRAMMAR_WRITING_PRACTICE: primary, GRAMMAR_WRITING_ALTERNATES: alternate } = await import("../../data/grammarWritingPractice.ts");
+ for (const map of [primary, alternate]) {
+ for (const answer of ['に','へ']) assert.ok(map.ni.answers.includes(answer));
+ for (const answer of ['ではありません','じゃありません','ではないです','じゃないです']) assert.ok(map['desu-negative'].answers.includes(answer));
+ assert.ok(!map.ni.answers.includes('で'));
+ }
+ assert.ok(primary['i-adjective'].answers.includes('美味しい'));
+ });
+
+test("저것 구분 질문은 두 사람 모두에게서 먼 위치를 명시한다", () => {
+ const lesson = GRAMMAR_LESSONS.find(x => x.id === 'kore-sore-are');
+ assert.ok(lesson);
+ assert.match(lesson.quiz.question, /말하는 사람과 듣는 사람 모두/);
 });

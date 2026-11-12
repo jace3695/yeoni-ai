@@ -173,7 +173,7 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       { japanese: "あれは駅です。", reading: "あれはえきです。", meaning: "저것은 역입니다." },
     ],
     quiz: {
-      question: "화자에게서 멀리 있는 ‘저것’을 가리키는 말은?",
+      question: "말하는 사람과 듣는 사람 모두에게서 멀리 있는 ‘저것’을 가리키는 말은?",
       choices: ["あれ", "これ", "それ", "どれ"],
       answer: "あれ",
       explanation: "あれ는 화자와 청자 모두에게서 멀리 있는 사물을 가리켜요.",
@@ -200,7 +200,16 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       explanation: "そこ는 청자 가까운 장소를 가리킬 때 써요.",
     },
   },
-  ...EXPANDED_GRAMMAR_LESSONS,
+  ...GRAMMAR_FOUNDATIONS,
+  ...EXPANDED_GRAMMAR_LESSONS.map(lesson => BRIDGE_LESSONS.find(bridge => bridge.id === lesson.id) ?? lesson),
+  ...BRIDGE_LESSONS.filter(bridge => !EXPANDED_GRAMMAR_LESSONS.some(lesson => lesson.id === bridge.id)),
+  ...TRAVEL_LESSONS,
 ];
 import { EXPANDED_GRAMMAR_LESSONS } from "./grammarExpansion.ts";
 
+
+import { GRAMMAR_FOUNDATIONS } from "./grammarFoundations.ts";
+
+import { BRIDGE_LESSONS } from "./grammarBridge.ts";
+
+import { TRAVEL_LESSONS } from "./grammarTravel.ts";

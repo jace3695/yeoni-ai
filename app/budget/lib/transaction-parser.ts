@@ -81,21 +81,61 @@ export function buildTransactionParseSystem(date = new Date()) {
   return PARSE_SYSTEM.replace('DATE_PLACEHOLDER', getLocalDateKey(date))
 }
 
+const INVALID_LOCAL_AMOUNT = '금액은 0보다 큰 원 단위 정수로 입력해 주세요. 음수·소수 원·너무 큰 금액이나 잘못된 숫자 표기는 자동으로 바꾸지 않아요.'
+
 function parseLooseAmount(text: string) {
-  const match = text.match(/(\d+(?:\.\d+)?)\s*(만원|만 원|천원|천 원|원)/)
-    ?? text.match(/(?<![A-Za-z0-9])(\d+(?:\.\d+)?)(?![A-Za-z0-9])/)
-  if (!match) return 0
+  // Capture malformed numeric tokens too, then validate the whole token. A strict
+  // search alone can skip .5 / 1e3 / 1/2 or fall through to a later amount.
+  const currencyMatches = [...text.matchAll(/((?:[+−-]\s*)*(?:\d|\.\d)[\d.eE+−/_-]*)\s*(만원|만 원|천원|천 원|원)/g)]
+  const matches = currencyMatches.length ? currencyMatches
+    : [...text.matchAll(/(?<![A-Za-z0-9.+−/_-])((?:[+−-]\s*)*(?:\d|\.\d)[\d.eE+−/_-]*)(?![A-Za-z0-9.+−/_-])/g)]
 
-  const value = Number(String(match[1]).replace(/,/g, ''))
-  const unit = match[2] || ''
+  const amounts = matches.map((match) => {
+    const prefix = text.slice(0, match.index)
+    const numeric = match[1].replace(/\s/g, '')
+    if (/[A-Za-z0-9./_]$|[+−-]\s*$|[\d.][.eE]\s*$|\d\s*[/_]\s*$/.test(prefix) || !/^\+?\d+(?:\.\d+)?$/.test(numeric)) {
+      throw new Error(INVALID_LOCAL_AMOUNT)
+    }
 
-  if (!value) return 0
-  if (unit === '만원' || unit === '만 원') return Math.round(value * 10000)
-  if (unit === '천원' || unit === '천 원') return Math.round(value * 1000)
-  return Math.round(value)
+    const unit = match[2] || ''
+    const scale = unit === '만원' || unit === '만 원' ? 4 : unit === '천원' || unit === '천 원' ? 3 : 0
+    const [whole, fraction = ''] = numeric.replace(/^\+/, '').split('.')
+    // Move the decimal point as text: do not round a fractional won or introduce
+    // floating point error for legitimate inputs such as 1.001천원.
+    const amount = Number(whole + fraction.slice(0, scale).padEnd(scale, '0'))
+    if (/[1-9]/.test(fraction.slice(scale)) || !Number.isSafeInteger(amount) || amount <= 0) {
+      throw new Error(INVALID_LOCAL_AMOUNT)
+    }
+    return amount
+  })
+
+  // Validate every explicit amount before retaining the existing first-amount rule.
+  return amounts[0] || 0
 }
 
-function detectLocalType(text: string) {
+// Override keyword order only for a complete, single interest clause. Negation,
+// extra numbers, contrasting actions and unsupported wording keep the legacy
+// fallback below; this is not a general natural-language or amount parser.
+const LOCAL_INTEREST_AMOUNT = String.raw`\d+(?:\.\d+)?\s*(?:만원|만 원|천원|천 원|원)`
+const LOCAL_INTEREST_AMOUNT_PATTERN = new RegExp(LOCAL_INTEREST_AMOUNT)
+
+function localInterestPattern(subject: string, action: string) {
+  const amount = LOCAL_INTEREST_AMOUNT
+  return new RegExp(String.raw`^(?:(?:오늘|어제|그제)\s*)?${subject}(?:를|가)?\s*(?:${action}\s*${amount}|${amount}\s*${action})(?:\s*(?:계좌이체|현금|체크카드|카드)(?:로)?)?\s*[.!]?$`)
+}
+
+const LOCAL_PAID_INTEREST_PATTERN = localInterestPattern(
+  String.raw`(?:대출\s*)?이자`,
+  String.raw`(?:(?:납입|납부)(?:했어|했어요|했습니다)?|냈(?:어|어요|습니다))`,
+)
+const LOCAL_RECEIVED_INTEREST_PATTERN = localInterestPattern(
+  String.raw`(?:(?:예금|적금)\s*)?이자`,
+  String.raw`(?:(?:받았|들어왔)(?:어|어요|습니다)|입금(?:됐어|됐어요|되었습니다)?|수령(?:했어|했어요|했습니다)?)`,
+)
+
+function detectLocalType(text: string, allowInterestOverride: boolean) {
+  if (allowInterestOverride && LOCAL_PAID_INTEREST_PATTERN.test(text)) return 'expense'
+  if (allowInterestOverride && LOCAL_RECEIVED_INTEREST_PATTERN.test(text)) return 'income'
   if (/(저축|적금|예금|청약|비상금|저금|넣었어)/.test(text)) return 'saving'
   if (/(월급|급여|용돈|보너스|이자|입금|들어왔|받았|수입)/.test(text)) return 'income'
   return 'expense'
@@ -232,13 +272,23 @@ function detectLocalPlace(text: string, type: string) {
 
 export function parseInputLocally(text: string) {
   const parts = text
-    .replace(/(\d),(?=\d{3}(?:\D|$))/g, '$1')
+    .replace(/\d(?:[\d.,]*\d)?/g, (token) => {
+      if (!token.includes(',')) return token
+      // Check grouping before splitting entries, so 1,23 cannot become 1 and 23.
+      if (!/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(token)) throw new Error(INVALID_LOCAL_AMOUNT)
+      return token.replace(/,/g, '')
+    })
     .split(/[,\n]|그리고|하고|랑/)
     .map(part => part.trim())
     .filter(Boolean)
 
+  // A discarded continuation can negate or qualify the preceding interest.
+  // Require explicit currency in EVERY fragment before enabling the new rule.
+  // The loose amount fallback alone can misread counts such as "2번" as money.
+  const allowInterestOverride = parts.every(part => LOCAL_INTEREST_AMOUNT_PATTERN.test(part))
+
   const items = parts.map((part) => {
-    const type = detectLocalType(part)
+    const type = detectLocalType(part, allowInterestOverride)
     const amount = parseLooseAmount(part)
     const date = getRelativeDate(part)
     const place = detectLocalPlace(part, type)

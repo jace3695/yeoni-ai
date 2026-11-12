@@ -58,3 +58,8 @@
   .guide[data-compact=true] { --yeoni-size: 48px; }
   .preferences { padding: 16px; }
 }
+
+.appSettingsList{display:grid;gap:16px}.appSettingsRow{min-width:0;padding:16px 0;border-top:1px solid var(--yeoni-border)}.appSettingsRow h3{margin:0 0 8px;font-size:18px;font-weight:750}.appSettingsRow>p{margin:8px 0}.appSettingsRow>button{min-height:44px}
+
+.appPreferenceControls{display:grid;gap:8px;min-width:0}.appPreferenceControls label{min-width:0}.appPreferenceControls .motion{margin-top:0}
+@media(min-width:640px){.appPreferenceControls{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr);align-items:end}}

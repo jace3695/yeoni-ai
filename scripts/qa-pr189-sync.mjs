@@ -3,7 +3,7 @@
 // Failing preservation assertions deliberately return exit code 1.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import ts from 'typescript';
@@ -144,10 +144,18 @@ function createDevice(server, seed = {}) {
       return { data: { subscription: { unsubscribe: () => authCallbacks.delete(callback) } } };
     },
   };
-  const context = vm.createContext({ window, document, Event, CustomEvent, AbortController, queueMicrotask, Date: FixtureDate });
+  // Each synthetic device has its own storage origin. The actual document
+  // ownership manager acquires a modeled Web Lock; there is no helper bypass.
+  const navigator = { locks: { request: async (_name, options, run) => {
+    assert.equal(options.mode, 'exclusive');
+    return run();
+  } } };
+  const context = vm.createContext({ window, document, navigator, Event, CustomEvent, AbortController, queueMicrotask, Date: FixtureDate });
   const cache = new Map();
-  const allowed = new Set(['app/data/cloudSync.ts', 'app/data/appRecordReset.ts', 'app/data/storageTransaction.ts']);
+  const allowed = new Set(['app/data/cloudSync.ts', 'app/data/bodyRecordSave.ts', 'app/data/appRecordReset.ts', 'app/data/storageTransaction.ts', 'app/data/storageOwnership.ts', 'app/data/recordStorage.ts', 'app/data/dietPlans.ts', 'app/data/workoutCompletion.ts', 'lib/diet-time.ts']);
   function load(path) {
+    // Normalize extensionless source imports before the exact allowlist/cache check.
+    if (!path.endsWith('.ts')) path += '.ts';
     if (cache.has(path)) return cache.get(path);
     assert.ok(allowed.has(path), `Unexpected module ${path}`);
     const exports = {};
@@ -157,9 +165,9 @@ function createDevice(server, seed = {}) {
     }).outputText;
     const requireFixture = specifier => {
       if (path === 'app/data/cloudSync.ts' && specifier === '../lib/supabase.ts') return { supabase: client };
-      // All allowlisted data modules import siblings only.
-      assert.ok(specifier.startsWith('./'), `Unexpected dependency ${specifier}`);
-      return load(`app/data/${specifier.slice(2)}`);
+      // Resolve only relative dependencies, then enforce the exact source allowlist.
+      assert.ok(specifier.startsWith('./') || specifier.startsWith('../'), `Unexpected dependency ${specifier}`);
+      return load(relative(root, resolve(root, dirname(path), specifier))); 
     };
     vm.runInContext(`(function(exports, require) { ${compiled}\n})`, context)(exports, requireFixture);
     return exports;
@@ -167,6 +175,10 @@ function createDevice(server, seed = {}) {
   const cloud = load('app/data/cloudSync.ts');
   const reset = load('app/data/appRecordReset.ts');
   const events = load('app/data/storageTransaction.ts');
+  const ownership = load('app/data/storageOwnership.ts');
+  const body = load('app/data/bodyRecordSave.ts');
+  ownership.beginStorageAccess();
+  assert.equal(ownership.getStorageAccessStatus(), 'ready');
   const panelPath = 'app/components/CloudSyncPanel.tsx';
   const source = readFileSync(resolve(root, panelPath), 'utf8');
   const ast = ts.createSourceFile(panelPath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -238,21 +250,44 @@ function createDevice(server, seed = {}) {
       vm.runInContext(ts.transpileModule(`(${handler})()`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
     },
     read: () => copy(cloud.readLocalCloudState()), write,
-    saveFromCalendarSnapshot: workouts => {
-      // The component's one-time record read is supplied explicitly; no React mount is simulated.
-      Object.assign(context, {
+    openCalendarSnapshot: workouts => {
+      // The one-time record read is supplied explicitly; no React mount is
+      // simulated. Each draft pins the real owner/epoch at opening, not saving.
+      const calendar = vm.createContext({
+        window, queueMicrotask, ...events, ...ownership,
+        readBodySaveSnapshot: body.readBodySaveSnapshot,
+        recordsLive: { current: true }, workoutWriteLocked: { current: false },
         stores: { workouts: copy(workouts) }, selected: '2030-02-02', todayKey: '2030-02-09',
+        calendarScope: { current: null }, calendarInvalidated: { current: false },
+        readError: false, sessionChanged: false, publishedStores: 0,
         exerciseRecordsDraft: [{ exerciseName: 'fixture-exercise', status: 'completed', sets: [{ setNumber: 1, completed: true, reps: 8 }] }],
         selectedWorkoutRecord: undefined, workoutStatusDraft: 'partial',
         backFeedback: { workoutPain: false, workoutNeurologicalSymptoms: [] },
         workoutMemoDraft: 'fixture-new', workoutDifficultyDraft: undefined, workoutFatigueDraft: undefined,
         WORKOUT_COMPLETED_DAYS_KEY: key,
-        setStores: value => { context.stores = value; }, setEditingWorkout: () => {}, setWorkoutNotice: () => {},
+        setStores: value => { calendar.stores = value; calendar.publishedStores += 1; },
+        setReadError: value => { calendar.readError = value; },
+        setSessionChanged: value => { calendar.sessionChanged = value; },
+        setEditingWorkout: () => {}, setWorkoutNotice: () => {},
       });
-      context.writeJson = vm.runInContext(originalFunction('app/data/recordStorage.ts', 'writeJson'), context);
-      context.readJson = vm.runInContext(originalFunction('app/data/recordStorage.ts', 'readJson'), context);
-      context.writeWorkoutStore = vm.runInContext(originalFunction('app/components/RecordCalendarView.tsx', 'writeWorkoutStore'), context);
-      vm.runInContext(originalFunction('app/components/RecordCalendarView.tsx', 'saveNewWorkoutRecord'), context)();
+      for (const name of ['readBodySaveScope', 'isBodySaveScopeCurrent']) {
+        calendar[name] = vm.runInContext(originalFunction('app/data/bodyRecordSave.ts', name), calendar);
+      }
+      calendar.calendarScope.current = calendar.readBodySaveScope(storage);
+      for (const name of ['writeJson', 'readJson']) {
+        calendar[name] = vm.runInContext(originalFunction('app/data/recordStorage.ts', name), calendar);
+      }
+      for (const name of ['canEditCalendar', 'writeWorkoutStore', 'saveNewWorkoutRecord']) {
+        calendar[name] = vm.runInContext(originalFunction('app/components/RecordCalendarView.tsx', name), calendar);
+      }
+      return {
+        save: calendar.saveNewWorkoutRecord,
+        get scope() { return copy(calendar.calendarScope.current); },
+        get invalidated() { return calendar.calendarInvalidated.current; },
+        get sessionChanged() { return calendar.sessionChanged; },
+        get readError() { return calendar.readError; },
+        get publishedStores() { return calendar.publishedStores; },
+      };
     },
     get status() { return status; }, get message() { return message; },
     get waitingTimers() { return timers.size; },
@@ -588,9 +623,10 @@ await check('달력의 동기화 전 스냅샷으로 첫 저장: 원본 4일 보
   const server = new FakeServer(); const device = createDevice(server);
   const pause = server.pauseNext('GET'); await device.mount(); await pause.arrived;
   const calendarSnapshot = device.read()[key] ?? {};
+  const calendar = device.openCalendarSnapshot(calendarSnapshot);
   pause.release(); await flush();
   expectState(device.read(), fixture, 'Initial sync did not load fixture originals');
-  device.saveFromCalendarSnapshot(calendarSnapshot); await flush(); await device.advance(500);
+  calendar.save(); await flush(); await device.advance(500);
   const saved = copy(server.row.state); device.unmount();
   expectState(saved[settingsKey], fixture[settingsKey], 'Settings changed');
   assert.equal(Object.keys(saved[key]).length, 5, 'Expected original 4 dates plus the new date after calendar save');
@@ -599,7 +635,7 @@ await check('달력의 동기화 전 스냅샷으로 첫 저장: 원본 4일 보
 
 await check('대조군: 최신 스냅샷으로 같은 달력 저장을 실행하면 원본 4일 보존', async () => {
   const server = new FakeServer(); const device = createDevice(server); await device.mount();
-  device.saveFromCalendarSnapshot(device.read()[key]); await flush(); await device.advance(500);
+  device.openCalendarSnapshot(device.read()[key]).save(); await flush(); await device.advance(500);
   const saved = copy(server.row.state); device.unmount();
   expectState(saved[settingsKey], fixture[settingsKey], 'Settings changed');
   assert.equal(Object.keys(saved[key]).length, 5);
@@ -631,7 +667,7 @@ await check('달력의 오래된 날짜 편집: 같은 날짜의 원격 유산�
   const state = copy(fixture);
   state[key]['2030-02-02'] = { cardioDone: true, cardioMinutes: 25, cardioMemo: 'fixture-remote-cardio' };
   const server = new FakeServer(state); const device = createDevice(server); await device.mount();
-  device.saveFromCalendarSnapshot({}); await flush(); await device.advance(500);
+  device.openCalendarSnapshot({}).save(); await flush(); await device.advance(500);
   const saved = server.row.state[key]['2030-02-02'];
   assert.equal(saved.cardioMinutes, 25);
   assert.equal(saved.cardioMemo, 'fixture-remote-cardio');
@@ -647,8 +683,57 @@ await check('화면 동기화 소유자: 루트에 하나, 운동·식단 페이
   }
 });
 
+for (const [name, storageKey, replacement] of [
+  ['소유자', 'fitness-cloud-sync-user', 'another-synthetic-owner'],
+  ['세대', 'fitness-cloud-sync-epoch', 'another-synthetic-epoch'],
+]) {
+  await check(`실제 달력 저장 가드: 열린 초안 이후 ${name} 변경은 저장·동기화 없이 거부`, async () => {
+    const server = new FakeServer(); const device = createDevice(server); await device.mount();
+    try {
+      const calendar = device.openCalendarSnapshot(device.read()[key]);
+      const pinned = calendar.scope;
+      device.storage.setItem(storageKey, replacement);
+      const before = Object.fromEntries(device.storage.values);
+      const requests = server.requests.length;
+      calendar.save(); await flush();
+      assert.equal(calendar.invalidated, true);
+      assert.equal(calendar.sessionChanged, true);
+      assert.equal(calendar.publishedStores, 0);
+      expectState(calendar.scope, pinned, 'Save silently repinned the calendar scope');
+      expectState(Object.fromEntries(device.storage.values), before, 'Stale calendar changed replacement storage');
+      assert.equal(server.requests.length, requests, 'Rejected calendar save reached sync');
+      expectState(server.row.state, fixture, 'Rejected calendar save changed remote records');
+      // Restoring the old marker must not reactivate an invalidated mounted draft.
+      const prior = storageKey.endsWith('user') ? pinned.owner : pinned.epoch;
+      if (prior === null) device.storage.removeItem(storageKey); else device.storage.setItem(storageKey, prior);
+      const restored = Object.fromEntries(device.storage.values);
+      calendar.save(); await flush();
+      assert.equal(calendar.invalidated, true);
+      assert.equal(calendar.publishedStores, 0);
+      expectState(Object.fromEntries(device.storage.values), restored, 'Invalidated draft became writable again');
+      assert.equal(server.requests.length, requests);
+    } finally { device.unmount(); }
+  });
+}
+
+await check('실제 달력 저장 가드: 손상된 복구 정보는 원문을 보존하고 쓰기 없이 거부', async () => {
+  const server = new FakeServer(); const device = createDevice(server); await device.mount();
+  try {
+    const calendar = device.openCalendarSnapshot(device.read()[key]);
+    device.storage.setItem('yeoni-storage-transaction-v1', JSON.stringify({ [key]: { unexpected: 'object' } }));
+    const before = Object.fromEntries(device.storage.values);
+    const requests = server.requests.length;
+    calendar.save(); await flush();
+    assert.equal(calendar.readError, true);
+    assert.equal(calendar.publishedStores, 0);
+    expectState(Object.fromEntries(device.storage.values), before, 'Invalid journal or records were modified');
+    assert.equal(server.requests.length, requests);
+    expectState(server.row.state, fixture, 'Invalid-journal calendar save reached remote records');
+  } finally { device.unmount(); }
+});
+
 console.log(JSON.stringify({
-  scope: 'Actual calendar save functions, root auth/sync effects and storage/merge/query modules; mocked auth events, getUser results, server and clock. React effect commits are driven explicitly; no browser, React renderer, real authentication, HTTP, account or DB access.',
+  scope: 'Actual calendar save functions, canEditCalendar guard and body scope helpers with per-draft pinned owner/epoch; root auth/sync effects and storage/merge/query modules. Mocked auth events, getUser results, server and clock. React effect commits are driven explicitly; no browser, React renderer, real authentication, HTTP, account or DB access.',
   results: cases,
   passed: cases.filter(item => item.result === 'PASS').length,
   failed: cases.filter(item => item.result === 'FAIL').length,

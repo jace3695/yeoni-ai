@@ -1,4 +1,9 @@
 import { Exercise, SAFETY_STOP_MESSAGE } from '../data/workouts';
+import WallPushupDemo from './WallPushupDemo';
+import ExerciseMotionDemo from './ExerciseMotionDemo';
+import PreparationPoseDemo from './PreparationPoseDemo';
+import DeadBugInformationalReview from './DeadBugInformationalReview';
+import RollerRecoveryInformationalReview from './RollerRecoveryInformationalReview';
 
 export function getExerciseVideoHref(exercise: Exercise) {
   const guide = exercise.guide;
@@ -22,8 +27,20 @@ function GuideBlock({ title, items, tone = 'plain' }: { title: string; items?: s
 export default function ExerciseGuidePanel({ exercise }: { exercise: Exercise }) {
   const guide = exercise.guide;
   if (!guide) return null;
+  const guideId = exercise.sourceExerciseId || exercise.exerciseId;
+  // Keep routine-specific warnings, guide criteria and the common stop message together.
+  const stopCriteria = [...new Set([...exercise.details.filter(d => d.type === 'warn').map(d => d.text), ...guide.stopCriteria, SAFETY_STOP_MESSAGE])];
   return (
     <div className="mt-3 space-y-2" onClick={(event) => event.stopPropagation()}>
+      {guideId === 'wall-pushup' ? <WallPushupDemo key={exercise.exerciseId} /> : null}
+      <ExerciseMotionDemo exerciseId={guideId} />
+      {/* An explanatory still, not a rollout, personal progression or an activated motion demo. */}
+      {guideId === 'ab-slider-ready-position' ? <PreparationPoseDemo exerciseId={guideId} /> : null}
+      {guideId === 'dead-bug' ? <DeadBugInformationalReview key={exercise.exerciseId} /> : null}
+      {guideId === 'foam-roller-recovery' ? <RollerRecoveryInformationalReview key={exercise.exerciseId} /> : null}
+      {guide.catalogOnly ? <p className="rounded-lg bg-amber-50 p-2 text-xs">선택용 동작 안내입니다. 현재 통증·상태에 따른 맞춤 추천이 아니며 기존 중단 기준이 우선합니다.</p> : null}
+      {guide.equipment ? <p className="text-xs">장비: {guide.equipment} · 난이도: {guide.difficulty} · 부위: {guide.target}</p> : null}
+      {guide.sources?.map(source => <a key={source.url} className="block text-xs text-indigo-700 underline" href={source.url} target="_blank" rel="noopener noreferrer">참고 안내: {source.title}</a>)}
       <p className="text-[13px] font-bold text-gray-800">자세 가이드</p>
       {guide.keyPoint ? <p className="rounded-xl bg-[#EEEDFE] p-3 text-[13px] font-semibold text-[#3C3489]">1) 핵심 한 줄: {guide.keyPoint}</p> : null}
       <GuideBlock title="2) 시작 자세" items={guide.setup} />
@@ -31,7 +48,7 @@ export default function ExerciseGuidePanel({ exercise }: { exercise: Exercise })
       {guide.breathing ? <div className="rounded-xl bg-[#E6F1FB] p-3 text-[12px] text-[#0C447C]"><b>4) 호흡</b><p className="mt-1">{guide.breathing}</p></div> : null}
       {guide.target ? <div className="rounded-xl bg-[#EAF3DE] p-3 text-[12px] text-[#27500A]"><b>5) 자극 부위</b><p className="mt-1">{guide.target}</p></div> : null}
       <GuideBlock title="6) 자주 하는 실수" items={guide.commonMistakes} tone="mistake" />
-      <GuideBlock title="7) 즉시 중단 기준" items={guide.stopCriteria} tone="stop" />
+      <GuideBlock title="7) 즉시 중단 기준" items={stopCriteria} tone="stop" />
       {guide.alternatives?.length ? (
         <section className="rounded-xl border border-[#AFA9EC] bg-[#EEEDFE] p-3 text-[#3C3489]">
           <p className="text-[12px] font-bold">통증·불안정 시 대체 운동</p>
@@ -40,7 +57,6 @@ export default function ExerciseGuidePanel({ exercise }: { exercise: Exercise })
           </ul>
         </section>
       ) : null}
-      <p className="rounded-xl bg-[#FCEBEB] p-3 text-[12px] font-semibold text-[#A32D2D]">{SAFETY_STOP_MESSAGE}</p>
       {getExerciseVideoHref(exercise) ? <a href={getExerciseVideoHref(exercise)} target="_blank" rel="noopener noreferrer" className="block rounded-xl bg-[#111827] px-3 py-2 text-center text-[13px] font-bold text-white"><span className="block">8) 한국어 {getExerciseVideoLabel(exercise)}</span>{guide.videoTitle ? <span className="mt-1 block text-[11px] font-medium text-gray-300">{guide.videoTitle}</span> : null}</a> : <button type="button" disabled className="block w-full rounded-xl bg-gray-100 px-3 py-2 text-center text-[13px] font-bold text-gray-400">8) 영상 준비중</button>}
     </div>
   );

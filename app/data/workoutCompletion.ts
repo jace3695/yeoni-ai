@@ -291,43 +291,75 @@ export function getWeeklyWorkoutCompletion(
   );
 }
 
-export function readWorkoutCompletionStore(
-  baseDate = new Date(),
-): WorkoutCompletionStore {
-  if (typeof window === "undefined") return {};
-  const raw = window.localStorage.getItem(WORKOUT_COMPLETED_DAYS_KEY);
-  if (!raw) return {};
+export const WORKOUT_STORAGE_ERROR = "운동 기록을 안전하게 읽거나 저장하지 못했습니다. 원본은 보존했으며 기록 저장을 중단했습니다.";
 
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const migrated: WorkoutCompletionStore = {};
-    let changed = false;
+function invalidWorkoutStore(): never { throw new Error(WORKOUT_STORAGE_ERROR); }
 
-    Object.entries(parsed).forEach(([key, value]) => {
-      if (!value) return;
-      if (isWorkoutDayId(key)) {
-        migrated[getDateForWorkoutDay(key, baseDate)] = { workoutDone: true };
-        changed = true;
-        return;
-      }
-      migrated[key] =
-        typeof value === "object" && value !== null
-          ? (value as WorkoutDayRecord)
-          : { workoutDone: true };
-    });
-
-    if (changed) {
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(migrated),
-      );
+/** Validate container shape without discarding unknown record fields. */
+export function assertWorkoutCompletionStore(value: unknown): asserts value is WorkoutCompletionStore {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.prototype.toString.call(value) !== "[object Object]") invalidWorkoutStore();
+  for (const [key, record] of Object.entries(value)) {
+    if (!isWorkoutDayId(key)) {
+      const date = new Date(key + "T12:00:00Z");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !Number.isFinite(date.getTime())
+        || date.toISOString().slice(0, 10) !== key) invalidWorkoutStore();
     }
-
-    return migrated;
-  } catch {
-    window.localStorage.removeItem(WORKOUT_COMPLETED_DAYS_KEY);
-    return {};
+    if (typeof record === "boolean") continue; // historical boolean records
+    if (!record || typeof record !== "object" || Array.isArray(record)
+      || Object.prototype.toString.call(record) !== "[object Object]") invalidWorkoutStore();
+    for (const flag of ["workoutDone", "cardioDone", "pullupDone", "foamRollerDone", "rosaryCardioDone", "postWorkoutCardioDone"]) {
+      if (flag in record && (record as Record<string, unknown>)[flag] !== undefined
+        && typeof (record as Record<string, unknown>)[flag] !== "boolean") invalidWorkoutStore();
+    }
   }
+}
+
+export function readWorkoutCompletionStore(baseDate = new Date()): WorkoutCompletionStore {
+  return readWorkoutCompletionStoreInternal(baseDate, true);
+}
+
+function readWorkoutCompletionStoreInternal(baseDate: Date, persistMigration: boolean): WorkoutCompletionStore {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(WORKOUT_COMPLETED_DAYS_KEY);
+    if (raw === null) return {};
+    const parsed: unknown = JSON.parse(raw);
+    assertWorkoutCompletionStore(parsed);
+    // Copy dated records first, independent of JSON property order. Never silently
+    // replace a richer dated record with a legacy weekday boolean.
+    const migrated: WorkoutCompletionStore = Object.fromEntries(Object.entries(parsed).filter(([key]) => !isWorkoutDayId(key)));
+    let changed = false;
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!isWorkoutDayId(key)) continue;
+      changed = true;
+      const date = getDateForWorkoutDay(key, baseDate);
+      const incoming = typeof value === "boolean" ? { workoutDone: value } : value;
+      const existing = migrated[date];
+      if (existing === undefined) migrated[date] = incoming;
+      else {
+        const prior = typeof existing === "boolean" ? { workoutDone: existing } : existing;
+        for (const field of Object.keys(incoming)) {
+          if (Object.hasOwn(prior, field) && JSON.stringify(prior[field as keyof WorkoutDayRecord]) !== JSON.stringify(incoming[field as keyof WorkoutDayRecord])) invalidWorkoutStore();
+        }
+        migrated[date] = { ...prior, ...incoming };
+      }
+    }
+    // Complete validation/collision checks precede the only write. On quota,
+    // read, parse or migration failure the original storage entry stays intact.
+    if (changed && persistMigration) window.localStorage.setItem(WORKOUT_COMPLETED_DAYS_KEY, JSON.stringify(migrated));
+    return migrated;
+  } catch { return invalidWorkoutStore(); }
+}
+
+/** A caller's fallback/empty view must never overwrite an unreadable original. */
+export function writeWorkoutCompletionStore(next: WorkoutCompletionStore): void {
+  if (typeof window === "undefined") return;
+  try {
+    assertWorkoutCompletionStore(next);
+    readWorkoutCompletionStoreInternal(new Date(), false);
+    window.localStorage.setItem(WORKOUT_COMPLETED_DAYS_KEY, JSON.stringify(next));
+  } catch { invalidWorkoutStore(); }
 }
 
 export function isWorkoutCompletedOnDate(

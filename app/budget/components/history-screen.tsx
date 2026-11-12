@@ -74,6 +74,8 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
   const filteredSavingItems = savings.filter((item: any) => (historyTypeFilter === 'all' || historyTypeFilter === 'saving') && range.matches(item.amount) && matchesHistoryDate(item.date) && includesHistoryQuery(item.goal_name, item.memo, item.date))
   const historyCategoryOptions = Array.from(new Set(transactions.map((item: any) => String(item.category || '')).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko-KR'))
   const paymentOptions = Array.from(new Set(transactions.map((item: any) => String(item.payment || '')))).sort((a, b) => a.localeCompare(b, 'ko-KR'))
+  const hasStoredRecords = incomeList.length + transactions.length + savings.length > 0
+  const hasHistoryFilters = Boolean(normalizedSearchQuery || historyStartDate || historyEndDate || historyTypeFilter !== 'all' || historyCategoryFilter !== 'all' || minimumAmount || maximumAmount || paymentFilter !== 'all')
   const resetHistoryFilters = () => { setSearchQuery(''); setHistoryStartDate(''); setHistoryEndDate(''); setHistoryTypeFilter('all'); setHistoryCategoryFilter('all'); setMinimumAmount(''); setMaximumAmount(''); setPaymentFilter('all') }
   const exportFilteredHistoryCsv = () => {
     const rows = [
@@ -110,15 +112,15 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
     
               <section aria-label="상세 내역 필터" style={{ ...getCardStyle(), padding: 12, marginBottom: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 10 }}>
-                  <label style={{ display: 'grid', gap: 5, color: '#E0E0EA', fontSize: 12 }}>
+                  <label style={{ display: 'grid', gap: 5, color: 'var(--foreground)', fontSize: 12 }}>
                     시작일
                     <input type="date" value={historyStartDate} max={historyEndDate || undefined} onChange={(e) => setHistoryStartDate(e.target.value)} style={{ minHeight: 42, borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 10px' }} />
                   </label>
-                  <label style={{ display: 'grid', gap: 5, color: '#E0E0EA', fontSize: 12 }}>
+                  <label style={{ display: 'grid', gap: 5, color: 'var(--foreground)', fontSize: 12 }}>
                     종료일
                     <input type="date" value={historyEndDate} min={historyStartDate || undefined} onChange={(e) => setHistoryEndDate(e.target.value)} style={{ minHeight: 42, borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 10px' }} />
                   </label>
-                  <label style={{ display: 'grid', gap: 5, color: '#E0E0EA', fontSize: 12 }}>
+                  <label style={{ display: 'grid', gap: 5, color: 'var(--foreground)', fontSize: 12 }}>
                     유형
                     <select aria-label="내역 유형" value={historyTypeFilter} onChange={(e) => setHistoryTypeFilter(e.target.value as 'all' | 'income' | 'expense' | 'saving')} style={{ minHeight: 42, borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 10px' }}>
                       <option value="all">전체</option>
@@ -127,7 +129,7 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                       <option value="saving">저축</option>
                     </select>
                   </label>
-                  <label style={{ display: 'grid', gap: 5, color: '#E0E0EA', fontSize: 12 }}>
+                  <label style={{ display: 'grid', gap: 5, color: 'var(--foreground)', fontSize: 12 }}>
                     지출 카테고리
                     <select aria-label="지출 카테고리" value={historyCategoryFilter} disabled={historyTypeFilter === 'income' || historyTypeFilter === 'saving'} onChange={(e) => setHistoryCategoryFilter(e.target.value)} style={{ minHeight: 42, borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 10px' }}>
                       <option value="all">전체</option>
@@ -151,7 +153,7 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                 {filterError && <p role="alert">{filterError}</p>}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                   <button type="button" onClick={resetHistoryFilters} style={{ minHeight: 40, flex: '1 1 120px', borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 12px', cursor: 'pointer' }}>필터 초기화</button>
-                  <button type="button" disabled={Boolean(filterError)} onClick={exportFilteredHistoryCsv} style={{ minHeight: 40, flex: '1 1 150px', borderRadius: 9, border: '1px solid #4ECDC4', padding: '8px 12px', cursor: 'pointer', color: '#4ECDC4' }}>현재 결과 CSV 저장</button>
+                  <button type="button" disabled={Boolean(filterError)} onClick={exportFilteredHistoryCsv} style={{ minHeight: 40, flex: '1 1 150px', borderRadius: 9, border: '1px solid var(--border)', padding: '8px 12px', cursor: 'pointer', color: 'var(--sage-dark)', background: 'var(--surface)' }}>현재 결과 CSV 저장</button>
                 </div>
                 <p aria-live="polite" style={{ color: '#9CA3AF', fontSize: 11, margin: '10px 0 0' }}>
                   총 {filteredIncomeItems.length + filteredExpenseItems.length + filteredSavingItems.length}건
@@ -246,7 +248,7 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                 </>
               )}
     
-              {filteredIncomeItems.length === 0 && filteredExpenseItems.length === 0 && filteredSavingItems.length === 0 && !searchQuery && (
+              {filteredIncomeItems.length === 0 && filteredExpenseItems.length === 0 && filteredSavingItems.length === 0 && !hasStoredRecords && !hasHistoryFilters && (
                 <div style={{ background: 'rgba(19,19,28,0.72)', border: '1px solid #1A1A24', borderRadius: 16, padding: '28px 20px', textAlign: 'center', marginTop: 8 }}>
                   <p style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 700, margin: '0 0 8px' }}>아직 데이터가 없어요</p>
                   <p style={{ color: '#AEB7C6', fontSize: 13, lineHeight: 1.6, margin: 0 }}>
@@ -258,14 +260,14 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                 </div>
               )}
     
-              {searchQuery && filteredIncomeItems.length === 0 && filteredExpenseItems.length === 0 && filteredSavingItems.length === 0 && (
+              {(hasStoredRecords || hasHistoryFilters) && filteredIncomeItems.length === 0 && filteredExpenseItems.length === 0 && filteredSavingItems.length === 0 && (
                 <div style={{ background: 'rgba(19,19,28,0.72)', border: '1px solid #1A1A24', borderRadius: 16, padding: '24px 20px', textAlign: 'center', marginTop: 8 }}>
-                  <p style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 700, margin: '0 0 8px' }}>검색 결과가 없어요</p>
+                  <p style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 700, margin: '0 0 8px' }}>조건에 맞는 내역이 없어요</p>
                   <p style={{ color: '#AEB7C6', fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                    장소명, 카테고리, 날짜처럼 다른 키워드로 다시 검색해보세요.
+                    검색어, 날짜, 유형, 금액 등의 조건을 바꾸거나 지워보세요.
                   </p>
-                  <button type="button" onClick={() => setSearchQuery('')} style={{ minHeight: 44, marginTop: 14, border: '1px solid rgba(102,138,115,.35)', borderRadius: 12, padding: '10px 16px', color: '#4F705C', background: 'rgba(102,138,115,.1)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                    검색어 지우기
+                  <button type="button" onClick={resetHistoryFilters} style={{ minHeight: 44, marginTop: 14, border: '1px solid rgba(102,138,115,.35)', borderRadius: 12, padding: '10px 16px', color: '#4F705C', background: 'rgba(102,138,115,.1)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    모든 조건 지우기
                   </button>
                 </div>
               )}

@@ -14,9 +14,17 @@ const seed = () => ({
   'ai-fitness-selected-weekly-workout-plan': 'five-day-fullbody-circuit',
   'ai-fitness-workout-direction-version': 'five-day-circuit-v1',
 });
+async function showWorkoutRecords(page: Page) {
+  // Record entry/reload opens the summary; workout details have their own tab.
+  const tab = page.getByRole('tablist', { name: '기록 메뉴', exact: true }).getByRole('tab', { name: '운동기록', exact: true });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tabpanel', { name: '운동기록', exact: true })).toBeVisible();
+}
 async function openRecords(page: Page) {
   await page.goto('/fitness');
   await page.getByRole('navigation', { name: '운동 주요 메뉴' }).getByRole('button', { name: '기록보기', exact: true }).click();
+  await showWorkoutRecords(page);
 }
 
 test('workout confirmation cancels, recovers a lost response, appears in the calendar, and undo preserves cardio and original records', async ({ page, qa }) => {
@@ -26,7 +34,7 @@ test('workout confirmation cancels, recovers a lost response, appears in the cal
   await expect(review).toContainText(today()); await expect(review).toContainText('운동 종류·세트·횟수·통증'); expect((await qa.read())[key]).toEqual(before[key]);
   await review.getByRole('button', { name: '취소', exact: true }).click(); await expect(page.getByText('취소했습니다. 운동 기록은 변경하지 않았습니다.')).toBeVisible();
   await page.reload(); await expect(review).toHaveCount(0); expect((await qa.read())[key]).toEqual(before[key]);
-  await page.goto('/assistant'); const input = page.getByLabel('연이에게 보낼 명령'); await expect(input).toBeEnabled();
+  await page.goto('/assistant'); const input = page.getByLabel('연이에게 하고 싶은 말', { exact: true }); await expect(input).toBeEnabled();
   await input.fill('오늘 운동 완료했어'); await input.press('Enter'); await expect(review).toBeVisible();
   await page.goto('/assistant/quick'); await expect(review).toBeVisible();
   const draft = await page.evaluate(() => sessionStorage.getItem('yeoni:task-command-drafts:v1'));
@@ -46,9 +54,10 @@ test('workout confirmation cancels, recovers a lost response, appears in the cal
   expect(saved['ai-fitness-user-workout-settings']).toEqual(before['ai-fitness-user-workout-settings']);
   await page.getByRole('link', { name: '운동 기록 보기 →', exact: true }).click();
   await page.getByRole('navigation', { name: '운동 주요 메뉴' }).getByRole('button', { name: '기록보기', exact: true }).click();
+  await showWorkoutRecords(page);
   await expect(page.getByText('직접 완료 기록', { exact: true })).toBeVisible();
   await expect(page.getByText('운동 후 허리: 미기록', { exact: true })).toBeVisible();
-  await page.reload(); await expect(page.getByText('직접 완료 기록', { exact: true })).toBeVisible(); await synced(page);
+  await page.reload(); await showWorkoutRecords(page); await expect(page.getByText('직접 완료 기록', { exact: true })).toBeVisible(); await synced(page);
   await page.goto('/assistant/history?area=workout'); const receipt = page.getByRole('article', { name: '운동 실행 이력' }); await expect(receipt).toBeVisible();
   await page.reload(); await expect(receipt).toBeVisible(); await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await receipt.getByRole('button', { name: '이 변경 되돌리기' }).click(); expect(dayRecord(await qa.read()).workoutStatus).toBe('completed');
@@ -61,7 +70,7 @@ test('workout confirmation cancels, recovers a lost response, appears in the cal
 test('two real workout sessions reject stale confirmation and a later calendar edit blocks undo', async ({ page, qa, browser }) => {
   expect((await qa.account.client.from('user_app_state').update({ state: seed() }).eq('user_id', qa.account.id)).error).toBeNull();
   await login(page, qa.account); await synced(page); await openCommand(page); await expect(reviewFor(page)).toBeVisible();
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Seoul' }); await qa.traffic.install(context);
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Seoul' }); await qa.traffic.install(context);
   try {
     const second = await context.newPage(); await login(second, qa.account); await synced(second); await openCommand(second); await expect(reviewFor(second)).toBeVisible();
     await reviewFor(page).getByRole('button', { name: '확인하고 저장' }).click(); await expect(page.getByText(/운동 완료 저장/)).toBeVisible();

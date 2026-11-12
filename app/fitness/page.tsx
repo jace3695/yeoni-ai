@@ -1,5 +1,7 @@
 "use client";
 
+import LocalRecordGuidance from "@/components/yeoni/LocalRecordGuidance";
+import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
 import { RECORDS_CHANGED_EVENT } from "../data/storageTransaction";
 import AppCompanion from "@/components/AppCompanion";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -21,7 +23,8 @@ import {
   getWorkoutDayForDate,
   getWorkoutRecord,
   readWorkoutCompletionStore,
-  WORKOUT_COMPLETED_DAYS_KEY,
+  writeWorkoutCompletionStore,
+  WORKOUT_STORAGE_ERROR,
   WorkoutCompletionStore,
   WorkoutDayRecord,
   ExerciseRecord,
@@ -172,7 +175,20 @@ function FitnessApp() {
   const [conditionRecords, setConditionRecords] = useState<DailyConditionStore>({});
   const [directionUpdateNotice, setDirectionUpdateNotice] = useState("");
 
+  const [completionError, setCompletionError] = useState("");
+  const [completionReady, setCompletionReady] = useState(false);
+  const commitCompletedStore = (update: (previous: WorkoutCompletionStore) => WorkoutCompletionStore): boolean => {
+    try {
+      const current = readWorkoutCompletionStore();
+      const next = update(current);
+      setCompletedStore(next);
+      setCompletionError("");
+      return true;
+    } catch { setCompletionError(WORKOUT_STORAGE_ERROR); return false; }
+  };
+
   const refreshWorkoutReview = useCallback(() => {
+    try {
     const stores = readRecordStores();
     setCompletedStore(stores.workouts);
     setWeightRecords(stores.weights);
@@ -180,6 +196,8 @@ function FitnessApp() {
     setConditionToday(stores.conditions[getLocalDateKey()]);
     setUserWorkoutSettings(readUserWorkoutSettings());
     setSelectedWeeklyWorkoutPlanId(window.localStorage.getItem(SELECTED_WEEKLY_WORKOUT_PLAN_KEY) || DEFAULT_WEEKLY_WORKOUT_PLAN_ID);
+    setCompletionError("");
+    } catch { setCompletionError(WORKOUT_STORAGE_ERROR); }
   }, []);
 
   useEffect(() => {
@@ -205,6 +223,8 @@ function FitnessApp() {
       return;
     }
 
+    try {
+    const initialCompletions = readWorkoutCompletionStore();
     const savedWeeklyPlan =
       window.localStorage.getItem(SELECTED_WEEKLY_WORKOUT_PLAN_KEY) ||
       window.localStorage.getItem(LEGACY_SELECTED_WEEKLY_WORKOUT_PLAN_KEY) ||
@@ -235,7 +255,7 @@ function FitnessApp() {
     );
     window.localStorage.removeItem(LEGACY_SELECTED_WEEKLY_WORKOUT_PLAN_KEY);
 
-    setCompletedStore(readWorkoutCompletionStore());
+    setCompletedStore(initialCompletions);
     setUserWorkoutSettings(settings);
     const recordStores = readRecordStores();
     setWeightRecords(recordStores.weights);
@@ -249,6 +269,8 @@ function FitnessApp() {
           : null,
       ),
     );
+    } catch { setCompletionError(WORKOUT_STORAGE_ERROR); }
+    finally { setCompletionReady(true); }
   }, [activeTab]);
 
   const handleWeeklyWorkoutPlanChange = (planId: string) => {
@@ -315,7 +337,7 @@ function FitnessApp() {
     const backStatus = feedback?.backStatus ?? (pain ? "pain" : undefined);
     const neurologicalSymptoms = feedback?.neurologicalSymptoms ?? [];
     const hasSafetyPain = pain || backStatus === "pain" || backStatus === "worse" || neurologicalSymptoms.length > 0;
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const hasWarmupSlidingBoard = exerciseNames.includes("운동 전 슬라이딩보드");
       const hasPostWorkoutCardio =
@@ -354,12 +376,9 @@ function FitnessApp() {
           cardioMinutes: selectedOptionalCardio?.id === 'rest' ? undefined : selectedOptionalCardio ? (selectedCardioMinutes || current.cardioMinutes) : current.cardioMinutes,
         },
       };
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(next),
-      );
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
     const saved = saveRecoveryRecord(dateKey, {
       recoveryMode: false,
       completedAsRecovery: false,
@@ -372,7 +391,7 @@ function FitnessApp() {
 
   const cancelDayWorkout = (dayId: WorkoutDayId) => {
     const dateKey = getDateForWorkoutDay(dayId);
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -403,17 +422,14 @@ function FitnessApp() {
           postWorkoutCardioMinutes: undefined,
         },
       };
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(next),
-      );
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
   };
 
   const saveDayCardio = (type: string, minutes: number, memo: string) => {
     const dateKey = getLocalDateKey();
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -425,17 +441,14 @@ function FitnessApp() {
           cardioMemo: memo.trim() || undefined,
         },
       };
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(next),
-      );
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
   };
 
   const cancelDayCardio = () => {
     const dateKey = getLocalDateKey();
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -447,18 +460,15 @@ function FitnessApp() {
           cardioMemo: undefined,
         },
       };
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(next),
-      );
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
   };
 
 
   const saveFoamRoller = (record: Pick<WorkoutDayRecord, "foamRollerTiming" | "foamRollerAreas" | "foamRollerPain" | "foamRollerMemo">) => {
     const dateKey = getLocalDateKey();
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -471,14 +481,14 @@ function FitnessApp() {
           foamRollerMemo: record.foamRollerMemo?.trim() || undefined,
         },
       };
-      window.localStorage.setItem(WORKOUT_COMPLETED_DAYS_KEY, JSON.stringify(next));
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
   };
 
   const cancelFoamRoller = () => {
     const dateKey = getLocalDateKey();
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -491,9 +501,9 @@ function FitnessApp() {
           foamRollerMemo: undefined,
         },
       };
-      window.localStorage.setItem(WORKOUT_COMPLETED_DAYS_KEY, JSON.stringify(next));
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
   };
 
   const handleTabChange = (id: string) => {
@@ -514,7 +524,7 @@ function FitnessApp() {
       )
     )
       return;
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -539,12 +549,9 @@ function FitnessApp() {
           postWorkoutCardioMinutes: undefined,
         },
       };
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(next),
-      );
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
     const saved = saveRecoveryRecord(dateKey, {
       recoveryMode: true,
       completedAsRecovery: true,
@@ -711,6 +718,10 @@ function FitnessApp() {
     setShowDailyEditor(true);
   };
 
+  if (completionError) return <section role="alert" className="p-6"><p>{completionError}</p><p>페이지를 다시 열기 전에 보존된 기록을 확인해 주세요. 초기화는 하지 않았습니다.</p></section>;
+  // Child panels read records during render; validate storage before mounting them.
+  if (!completionReady) return <section role="status" className="p-6">운동 기록을 안전하게 확인하고 있어요.</section>;
+
   return (
     <>
       <WorkoutNotificationManager />
@@ -719,14 +730,14 @@ function FitnessApp() {
       <header className="app-module-header">
         <div className="app-module-header-inner">
           {/* Title Row */}
-          <AppIdentity kind="fitness" title="재민님의 운동" subtitle="허리를 지키며 꾸준히" />
+          <AppIdentity kind="fitness" title="나의 운동" subtitle="허리를 지키며 꾸준히" />
           <AppModuleNav items={PRIMARY_NAV.map((item) => ({ ...item, icon: item.emoji }))} activeId={activePrimaryNav} ariaLabel="운동 주요 메뉴" onSelect={(id) => handlePrimaryNavigation(id as (typeof PRIMARY_NAV)[number]["id"])} />
         </div>
       </header>
 
       {/* ── Main Content ── */}
       <main className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
-        <div className="mx-auto max-w-5xl"><AppCompanion home={activeTab === "ov"} compact={activeTab !== "ov"} quiet={activeTab !== "ov"}>{activeTab === "ov" ? todayRecord.workoutDone ? "오늘 운동을 해냈네요! 편하게 쉬어요." : "몸 상태를 살피며, 하나씩 함께해요." : activeTab === "record" ? "숫자 하나보다 기록의 흐름을 함께 봐요. 입력한 값도 한 번 확인해 주세요." : activeTab === "more" ? "필요한 도구와 설정을 여기서 찾아봐요." : "내 속도에 맞춰 천천히 해봐요. 운동 중에는 조용히 기다릴게요."}</AppCompanion></div>
+        <div className="mx-auto max-w-5xl"><CommonCharacterGuide><AppCompanion embedded home={activeTab === "ov"} compact={activeTab !== "ov"} quiet={activeTab !== "ov"}><LocalRecordGuidance app="fitness" date={WORKOUT_DAY_IDS.includes(activeTab as WorkoutDayId) ? activeWorkoutDateKey : undefined} /></AppCompanion></CommonCharacterGuide></div>
         {activeTab === "ov" && (
           <div className="mx-auto w-full max-w-5xl">
             {directionUpdateNotice && (

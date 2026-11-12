@@ -20,7 +20,7 @@ test('meal protein confirmation cancels, recovers a lost reply, persists exact g
   await page.setViewportSize({width:320,height:844});await login(page,qa.account);await synced(page);const before=await qa.read();
   await openCommand(page);const review=reviewFor(page);await expect(review).toContainText('점심 식품 단백질 25g');await expect(review).toContainText('점심 식품 단백질 32g');await expect(review).toContainText('하루 합계 79g');expect(await qa.read()).toEqual(before);
   await review.getByRole('button',{name:'취소',exact:true}).click();await page.reload();await expect(review).toHaveCount(0);expect(await qa.read()).toEqual(before);
-  await page.goto('/assistant');const input=page.getByLabel('연이에게 보낼 명령');await expect(input).toBeEnabled();await input.fill('오늘 점심 단백질 32g 기록해줘');await input.press('Enter');await expect(review).toBeVisible();
+  await page.goto('/assistant');const input=page.getByLabel('연이에게 하고 싶은 말', { exact: true });await expect(input).toBeEnabled();await input.fill('오늘 점심 단백질 32g 기록해줘');await input.press('Enter');await expect(review).toBeVisible();
   await page.goto('/assistant/quick');await expect(review).toBeVisible();const draft=await page.evaluate(()=>sessionStorage.getItem('yeoni:task-command-drafts:v1'));
   await page.reload();await expect(review).toBeVisible();expect(await page.evaluate(()=>sessionStorage.getItem('yeoni:task-command-drafts:v1'))).toBe(draft);
   let lose=true;await page.context().route('**/api/assistant/diet-commands',async route=>{
@@ -50,7 +50,7 @@ test('cooked rice grams preserve nutrients and two sequential commands undo in r
 
 test('stale meal confirmations and later manual edits protect records and outside meals show recorded grams',async({page,qa,browser})=>{
   const initial={...seed(),'ai-fitness-social-meal-mode':{[today()]:'lunch'}};expect((await qa.account.client.from('user_app_state').update({state:initial}).eq('user_id',qa.account.id)).error).toBeNull();await login(page,qa.account);await synced(page);await openCommand(page);await expect(reviewFor(page)).toBeVisible();
-  const context=await browser.newContext({viewport:{width:390,height:844},timezoneId:'Asia/Seoul'});await qa.traffic.install(context);
+  const context=await browser.newContext({ serviceWorkers: 'block',viewport:{width:390,height:844},timezoneId:'Asia/Seoul'});await qa.traffic.install(context);
   try{
     const second=await context.newPage();await login(second,qa.account);await synced(second);await openCommand(second,'오늘 저녁 밥 130g 기록해줘');await expect(reviewFor(second)).toBeVisible();
     await reviewFor(page).getByRole('button',{name:'확인하고 저장'}).click();await expect(receiptFor(page)).toContainText('식단 기록 저장');

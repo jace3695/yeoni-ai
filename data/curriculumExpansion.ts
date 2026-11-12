@@ -57,7 +57,7 @@ export const EXPANDED_CURRICULUM: CurriculumLesson[] = [
     words:[{japanese:"添付",reading:"てんぷ",meaning:"첨부"},{japanese:"ご確認",reading:"ごかくにん",meaning:"확인"},{japanese:"ご返信",reading:"ごへんしん",meaning:"회신"}],
     pattern:{label:"お手数ですが～",explanation:"상대에게 수고를 부탁할 때 앞에 붙이는 완곡한 표현이에요.",example:"お手数ですが、ご確認をお願いいたします。",meaning:"번거로우시겠지만 확인 부탁드립니다."},
     dialogue:[{speaker:"A",japanese:"評価結果を添付いたしました。",reading:"ひょうかけっかをてんぷいたしました。",meaning:"평가 결과를 첨부했습니다."},{speaker:"B",japanese:"確認後、ご返信いたします。",reading:"かくにんご、ごへんしんいたします。",meaning:"확인 후 회신드리겠습니다."}],speak:"お手数ですが、添付資料をご確認いただけますと幸いです。",
-    quiz:[{prompt:"메일의 정중한 확인 요청은?",choices:["確認してください。","お手数ですが、ご確認をお願いいたします。","確認しません。"],answer:1,explanation:"お手数ですが를 붙이면 부담을 배려하는 요청이 돼요."},{prompt:"‘첨부했습니다’는?",choices:["添付いたしました。","添付があります。","添付を待ちます。"],answer:0,explanation:"添付いたしました는 정중한 완료 보고예요."}],
+    quiz:[{prompt:"상대의 수고를 배려하는 말을 덧붙여 확인을 부탁하는 업무 메일 표현은?",choices:["確認してください。","お手数ですが、ご確認をお願いいたします。","確認しません。"],answer:1,explanation:"確認してください도 공손한 확인 요청이에요. 이 문제에서는 ‘번거로우시겠지만’이라는 お手数ですが를 덧붙여 상대의 수고를 배려한 표현을 골라요."},{prompt:"‘첨부했습니다’는?",choices:["添付いたしました。","添付があります。","添付を待ちます。"],answer:0,explanation:"添付いたしました는 정중한 완료 보고예요."}],
   }),
   lesson({
     id:"t09",track:"travel",order:9,title:"환승과 교통카드",goal:"환승 위치와 교통카드 사용법을 물어요.",minutes:10,

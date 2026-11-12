@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { readBodySaveScope, readBodySaveSnapshot, isBodySaveScopeCurrent } from "../data/bodyRecordSave";
+import type { BodySaveScope } from "../data/bodyRecordSave";
 import { RECORDS_CHANGED_EVENT } from "../data/storageTransaction";
 import { useUnsavedChanges } from "../../components/useUnsavedChanges";
 import {
@@ -94,9 +96,17 @@ export default function RecordCalendarView() {
     new Date(today.getFullYear(), today.getMonth(), 1),
   );
   const [selected, setSelected] = useState(todayKey);
+  const [recordTab, setRecordTab] = useState<"summary" | "body" | "workout">("summary");
   const [timePending, setTimePending] = useState(false);
+  const [manualBodyPending, setManualBodyPending] = useState(false);
   const [stores, setStores] = useState<RecordStores | null>(null);
+  const [readError, setReadError] = useState(false);
+  const [sessionChanged, setSessionChanged] = useState(false);
+  const calendarScope = useRef<BodySaveScope | null>(null);
+  const calendarInvalidated = useRef(false);
+  const [reloadAttempt, setReloadAttempt] = useState(0);
   const [noteDraft, setNoteDraft] = useState("");
+  const [noteNotice, setNoteNotice] = useState("");
   const [editingWorkout, setEditingWorkout] = useState(false);
   const [confirmingWorkoutDelete, setConfirmingWorkoutDelete] = useState(false);
   const [workoutStatusDraft, setWorkoutStatusDraft] = useState<WorkoutOverallStatus>("completed");
@@ -128,20 +138,58 @@ export default function RecordCalendarView() {
   const draftDate = useRef(selected);
   const noteEdited = useRef(false);
   const noteDate = useRef(selected);
+  const recordsLive = useRef(true);
+  const workoutWriteLocked = useRef(false);
+  const [sessionInvalid, setSessionInvalid] = useState(false);
+  useEffect(() => {
+    recordsLive.current = true;
+    const invalidate = () => { recordsLive.current = false; setSessionInvalid(true); };
+    const storage = (event: StorageEvent) => {
+      if (event.key === null || event.key === "fitness-cloud-sync-user" || event.key === "fitness-cloud-sync-epoch") invalidate();
+    };
+    window.addEventListener("yeoni-cloud-session-changed", invalidate);
+    window.addEventListener("pagehide", invalidate);
+    window.addEventListener("storage", storage);
+    return () => {
+      recordsLive.current = false;
+      window.removeEventListener("yeoni-cloud-session-changed", invalidate);
+      window.removeEventListener("pagehide", invalidate);
+      window.removeEventListener("storage", storage);
+    };
+  }, []);
   useUnsavedChanges(editingWorkout || editingSecondary !== null || noteDraft !== (stores?.notes[selected] || ""));
   useEffect(() => {
-    const refresh = () => setStores(readRecordStores());
+    const refresh = () => {
+      if (calendarInvalidated.current) return;
+      try {
+        const scope = calendarScope.current ?? readBodySaveScope(window.localStorage);
+        if (calendarScope.current && !isBodySaveScopeCurrent(window.localStorage, calendarScope.current)) {
+          calendarInvalidated.current = true;
+          setSessionChanged(true);
+          return;
+        }
+        // Root ownership admission performs startup recovery. Once mounted,
+        // validate this document's scope and journal before any generic reader
+        // can recover a before-image belonging to another session.
+        calendarScope.current = scope;
+        readBodySaveSnapshot(window.localStorage, scope);
+        const next = readRecordStores({ strictBodyRecords: true });
+        setStores(next); setReadError(false);
+      } catch { setReadError(true); }
+    };
     refresh();
     window.addEventListener(RECORDS_CHANGED_EVENT, refresh);
     window.addEventListener("storage", refresh);
+    window.addEventListener("yeoni-cloud-session-changed", refresh);
     return () => {
       window.removeEventListener(RECORDS_CHANGED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
+      window.removeEventListener("yeoni-cloud-session-changed", refresh);
     };
-  }, []);
+  }, [reloadAttempt]);
   useEffect(
     () => {
-      if (noteDate.current !== selected) noteEdited.current = false;
+      if (noteDate.current !== selected) { noteEdited.current = false; setNoteNotice(""); }
       noteDate.current = selected;
       if (!noteEdited.current) setNoteDraft(stores?.notes[selected] || "");
     },
@@ -183,6 +231,14 @@ export default function RecordCalendarView() {
     setFoamPainDraft(Boolean(selectedWorkoutRecord?.foamRollerPain));
     setFoamMemoDraft(selectedWorkoutRecord?.foamRollerMemo || "");
   }, [selected, selectedWorkoutRecord, editingWorkout, editingSecondary]);
+  if (sessionInvalid) return <p role="status">계정 또는 화면 상태가 바뀌었어요. 기록 화면을 다시 열어 주세요.</p>;
+  if (sessionChanged) return <section role="alert" className="rounded-2xl bg-white p-4 text-[13px] text-gray-700">로그인 상태가 바뀌었습니다. 새로고침하여 현재 계정의 기록을 다시 확인해주세요.</section>;
+  if (readError) return (
+    <section role="alert" className="rounded-2xl bg-white p-4 text-[13px] text-gray-700">
+      <p>기록을 불러오지 못해 저장과 삭제를 멈췄습니다. 기존 저장공간을 지우지 말고 다시 확인해주세요.</p>
+      <button type="button" className="mt-3 rounded-xl border px-3 py-2" onClick={() => setReloadAttempt((attempt) => attempt + 1)}>다시 불러오기</button>
+    </section>
+  );
   if (!stores)
     return (
       <div className="rounded-2xl bg-white p-4 text-[13px] text-gray-500">
@@ -191,13 +247,47 @@ export default function RecordCalendarView() {
     );
   const moveMonth = (delta: number) =>
     setVisible(new Date(visible.getFullYear(), visible.getMonth() + delta, 1));
+  const canEditCalendar = () => {
+    if (!recordsLive.current) return false;
+    try {
+      if (calendarInvalidated.current || !isBodySaveScopeCurrent(window.localStorage, calendarScope.current)) {
+        calendarInvalidated.current = true;
+        setSessionChanged(true);
+        return false;
+      }
+      readBodySaveSnapshot(window.localStorage, calendarScope.current);
+      return true;
+    } catch { setReadError(true); }
+    return false;
+  };
   const saveNote = () => {
-    const next = readJson<DailyNotesStore>(DAILY_NOTES_KEY, {});
-    if (noteDraft.trim()) next[selected] = noteDraft.trim();
-    else delete next[selected];
-    writeJson(DAILY_NOTES_KEY, next);
-    noteEdited.current = false;
-    setStores({ ...stores, notes: next });
+    if (!recordsLive.current || !canEditCalendar()) return;
+    try {
+      const next = readJson<DailyNotesStore>(DAILY_NOTES_KEY, {});
+      if (noteDraft.trim()) next[selected] = noteDraft.trim();
+      else delete next[selected];
+      writeJson(DAILY_NOTES_KEY, next);
+      noteEdited.current = false;
+      setNoteDraft(noteDraft.trim());
+      setStores({ ...stores, notes: next });
+      setNoteNotice("선택한 날짜의 메모를 저장했습니다.");
+    } catch {
+      setNoteNotice("메모를 저장하지 못했어요. 입력은 유지했어요. 브라우저 저장 공간을 확인한 뒤 다시 저장해 주세요.");
+    }
+  };
+  const deleteNote = () => {
+    if (!recordsLive.current || !canEditCalendar()) return;
+    try {
+      const next = readJson<DailyNotesStore>(DAILY_NOTES_KEY, {});
+      delete next[selected];
+      writeJson(DAILY_NOTES_KEY, next);
+      setNoteDraft("");
+      noteEdited.current = false;
+      setStores({ ...stores, notes: next });
+      setNoteNotice("선택한 날짜의 메모를 삭제했습니다.");
+    } catch {
+      setNoteNotice("메모를 삭제하지 못했어요. 입력과 기존 메모는 유지했어요. 브라우저 저장 공간을 확인한 뒤 다시 시도해 주세요.");
+    }
   };
   const selectedDiet = stores.diet[selected];
   const selectedRecovery = stores.recovery[selected];
@@ -248,14 +338,25 @@ export default function RecordCalendarView() {
     stores.lunchProteins[selected],
   );
   const writeWorkoutStore = (update: (record: WorkoutDayRecord) => WorkoutDayRecord) => {
-    const workouts = readJson<RecordStores["workouts"]>(WORKOUT_COMPLETED_DAYS_KEY, {});
-    const value = workouts[selected];
-    const record = typeof value === "object" && value ? value : {};
-    const next = update(record);
-    if (Object.keys(next).length) workouts[selected] = next;
-    else delete workouts[selected];
-    writeJson(WORKOUT_COMPLETED_DAYS_KEY, workouts);
-    setStores({ ...stores, workouts });
+    if (!recordsLive.current || workoutWriteLocked.current || !canEditCalendar()) return false;
+    workoutWriteLocked.current = true;
+    try {
+      const workouts = readJson<RecordStores["workouts"]>(WORKOUT_COMPLETED_DAYS_KEY, {});
+      const before = JSON.stringify(workouts);
+      const value = workouts[selected];
+      const record = typeof value === "object" && value ? value : {};
+      const next = update(record);
+      if (Object.keys(next).length) workouts[selected] = next;
+      else delete workouts[selected];
+      if (JSON.stringify(workouts) !== before) writeJson(WORKOUT_COMPLETED_DAYS_KEY, workouts);
+      setStores({ ...stores, workouts });
+      return true;
+    } catch {
+      setWorkoutNotice("운동 기록을 반영하지 못했어요. 입력과 기존 기록은 유지했어요. 브라우저 저장 공간을 확인한 뒤 다시 시도해 주세요.");
+      return false;
+    } finally {
+      queueMicrotask(() => { workoutWriteLocked.current = false; });
+    }
   };
   const hasBackConcern = Boolean(workoutPainDraft || workoutBackStatusDraft && workoutBackStatusDraft !== "none" || workoutNeurologicalDraft.length);
   const backFeedback = {
@@ -271,7 +372,7 @@ export default function RecordCalendarView() {
     const workoutExerciseNames = exerciseRecords.length
       ? exerciseRecords.map((record) => record.exerciseName)
       : selectedWorkoutRecord.workoutExerciseNames;
-    writeWorkoutStore((current) => ({
+    if (!writeWorkoutStore((current) => ({
         ...current,
         workoutDone: workoutStatusDraft === "completed",
         workoutStatus: workoutStatusDraft,
@@ -281,7 +382,7 @@ export default function RecordCalendarView() {
         workoutMemo: workoutMemoDraft.trim() || undefined,
         workoutExerciseNames,
         workoutExerciseRecords: exerciseRecords.length ? exerciseRecords : undefined,
-    }));
+    }))) return;
     setEditingWorkout(false);
     setWorkoutNotice("운동 기록을 수정했습니다.");
   };
@@ -312,13 +413,13 @@ export default function RecordCalendarView() {
   const saveNewWorkoutRecord = () => {
     if (selected > todayKey || !exerciseRecordsDraft?.length) return;
     const exerciseNames = exerciseRecordsDraft.map((record) => record.exerciseName);
-    writeWorkoutStore((current) => ({ ...current, workoutDone: workoutStatusDraft === "completed", workoutRoutineName: "나중에 직접 기록", workoutExerciseNames: exerciseNames, ...backFeedback, workoutMemo: workoutMemoDraft.trim() || undefined, workoutStatus: workoutStatusDraft, workoutDifficulty: workoutDifficultyDraft, workoutFatigue: workoutFatigueDraft, workoutExerciseRecords: exerciseRecordsDraft }));
+    if (!writeWorkoutStore((current) => ({ ...current, workoutDone: workoutStatusDraft === "completed", workoutRoutineName: "나중에 직접 기록", workoutExerciseNames: exerciseNames, ...backFeedback, workoutMemo: workoutMemoDraft.trim() || undefined, workoutStatus: workoutStatusDraft, workoutDifficulty: workoutDifficultyDraft, workoutFatigue: workoutFatigueDraft, workoutExerciseRecords: exerciseRecordsDraft }))) return;
     setEditingWorkout(false);
     setWorkoutNotice("선택한 날짜에 운동 기록을 추가했습니다.");
   };
   const deleteWorkoutRecord = () => {
     if (!selectedWorkoutRecord) return;
-    writeWorkoutStore(removeGeneralWorkoutRecord);
+    if (!writeWorkoutStore(removeGeneralWorkoutRecord)) return;
     setConfirmingWorkoutDelete(false);
     setWorkoutNotice("일반 운동 기록을 삭제했습니다.");
   };
@@ -329,7 +430,7 @@ export default function RecordCalendarView() {
       : kind === "pullup"
         ? { pullupDone: true, pullupStage: Math.min(5, Math.max(1, pullupStageDraft)), pullupPain: pullupPainDraft, pullupMemo: pullupMemoDraft.trim() || undefined }
         : { foamRollerDone: true, foamRollerTiming: foamTimingDraft, foamRollerAreas: foamAreasDraft, foamRollerPain: foamPainDraft, foamRollerMemo: foamMemoDraft.trim() || undefined };
-    writeWorkoutStore((current) => ({ ...current, ...patch }));
+    if (!writeWorkoutStore((current) => ({ ...current, ...patch }))) return;
     setEditingSecondary(null);
     setWorkoutNotice(`${kind === "cardio" ? "유산소" : kind === "pullup" ? "철봉" : "폼롤러"} 기록을 수정했습니다.`);
   };
@@ -337,33 +438,44 @@ export default function RecordCalendarView() {
     if (!selectedWorkoutRecord) return;
     const label = kind === "cardio" ? "유산소" : kind === "pullup" ? "철봉" : "폼롤러";
     if (!window.confirm(`선택한 날짜의 ${label} 기록만 삭제할까요? 다른 기록은 유지됩니다.`)) return;
-    writeWorkoutStore(kind === "cardio"
+    if (!writeWorkoutStore(kind === "cardio"
       ? removeCardioRecord
       : kind === "pullup"
         ? removePullupRecord
-        : removeFoamRollerRecord);
+        : removeFoamRollerRecord)) return;
     setEditingSecondary(null);
     setWorkoutNotice(`${label} 기록을 삭제했습니다.`);
   };
   return (
-    <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
-      <RecordDashboard
-        stores={stores}
-        year={visible.getFullYear()}
-        monthIndex={visible.getMonth()}
-      />
-      <WeightChart
-        weights={stores.weights}
-        inbody={stores.inbody}
-        goal={stores.weightGoal}
-        year={visible.getFullYear()}
-        monthIndex={visible.getMonth()}
-        cutoffDateKey={todayKey}
-        onGoalChange={(goal) =>
-          setStores({ ...stores, weightGoal: saveWeightGoal(goal) })
-        }
-      />
-      <section className="rounded-2xl bg-white border border-gray-100 p-4 shadow-sm sm:p-5">
+    <div className="min-w-0 space-y-4">
+      <div role="tablist" aria-label="기록 메뉴" className="grid grid-cols-3 gap-1 rounded-2xl bg-gray-100 p-1">
+        {([
+          ["summary", "통합 정보"], ["body", "체중관리"], ["workout", "운동기록"],
+        ] as const).map(([id, label], index, tabs) => (
+          <button key={id} type="button" role="tab" id={`record-tab-${id}`}
+            aria-controls={`record-panel-${id}`} aria-selected={recordTab === id}
+            tabIndex={recordTab === id ? 0 : -1}
+            onClick={() => setRecordTab(id)}
+            onKeyDown={(event) => {
+              const nextIndex = event.key === "ArrowRight" ? (index + 1) % tabs.length
+                : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+                : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : undefined;
+              if (nextIndex === undefined) return;
+              event.preventDefault();
+              const next = tabs[nextIndex][0];
+              setRecordTab(next);
+              document.getElementById(`record-tab-${next}`)?.focus();
+            }}
+            className={`min-h-11 rounded-xl px-2 py-3 text-[13px] font-bold ${recordTab === id ? "bg-white text-[#534AB7] shadow-sm" : "text-gray-500"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {/* Keep every editor mounted: changing a tab never saves or clears a draft. */}
+      <div hidden={recordTab === "summary"} data-testid="record-shared-calendar">
+      <details className="rounded-2xl bg-white border border-gray-100 p-4 shadow-sm sm:p-5">
+        <summary className="min-h-11 cursor-pointer py-3 text-[14px] font-bold text-[#534AB7]">날짜 바꾸기 · {formatKoreanDate(selected)}</summary>
+        <div className="mt-3">
         <div className="flex items-center justify-between">
           <button
             onClick={() => moveMonth(-1)}
@@ -426,7 +538,10 @@ export default function RecordCalendarView() {
               <button
                 key={key}
                 disabled={timePending}
-                onClick={() => { setSelected(key); setWorkoutNotice(""); }}
+                onClick={() => {
+                  if (key !== selected && manualBodyPending && !window.confirm("작성 중인 체중·인바디 입력을 비우고 다른 날짜로 갈까요? 아직 저장하지 않았어요.")) return;
+                  setSelected(key); setWorkoutNotice("");
+                }}
                 className={`min-h-[60px] rounded-lg border p-1 text-left transition sm:min-h-[68px] sm:rounded-xl sm:p-1.5 ${isSelected ? "border-[#534AB7] bg-[#EEEDFE]" : isToday ? "border-[#AFA9EC] bg-white" : "border-gray-100 bg-gray-50"}`}
               >
                 <span
@@ -456,12 +571,162 @@ export default function RecordCalendarView() {
             W=체중, I=인바디, ✎=메모, ⚠=안전 증상
           </p>
         </details>
+        </div>
+      </details>
+      </div>
+      <section role="tabpanel" id="record-panel-summary" aria-labelledby="record-tab-summary" hidden={recordTab !== "summary"} tabIndex={0}>
+      <RecordDashboard stores={stores} year={visible.getFullYear()} monthIndex={visible.getMonth()} view="summary" />
+        <p className="mt-3 text-[12px] text-gray-500">체중·인바디와 식사 상세는 체중관리에서, 날짜별 운동과 메모는 운동기록에서 확인하세요.</p>
       </section>
-      <MonthlySummaryCard
+      <section role="tabpanel" id="record-panel-body" aria-labelledby="record-tab-body" hidden={recordTab !== "body"} tabIndex={0}>
+        <div className="space-y-4">
+          <h2 className="text-[18px] font-bold text-gray-900">{formatKoreanDate(selected)} · 체중관리</h2>
+      <BodyRecordCard
+        onManualDraftChange={setManualBodyPending}
+        dateKey={selected}
+        onDateChange={(date) => {
+          // Saving an imported measurement must not discard another open editor.
+          if (editingWorkout || editingSecondary !== null || noteEdited.current) return;
+          setSelected(date);
+          setVisible(new Date(`${date.slice(0, 7)}-01T12:00:00`));
+        }}
+        weights={stores.weights}
+        inbody={stores.inbody}
+        onChange={({ weights, inbody }) =>
+          setStores({ ...stores, weights, inbody })
+        }
+      />
+      <WeightChart
+        weights={stores.weights}
+        inbody={stores.inbody}
+        goal={stores.weightGoal}
         year={visible.getFullYear()}
         monthIndex={visible.getMonth()}
-        stores={stores}
+        cutoffDateKey={todayKey}
+        onGoalChange={(goal) => {
+          if (!canEditCalendar()) return;
+          setStores({ ...stores, weightGoal: saveWeightGoal(goal) });
+        }}
       />
+      <RecordDashboard stores={stores} year={visible.getFullYear()} monthIndex={visible.getMonth()} view="body" />
+          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+            <h3 className="text-[15px] font-bold text-gray-800">식사·수분·공복 기록</h3>
+            <div className="mt-3 grid grid-cols-1 gap-2 text-[13px] text-gray-700 sm:grid-cols-2">
+          <div className="rounded-xl bg-gray-50 p-3">
+            식단
+            <br />
+            <b>
+              {selectedDiet?.dietStatus
+                ? DIET_STATUS_LABELS[
+                    selectedDiet.dietStatus as keyof typeof DIET_STATUS_LABELS
+                  ]
+                : "미기록"}
+            </b>
+            {selectedDiet?.dietMemo && (
+              <p className="mt-1 text-[11px] text-gray-600">
+                메모: {String(selectedDiet.dietMemo)}
+              </p>
+            )}
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            공복
+            <br />
+            <b>
+              {selectedDiet?.fastingRecordStatus
+                ? FASTING_STATUS_LABELS[
+                    selectedDiet.fastingRecordStatus as keyof typeof FASTING_STATUS_LABELS
+                  ]
+                : selectedDiet?.fasting14h
+                  ? "14시간 달성"
+                  : hasSafetyAlert(selectedDiet)
+                    ? "12시간 조절 가능"
+                    : "미기록"}
+            </b>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3 sm:col-span-2">
+            기존 식단 목표
+            <br />
+            <b>
+              {getDietGoalCount(selectedDiet)} / {DIET_GOAL_CHECK_ITEMS.length}
+              개 완료
+            </b>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            물 섭취
+            <br />
+            <b>{selectedWater.toLocaleString()}mL</b>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            저녁 18:30 이전
+            <br />
+            <b>
+              {selectedDiet?.dinnerBefore1830
+                ? "완료"
+                : selectedDinner
+                  ? `미달성(${selectedDinner})`
+                  : "미기록"}
+            </b>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            공복 타이머
+            <br />
+            <b>
+              {selected === todayKey
+                ? stores.fastingStart
+                  ? `시작 ${stores.fastingStart} / 예상 종료 ${String((Number(stores.fastingStart.slice(0, 2)) + 14) % 24).padStart(2, "0")}${stores.fastingStart.slice(2)}`
+                  : "미설정"
+                : "개별 공복 기록 없음"}
+            </b>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            안전 증상
+            <br />
+            <b>{hasSafetyAlert(selectedDiet) ? "기록 있음" : "없음"}</b>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3 sm:col-span-2">
+            체중·인바디
+            <br />
+            <b>
+              {stores.weights[selected]?.weight
+                ? `${stores.weights[selected].weight.toFixed(1)}kg`
+                : "체중 미기록"}
+              {" · "}
+              {stores.inbody[selected] ? "인바디 기록 있음" : "인바디 미기록"}
+            </b>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3 sm:col-span-2">
+            <span>{selectedLunchCarb.rice}</span>
+            {selectedLunchCarb.carbs && (
+              <>
+                <br />
+                <b>{selectedLunchCarb.carbs}</b>
+              </>
+            )}
+            <br />
+            <span>{selectedLunchProtein}</span>
+            <p className="mt-1 text-[11px] text-gray-500">
+              점심 밥량은 조리된 밥 무게이며, 참고 탄수화물은 단백질 합계에
+              포함하지 않습니다.
+            </p>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3 sm:col-span-2">
+            <span>{selectedDinnerCarb.rice}</span>
+            {selectedDinnerCarb.carbs && (
+              <>
+                <br />
+                <b>{selectedDinnerCarb.carbs}</b>
+              </>
+            )}
+            <p className="mt-1 text-[11px] text-gray-500">
+              저녁 밥량은 조리된 밥 무게이며, 참고 탄수화물과 구분됩니다.
+            </p>
+          </div>
+            </div>
+          </section>
+        </div>
+      </section>
+      <section role="tabpanel" id="record-panel-workout" aria-labelledby="record-tab-workout" hidden={recordTab !== "workout"} tabIndex={0}>
+        <div className="space-y-4">
       <section className="rounded-2xl bg-white border border-gray-100 p-4 shadow-sm sm:p-5">
         <p className="text-[12px] font-semibold text-[#534AB7]">
           선택 날짜 상세
@@ -799,125 +1064,8 @@ export default function RecordCalendarView() {
               </div> : null}
             </> : null}
           </div>
-          <div className="rounded-xl bg-gray-50 p-3">
-            식단
-            <br />
-            <b>
-              {selectedDiet?.dietStatus
-                ? DIET_STATUS_LABELS[
-                    selectedDiet.dietStatus as keyof typeof DIET_STATUS_LABELS
-                  ]
-                : "미기록"}
-            </b>
-            {selectedDiet?.dietMemo && (
-              <p className="mt-1 text-[11px] text-gray-600">
-                메모: {String(selectedDiet.dietMemo)}
-              </p>
-            )}
-          </div>
-          <div className="rounded-xl bg-gray-50 p-3">
-            공복
-            <br />
-            <b>
-              {selectedDiet?.fastingRecordStatus
-                ? FASTING_STATUS_LABELS[
-                    selectedDiet.fastingRecordStatus as keyof typeof FASTING_STATUS_LABELS
-                  ]
-                : selectedDiet?.fasting14h
-                  ? "14시간 달성"
-                  : hasSafetyAlert(selectedDiet)
-                    ? "12시간 조절 가능"
-                    : "미기록"}
-            </b>
-          </div>
-          <div className="rounded-xl bg-gray-50 p-3 sm:col-span-2">
-            기존 식단 목표
-            <br />
-            <b>
-              {getDietGoalCount(selectedDiet)} / {DIET_GOAL_CHECK_ITEMS.length}
-              개 완료
-            </b>
-          </div>
-          <div className="rounded-xl bg-gray-50 p-3">
-            물 섭취
-            <br />
-            <b>{selectedWater.toLocaleString()}mL</b>
-          </div>
-          <div className="rounded-xl bg-gray-50 p-3">
-            저녁 18:30 이전
-            <br />
-            <b>
-              {selectedDiet?.dinnerBefore1830
-                ? "완료"
-                : selectedDinner
-                  ? `미달성(${selectedDinner})`
-                  : "미기록"}
-            </b>
-          </div>
-          <div className="rounded-xl bg-gray-50 p-3">
-            공복 타이머
-            <br />
-            <b>
-              {selected === todayKey
-                ? stores.fastingStart
-                  ? `시작 ${stores.fastingStart} / 예상 종료 ${String((Number(stores.fastingStart.slice(0, 2)) + 14) % 24).padStart(2, "0")}${stores.fastingStart.slice(2)}`
-                  : "미설정"
-                : "개별 공복 기록 없음"}
-            </b>
-          </div>
-          <div className="rounded-xl bg-gray-50 p-3">
-            안전 증상
-            <br />
-            <b>{hasSafetyAlert(selectedDiet) ? "기록 있음" : "없음"}</b>
-          </div>
-          <div className="rounded-xl bg-gray-50 p-3 sm:col-span-2">
-            체중·인바디
-            <br />
-            <b>
-              {stores.weights[selected]?.weight
-                ? `${stores.weights[selected].weight.toFixed(1)}kg`
-                : "체중 미기록"}
-              {" · "}
-              {stores.inbody[selected] ? "인바디 기록 있음" : "인바디 미기록"}
-            </b>
-          </div>
-          <div className="rounded-xl bg-gray-50 p-3 sm:col-span-2">
-            <span>{selectedLunchCarb.rice}</span>
-            {selectedLunchCarb.carbs && (
-              <>
-                <br />
-                <b>{selectedLunchCarb.carbs}</b>
-              </>
-            )}
-            <br />
-            <span>{selectedLunchProtein}</span>
-            <p className="mt-1 text-[11px] text-gray-500">
-              점심 밥량은 조리된 밥 무게이며, 참고 탄수화물은 단백질 합계에
-              포함하지 않습니다.
-            </p>
-          </div>
-          <div className="rounded-xl bg-gray-50 p-3 sm:col-span-2">
-            <span>{selectedDinnerCarb.rice}</span>
-            {selectedDinnerCarb.carbs && (
-              <>
-                <br />
-                <b>{selectedDinnerCarb.carbs}</b>
-              </>
-            )}
-            <p className="mt-1 text-[11px] text-gray-500">
-              저녁 밥량은 조리된 밥 무게이며, 참고 탄수화물과 구분됩니다.
-            </p>
-          </div>
         </div>
       </section>
-      <BodyRecordCard
-        dateKey={selected}
-        weights={stores.weights}
-        inbody={stores.inbody}
-        onChange={({ weights, inbody }) =>
-          setStores({ ...stores, weights, inbody })
-        }
-      />
       <section className="rounded-2xl bg-white border border-gray-100 p-4 shadow-sm sm:p-5">
         <p className="text-[15px] font-bold text-gray-800">날짜별 메모</p>
         <textarea
@@ -934,18 +1082,20 @@ export default function RecordCalendarView() {
             저장
           </button>
           <button
-            onClick={() => {
-              setNoteDraft("");
-              noteEdited.current = false;
-              const next = readJson<DailyNotesStore>(DAILY_NOTES_KEY, {});
-              delete next[selected];
-              writeJson(DAILY_NOTES_KEY, next);
-              setStores({ ...stores, notes: next });
-            }}
+            onClick={deleteNote}
             className="rounded-xl bg-red-50 px-4 py-2 text-[13px] font-bold text-red-600"
           >
             삭제
           </button>
+        </div>
+        {noteNotice && <p role="status" className="mt-2 text-[12px] text-gray-600">{noteNotice}</p>}
+      </section>
+      <MonthlySummaryCard
+        year={visible.getFullYear()}
+        monthIndex={visible.getMonth()}
+        stores={stores}
+      />
+      <RecordDashboard stores={stores} year={visible.getFullYear()} monthIndex={visible.getMonth()} view="workout" />
         </div>
       </section>
     </div>

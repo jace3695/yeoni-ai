@@ -1,0 +1,22 @@
+.guide{container-type:inline-size;display:grid;grid-template-columns:var(--yeoni-character-height) minmax(0,1fr);align-items:center;gap:12px;min-width:0;width:100%;margin:12px 0 20px}
+.guide>[data-yeoni-common-slot]{min-width:0}
+.content{min-width:0;overflow-wrap:anywhere}
+/* Match body guidance without flattening page headings or calendar's reviewed layout. */
+.guide[data-desktop-compact=true] .content [aria-label="연이의 안내"][data-embedded=true]{margin-bottom:0}
+.guide[data-desktop-compact=true] .content [aria-label="연이의 안내"]>div{padding:10px 14px;border-radius:19px}
+.guide[data-desktop-compact=true] .content [aria-label="연이의 안내"]>div>p{margin:0;font-size:var(--yeoni-guidance-font-size);line-height:1.6}
+.guide[data-character-visible=false]{grid-template-columns:minmax(0,1fr)}
+.guide[data-character-visible=false]>[data-yeoni-common-slot]{display:none}
+.guide [data-yeoni-common-host]{width:100%;margin:0;padding:0;border:0;border-radius:12px;background:transparent}
+.guide [data-yeoni-common-host]>div{margin:0;max-width:none}
+.guide [data-yeoni-common-host]>div>div{display:block}
+.guide [data-yeoni-common-host] [aria-busy]{width:100%;height:var(--yeoni-character-height);margin:0;overflow:hidden}
+.guide [data-yeoni-common-host] canvas,.guide [data-yeoni-common-host][data-quiet=true] canvas{width:auto;height:var(--yeoni-character-height);max-height:var(--yeoni-character-height);max-width:100%;object-fit:contain;margin:auto}
+.guide [data-character-appearance=cat] canvas{transform:translate(-5%,-5%) scale(1.25)}
+
+/* Container em units follow the actual text size, including app text scaling.
+   Keep ordinary mobile pairs; give enlarged text the entire narrow row. */
+@container (max-width:12em){
+  .guide>[data-yeoni-common-slot]{grid-column:1 / -1;width:var(--yeoni-character-height);justify-self:center}
+  .content{grid-column:1 / -1}
+}

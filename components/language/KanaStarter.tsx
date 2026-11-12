@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { BEGINNER_KANA_GROUPS } from "@/data/beginnerKana";
-import { loadCurriculumProgress, saveCurriculumProgress } from "@/utils/curriculumProgress";
+import { curriculumProgressErrorMessage, CurriculumProgressError, type CurriculumProgress, loadCurriculumProgress, saveCurriculumProgress } from "@/utils/curriculumProgress";
 import { useYeoniPreferences } from "@/components/useYeoniPreferences";
 import LearningCompanion from "./LearningCompanion";
 import { useLearningAudio } from "./useLearningAudio";
@@ -16,6 +16,9 @@ export default function KanaStarter() {
   const [picked, setPicked] = useState<string | null>(null);
   const { visible: showCompanion } = useYeoniPreferences();
   const [loaded, setLoaded] = useState(false);
+  const progressRef = useRef<CurriculumProgress | null>(null);
+  const [readError, setReadError] = useState("");
+  const [readAttempt, setReadAttempt] = useState(0);
   const [error, setError] = useState("");
   const feedbackRef = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLElement>(null);
@@ -34,22 +37,28 @@ export default function KanaStarter() {
     }
   }, [loaded, showCompanion, group.id, mode, letterIndex]);
   useEffect(() => {
-    const progress = loadCurriculumProgress();
-    const next = BEGINNER_KANA_GROUPS.findIndex((item) => !progress.kanaCompletedGroups?.includes(item.id));
-    setGroupIndex(Math.max(0, next));
-    setLoaded(true);
-  }, []);
+    try {
+      const progress = loadCurriculumProgress();
+      progressRef.current = progress;
+      const next = BEGINNER_KANA_GROUPS.findIndex((item) => !progress.kanaCompletedGroups?.includes(item.id));
+      setGroupIndex(Math.max(0, next));
+      setLoaded(true);
+      setReadError("");
+    } catch (error) { setReadError(curriculumProgressErrorMessage(error, "학습 기록을 읽지 못했어요. 다시 읽어 주세요.")); }
+  }, [readAttempt]);
   const next = () => {
     audio.stop();
     if (letterIndex < chars.length - 1) { setPicked(null); setLetterIndex((index) => index + 1); return; }
     if (mode === "learn") { setPicked(null); setLetterIndex(0); setMode("quiz"); return; }
     try {
-      const progress = loadCurriculumProgress();
-      saveCurriculumProgress({ ...progress, kanaCompletedGroups: [...new Set([...(progress.kanaCompletedGroups ?? []), group.id])] });
+      const progress = progressRef.current;
+      if (!progress) throw new CurriculumProgressError("read");
+      progressRef.current = saveCurriculumProgress({ ...progress, kanaCompletedGroups: [...new Set([...(progress.kanaCompletedGroups ?? []), group.id])] });
       setMode("done");
       setError("");
-    } catch { setError("결과를 저장하지 못했어요. 다시 저장해 주세요."); }
+    } catch (error) { setError(curriculumProgressErrorMessage(error, "결과를 저장하지 못했어요. 다시 저장해 주세요.")); }
   };
+  if (readError) return <section><p role="alert">{readError}</p><button type="button" onClick={() => setReadAttempt(value => value + 1)}>기록 다시 읽기</button></section>;
   if (!loaded) return <p role="status">첫 글자를 준비하고 있어요.</p>;
   return <section className={styles.focus}>
     <header className={styles.header}><Link href="/language" className={styles.back}>← 학습 홈</Link><h1>{group.title}</h1><span className={styles.pill}>가나 첫걸음</span></header>

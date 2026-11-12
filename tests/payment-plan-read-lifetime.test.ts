@@ -1,0 +1,13 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
+const source=readFileSync(new URL('../app/budget/components/payment-plans.tsx',import.meta.url),'utf8');
+const tree=ts.createSourceFile('plans.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let callback='';
+function visit(node:ts.Node){if(ts.isVariableDeclaration(node)&&node.name.getText(tree)==='load'&&node.initializer&&ts.isCallExpression(node.initializer))callback=node.initializer.arguments[0].getText(tree);ts.forEachChild(node,visit);}visit(tree);
+const code=ts.transpileModule('('+callback+')',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+function fixture(){const mounted={current:true},generation={current:0};const calls:string[]=[];let release!:(value:unknown)=>void;const q=new Proxy({},{get:(_,key)=>key==='then'?(done:(value:unknown)=>void)=>{calls.push('query');return new Promise(r=>{release=r;}).then(done);} :()=>q});
+ const load=vm.runInNewContext(code,{mounted,generation,userId:'synthetic-A',client:{from:()=>q},window:{localStorage:{getItem:()=>{calls.push('journal');return null;}}},pendingPaymentPlanKey:(id:string)=>id,setLoaded:(value:boolean)=>calls.push('loaded:'+value),setPlans:()=>calls.push('plans'),setPending:()=>calls.push('pending')}) as ()=>Promise<unknown>;
+ return{load,mounted,generation,calls,release:(value:unknown={data:[],count:0,error:null})=>release(value)};
+}
+test('actual plan load cannot dispatch after its owner component unmounts',async()=>{const f=fixture();f.mounted.current=false;assert.equal(await f.load(),null);assert.deepEqual(f.calls,[]);});
+test('late plan response after unmount does not read owner journal or publish data',async()=>{const f=fixture();const task=f.load();await new Promise(r=>setImmediate(r));f.mounted.current=false;f.release();assert.equal(await task,null);assert.deepEqual(f.calls,['loaded:false','query']);});
+test('superseded plan response ignores malformed data before stale error or journal access',async()=>{const f=fixture();const task=f.load();await new Promise(r=>setImmediate(r));f.generation.current++;f.release({data:null,count:null,error:{message:'late failure'}});assert.equal(await task,null);assert.deepEqual(f.calls,['loaded:false','query']);});
+test('current plan response still reads journal and publishes complete data',async()=>{const f=fixture();const task=f.load();await new Promise(r=>setImmediate(r));f.release();await task;assert.deepEqual(f.calls,['loaded:false','query','journal','plans','pending','loaded:true']);});

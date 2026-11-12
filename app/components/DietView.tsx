@@ -1,5 +1,7 @@
 'use client';
 
+import DietDetails from './DietDetails';
+import { DIET_PHOTO_WAIT_MS, waitForDietPhoto } from '@/app/lib/dietPhotoWait';
 import { fastingStartForDay } from '@/lib/diet-time';
 import { useUnsavedChanges } from '@/components/useUnsavedChanges';
 import { authenticatedJsonHeaders } from '@/app/lib/authenticatedHeaders';
@@ -302,6 +304,7 @@ export default function DietView() {
   const [photoConfirmed, setPhotoConfirmed] = useState(false);
   const [photoDataUseAcknowledged, setPhotoDataUseAcknowledged] = useState(false);
   const [photoLoading, setPhotoLoading] = useState(false);
+  const photoRequest = useRef<AbortController | null>(null);
   const [photoMessage, setPhotoMessage] = useState('');
   const [dataVersion, setDataVersion] = useState(0);
   const [savedInput, setSavedInput] = useState<string | null>(null);
@@ -309,7 +312,18 @@ export default function DietView() {
   const dirty = hydrated && savedInput !== null && savedInput !== inputSnapshot;
   const dirtyRef = useRef(dirty);
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
-  useUnsavedChanges(dirty);
+  useUnsavedChanges(dirty || photoLoading);
+  useEffect(() => {
+    const stop = () => { photoRequest.current?.abort(); photoRequest.current = null; };
+    const invalidate = () => {
+      stop(); setPhotoLoading(false); setPhotoAnalysis(null); setPhotoConfirmed(false);
+      setPhotoDataUseAcknowledged(false); setPhotoFile(null); setPhotoPreviewUrl(''); setPhotoMessage('');
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    };
+    window.addEventListener('yeoni-cloud-session-changed', invalidate);
+    window.addEventListener('pagehide', invalidate);
+    return () => { stop(); window.removeEventListener('yeoni-cloud-session-changed', invalidate); window.removeEventListener('pagehide', invalidate); };
+  }, []);
   useEffect(() => () => {
     if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
   }, [photoPreviewUrl]);
@@ -457,6 +471,7 @@ export default function DietView() {
   };
 
   const selectDietPhoto = (file: File | null) => {
+    photoRequest.current?.abort(); photoRequest.current = null; setPhotoLoading(false);
     setPhotoAnalysis(null);
     setPhotoConfirmed(false);
     setPhotoDataUseAcknowledged(false);
@@ -480,27 +495,40 @@ export default function DietView() {
   };
 
   const analyzeDietPhoto = async () => {
-    if (!photoFile || photoLoading || !photoDataUseAcknowledged) return;
+    if (!photoFile || photoRequest.current || !photoDataUseAcknowledged) return;
+    const controller = new AbortController(); photoRequest.current = controller;
+    const timer = window.setTimeout(() => controller.abort(new Error('기다리는 시간이 길어 분석을 중단했어요. 사진은 그대로예요. 서버에서 처리됐을 수 있어 자동으로 다시 보내지 않아요.')), DIET_PHOTO_WAIT_MS);
+    const current = () => photoRequest.current === controller;
     setPhotoLoading(true);
     setPhotoAnalysis(null);
     setPhotoConfirmed(false);
     setPhotoMessage('');
     try {
-      const imageDataUrl = await compressDietPhoto(photoFile);
-      const response = await fetch('/api/diet/photo-analysis', {
+      const imageDataUrl = await waitForDietPhoto(controller.signal, () => compressDietPhoto(photoFile));
+      const headers = await waitForDietPhoto(controller.signal, authenticatedJsonHeaders);
+      const response = await waitForDietPhoto(controller.signal, () => fetch('/api/diet/photo-analysis', {
+        signal: controller.signal,
         method: 'POST',
-        headers: await authenticatedJsonHeaders(),
+        headers,
         body: JSON.stringify({ mealSlot: photoMealSlot, imageDataUrl, freeDataUseAcknowledged: photoDataUseAcknowledged }),
-      });
-      const result = await response.json() as DietPhotoAnalysis & { error?: string };
+      }));
+      const result = await waitForDietPhoto(controller.signal, () => response.json()) as DietPhotoAnalysis & { error?: string };
+      if (!current() || controller.signal.aborted) return;
       if (!response.ok) throw new Error(result.error || '사진을 분석하지 못했어요.');
       setPhotoAnalysis(normalizeDietPhotoAnalysis(result));
       setPhotoMessage('추정 결과를 확인하고 필요하면 숫자를 고쳐 주세요.');
     } catch (error) {
+      if (!current()) return;
       setPhotoMessage(error instanceof Error ? error.message : '사진을 분석하지 못했어요.');
     } finally {
-      setPhotoLoading(false);
+      window.clearTimeout(timer);
+      if (current()) { photoRequest.current = null; setPhotoLoading(false); }
     }
+  };
+
+  const cancelDietPhoto = () => {
+    photoRequest.current?.abort(); photoRequest.current = null; setPhotoLoading(false);
+    setPhotoMessage('분석 대기를 중단했어요. 사진은 그대로예요. 이미 보낸 요청은 서버에서 처리됐을 수 있어요. 자동으로 다시 보내지 않아요.');
   };
 
   const applyDietPhotoAnalysis = () => {
@@ -772,10 +800,7 @@ export default function DietView() {
       <section className="rounded-2xl border border-[#D9D6F5] bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-[12px] font-bold text-[#534AB7]">오늘 식사 일정</p>
-            <h3 className="mt-1 text-[17px] font-bold text-gray-900">
-              일정에 맞춰 식단 기준을 바꾸세요
-            </h3>
+            <h3 className="text-[17px] font-bold text-gray-900">오늘 식사 일정</h3>
             <p className="mt-1 text-[12px] text-gray-500">
               외식이나 여행은 실패가 아니라 별도의 관리 방식으로 기록됩니다.
             </p>
@@ -879,14 +904,34 @@ export default function DietView() {
         )}
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-[1.35fr_0.65fr] lg:items-start">
-        <div className="space-y-4">
+      <div className="space-y-4" data-diet-entry-flow>
+          <section className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm sm:p-5" aria-label="식단 간편 입력">
+            <h3 className="text-[15px] font-bold text-gray-900">식단 간편 입력</h3>
+            <p className="mt-2 text-xs leading-5 text-gray-500">먹은 양을 확인해 적용한 뒤, 오늘 식단을 저장하세요.</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {(['lunch', 'dinner'] as const).map(slot => <div key={slot} className="space-y-2">
+                <button type="button" onClick={() => setQuickMeal(quickMealPreset(slot))} className="min-h-11 w-full rounded-xl bg-violet-50 p-2 text-xs font-bold text-violet-800">{slot === 'lunch' ? '점심' : '저녁'} 기본값 보기</button>
+                <button type="button" onClick={() => { const previous = previousMeal(mealStore, slot === 'lunch' ? lunchCarbStore : dinnerCarbStore, lunchProteinStore, slot, todayKey); setQuickMeal(previous); if (!previous) setMessage('불러올 이전 식사 기록이 없어요. 직접 입력으로 시작해 주세요.'); }} className="min-h-11 w-full rounded-xl bg-gray-50 p-2 text-xs font-bold text-gray-700">지난 {slot === 'lunch' ? '점심' : '저녁'} 불러오기</button>
+              </div>)}
+            </div>
+            {quickMeal ? <div className="mt-3 rounded-xl bg-violet-50 p-3" role="region" aria-label="불러올 식사 확인">
+              <strong className="text-sm">{quickMeal.label}</strong>
+              <p className="mt-2 text-xs leading-5">{quickMeal.slot === 'lunch' ? '점심' : '저녁'} 식품 단백질 {quickMeal.patch[`${quickMeal.slot}ProteinChoice`] === 'custom' ? quickMeal.patch[`${quickMeal.slot}ProteinCustom`] : quickMeal.patch[`${quickMeal.slot}ProteinChoice`] === 'none' ? '미기록' : quickMeal.patch[`${quickMeal.slot}ProteinChoice`]}g · 밥 {quickMeal.carb.grams}g{quickMeal.slot === 'lunch' ? ` · 보충 단백질 ${quickMeal.supplement.protein}g` : ''}</p>
+              <p className="mt-1 text-xs leading-5">이 식사의 단백질·밥 입력값을 바꿉니다. 물·공복·상태·다른 끼니는 유지합니다.</p>
+              <div className="mt-3 flex flex-wrap gap-2"><button type="button" className="min-h-11 rounded-lg bg-violet-700 px-3 text-xs font-bold text-white" onClick={() => {
+                setMealLog(current => ({ ...current, ...quickMeal.patch }));
+                if (quickMeal.slot === 'lunch') { setLunchCarb(quickMeal.carb); setLunchProtein(quickMeal.supplement); } else setDinnerCarb(quickMeal.carb);
+                setMessage('식사 입력칸에 반영했습니다. 아직 저장되지 않았습니다.'); setQuickMeal(null);
+              }}>식사 입력칸에 적용</button><button type="button" className="min-h-11 rounded-lg bg-white px-3 text-xs" onClick={() => setQuickMeal(null)}>취소</button></div>
+            </div> : null}
+          </section>
+
           <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-[16px] font-bold text-gray-900">오늘 식사 기록</h3>
                 <p className="mt-1 text-[12px] text-gray-500">
-                  실제로 먹은 항목만 선택하면 단백질 합계에 반영됩니다.
+                  먹은 항목을 선택하면 합계에 반영됩니다.
                 </p>
               </div>
               <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${proteinStatus.bg} ${proteinStatus.color}`}>
@@ -895,186 +940,7 @@ export default function DietView() {
             </div>
 
             <div className="mt-4 space-y-3">
-              <article className="rounded-2xl border border-[#D9D6F5] bg-[#F7F6FF] p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[14px] font-bold text-gray-900">사진으로 입력 보조</p>
-                    <p className="mt-1 text-[11px] leading-5 text-gray-600">
-                      사진은 앱 기록으로 저장되지 않습니다. AI 추정값을 직접 확인한 뒤 입력칸에만 반영합니다.
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-white px-3 py-1 text-[10px] font-bold text-[#534AB7]">
-                    무료 AI · 선택 기능
-                  </span>
-                </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  {([['lunch', '점심'], ['dinner', '저녁']] as const).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      disabled={photoLoading}
-                      onClick={() => {
-                        setPhotoMealSlot(value);
-                        setPhotoAnalysis(null);
-                        setPhotoConfirmed(false);
-                        setPhotoMessage('');
-                      }}
-                      className={choiceButton(photoMealSlot === value)}
-                    >
-                      {label} 사진
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                  <label className="block text-[11px] font-bold text-gray-700">
-                    음식 사진 선택
-                    <input
-                      ref={photoInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      capture="environment"
-                      disabled={photoLoading}
-                      onChange={(event) => selectDietPhoto(event.target.files?.[0] ?? null)}
-                      className="mt-1 block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-[12px] text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-[#EEEDFE] file:px-3 file:py-1.5 file:text-[11px] file:font-bold file:text-[#3C3489]"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => void analyzeDietPhoto()}
-                    disabled={!photoFile || photoLoading || !photoDataUseAcknowledged}
-                    className="min-h-11 rounded-xl bg-[#534AB7] px-4 py-2.5 text-[12px] font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-                  >
-                    {photoLoading ? '분석 중…' : 'AI로 분석'}
-                  </button>
-                </div>
-                <p className="mt-2 text-[10px] leading-4 text-gray-500">
-                  ‘AI로 분석’을 누르면 압축된 사진 1장이 Google Gemini로 전송됩니다. 무료 한도에 도달하면 직접 입력으로 이어갈 수 있습니다.
-                </p>
-                <p id="diet-photo-free-data-notice" className="mt-2 text-[10px] leading-4 text-gray-600">
-                  Google 무료 서비스는 사진과 응답을 서비스 개선에 활용할 수 있고 담당자가 검토할 수 있습니다. 얼굴·이름·영수증 등 개인정보가 없는 음식 사진만 선택해 주세요.{' '}
-                  <a href="https://ai.google.dev/gemini-api/terms#unpaid-services" target="_blank" rel="noopener noreferrer" className="underline">데이터 활용 안내</a>
-                </p>
-                <label className="mt-2 flex min-h-11 items-center gap-2 text-[11px] leading-5 text-gray-700">
-                  <input type="checkbox" checked={photoDataUseAcknowledged} disabled={!photoFile || photoLoading}
-                    aria-describedby="diet-photo-free-data-notice"
-                    onChange={(event) => setPhotoDataUseAcknowledged(event.target.checked)} className="h-4 w-4 shrink-0" />
-                  무료 분석의 사진·응답 활용 안내를 확인했습니다.
-                </label>
-
-                {photoPreviewUrl && (
-                  <div className="mt-3 flex items-start gap-3 rounded-xl bg-white p-3">
-                    <NextImage
-                      src={photoPreviewUrl}
-                      alt="분석할 식사 사진 미리보기"
-                      width={96}
-                      height={96}
-                      unoptimized
-                      className="h-24 w-24 shrink-0 rounded-xl object-cover"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12px] font-bold text-gray-800">{photoFile?.name}</p>
-                      <p className="mt-1 text-[10px] text-gray-500">
-                        {photoFile ? `${(photoFile.size / 1024 / 1024).toFixed(1)}MB · 전송 전 자동 압축` : ''}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => selectDietPhoto(null)}
-                        disabled={photoLoading}
-                        className="mt-2 rounded-lg bg-gray-100 px-2.5 py-1.5 text-[10px] font-bold text-gray-600"
-                      >
-                        사진 지우기
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {photoAnalysis && (
-                  <div className="mt-3 rounded-2xl border border-[#CFCBF2] bg-white p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-[13px] font-bold text-gray-900">AI 추정 결과</p>
-                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                        photoAnalysis.confidence === 'high'
-                          ? 'bg-green-50 text-green-700'
-                          : photoAnalysis.confidence === 'medium'
-                            ? 'bg-amber-50 text-amber-700'
-                            : 'bg-red-50 text-red-700'
-                      }`}>
-                        신뢰도 {photoAnalysis.confidence === 'high' ? '높음' : photoAnalysis.confidence === 'medium' ? '보통' : '낮음'}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-[11px] leading-5 text-gray-600">
-                      보이는 음식: {photoAnalysis.foods.length ? photoAnalysis.foods.join(', ') : '판단 어려움'}
-                    </p>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <label className="text-[11px] font-bold text-gray-700">
-                        단백질 추정 g
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min={0}
-                          max={100}
-                          value={photoAnalysis.proteinGrams ?? ''}
-                          onChange={(event) => setPhotoAnalysis((current) => current ? {
-                            ...current,
-                            proteinGrams: event.target.value === '' ? null : Math.max(0, Number(event.target.value) || 0),
-                          } : current)}
-                          placeholder="판단 어려움"
-                          className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px]"
-                        />
-                      </label>
-                      <label className="text-[11px] font-bold text-gray-700">
-                        조리된 밥 추정 g
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min={0}
-                          max={500}
-                          value={photoAnalysis.cookedRiceGrams ?? ''}
-                          onChange={(event) => setPhotoAnalysis((current) => current ? {
-                            ...current,
-                            cookedRiceGrams: event.target.value === '' ? null : Math.max(0, Number(event.target.value) || 0),
-                          } : current)}
-                          placeholder="판단 어려움"
-                          className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px]"
-                        />
-                      </label>
-                    </div>
-                    {photoAnalysis.note && (
-                      <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-800">
-                        오차 참고: {photoAnalysis.note}
-                      </p>
-                    )}
-                    <label className="mt-3 flex items-start gap-2 text-[11px] leading-5 text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={photoConfirmed}
-                        onChange={(event) => setPhotoConfirmed(event.target.checked)}
-                        className="mt-1"
-                      />
-                      사진 분석은 추정치이며, 음식과 양을 직접 확인했습니다.
-                    </label>
-                    <button
-                      type="button"
-                      onClick={applyDietPhotoAnalysis}
-                      disabled={!photoConfirmed || (photoAnalysis.proteinGrams === null && photoAnalysis.cookedRiceGrams === null)}
-                      className="mt-3 w-full rounded-xl bg-[#3C3489] px-4 py-2.5 text-[12px] font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-                    >
-                      {photoMealSlot === 'lunch' ? '점심' : '저녁'} 입력칸에 반영
-                    </button>
-                    <p className="mt-2 text-[10px] text-gray-500">
-                      반영 후에도 자동 저장되지 않습니다. 아래 ‘오늘 식단 저장’을 눌러야 기록됩니다.
-                    </p>
-                  </div>
-                )}
-
-                {photoMessage && (
-                  <p role="status" className="mt-3 rounded-xl bg-white px-3 py-2 text-[11px] font-semibold text-gray-700">
-                    {photoMessage}
-                  </p>
-                )}
-              </article>
 
               <article className="rounded-2xl bg-gray-50 p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -1099,11 +965,7 @@ export default function DietView() {
 
               <article className="rounded-2xl bg-gray-50 p-4">
                 <p className="text-[14px] font-bold text-gray-900">점심</p>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  {awayLunch
-                    ? '식당 식사 · 정확한 무게를 몰라도 가장 가까운 양으로 기록'
-                    : '통곡물밥 100~130g + 실제 식품 단백질 20g 이상'}
-                </p>
+
                 <div className="mt-3">
                   <p className="text-[11px] font-bold text-gray-600">밥량 · 조리 후 무게</p>
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -1281,11 +1143,7 @@ export default function DietView() {
 
               <article className="rounded-2xl bg-gray-50 p-4">
                 <p className="text-[14px] font-bold text-gray-900">저녁</p>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  {awayDinner
-                    ? '외식·약속 식사 · 단백질과 채소를 먼저, 밥·면은 먹은 만큼 기록'
-                    : '단백질 20g 이상 + 채소 · 밥은 기본 제외'}
-                </p>
+
                 <label className="mt-3 block text-[11px] font-bold text-gray-600" htmlFor="dinner-food-protein">
                   식품 단백질
                 </label>
@@ -1378,53 +1236,13 @@ export default function DietView() {
               </article>
             </div>
           </section>
-        </div>
-
-        <aside className="space-y-4">
-          <section className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm sm:p-5" aria-label="식단 간편 입력">
-            <h3 className="text-[15px] font-bold text-gray-900">식단 간편 입력</h3>
-            <p className="mt-2 text-xs leading-5 text-gray-500">먹은 양과 비교한 뒤 입력칸에 반영하세요. 하루 기록은 아래 저장 버튼으로 저장해요.</p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {(['lunch', 'dinner'] as const).map(slot => <div key={slot} className="space-y-2">
-                <button type="button" onClick={() => setQuickMeal(quickMealPreset(slot))} className="min-h-11 w-full rounded-xl bg-violet-50 p-2 text-xs font-bold text-violet-800">{slot === 'lunch' ? '점심' : '저녁'} 기본값 보기</button>
-                <button type="button" onClick={() => { const previous = previousMeal(mealStore, slot === 'lunch' ? lunchCarbStore : dinnerCarbStore, lunchProteinStore, slot, todayKey); setQuickMeal(previous); if (!previous) setMessage('불러올 이전 식사 기록이 없어요. 직접 입력으로 시작해 주세요.'); }} className="min-h-11 w-full rounded-xl bg-gray-50 p-2 text-xs font-bold text-gray-700">지난 {slot === 'lunch' ? '점심' : '저녁'} 불러오기</button>
-              </div>)}
-            </div>
-            {quickMeal ? <div className="mt-3 rounded-xl bg-violet-50 p-3" role="region" aria-label="불러올 식사 확인">
-              <strong className="text-sm">{quickMeal.label}</strong>
-              <p className="mt-2 text-xs leading-5">{quickMeal.slot === 'lunch' ? '점심' : '저녁'} 식품 단백질 {quickMeal.patch[`${quickMeal.slot}ProteinChoice`] === 'custom' ? quickMeal.patch[`${quickMeal.slot}ProteinCustom`] : quickMeal.patch[`${quickMeal.slot}ProteinChoice`] === 'none' ? '미기록' : quickMeal.patch[`${quickMeal.slot}ProteinChoice`]}g · 밥 {quickMeal.carb.grams}g{quickMeal.slot === 'lunch' ? ` · 보충 단백질 ${quickMeal.supplement.protein}g` : ''}</p>
-              <p className="mt-1 text-xs leading-5">이 식사의 단백질·밥 입력값을 바꿉니다. 물·공복·상태·다른 끼니는 유지합니다.</p>
-              <div className="mt-3 flex flex-wrap gap-2"><button type="button" className="min-h-11 rounded-lg bg-violet-700 px-3 text-xs font-bold text-white" onClick={() => {
-                setMealLog(current => ({ ...current, ...quickMeal.patch }));
-                if (quickMeal.slot === 'lunch') { setLunchCarb(quickMeal.carb); setLunchProtein(quickMeal.supplement); } else setDinnerCarb(quickMeal.carb);
-                setMessage('식사 입력칸에 반영했습니다. 아직 저장되지 않았습니다.'); setQuickMeal(null);
-              }}>식사 입력칸에 적용</button><button type="button" className="min-h-11 rounded-lg bg-white px-3 text-xs" onClick={() => setQuickMeal(null)}>취소</button></div>
-            </div> : null}
-          </section>
-          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5" aria-label="최근 7일 식단 요약">
-            <h3 className="text-[15px] font-bold text-gray-900">최근 7일 식단 요약</h3>
-            <p className="mt-2 text-xs text-gray-500">저장한 {weeklyDiet.recordedDays}일 기준 · 미응답은 계산에서 제외</p>
-            <ul className="mt-3 space-y-2 text-xs leading-5 text-gray-700">
-              <li>단백질 평균 {weeklyDiet.averageProtein === null ? '미기록' : `${weeklyDiet.averageProtein}g · ${weeklyDiet.proteinDays}일 입력`}</li>
-              <li>수분 평균 {weeklyDiet.averageWater === null ? '미기록' : `${weeklyDiet.averageWater}mL · ${weeklyDiet.waterDays}일 입력`}</li>
-              <li>소화 불편 {weeklyDiet.discomfortDays}일 / 상태 응답 {weeklyDiet.digestionDays}일</li>
-              <li>야식 {weeklyDiet.lateSnackDays}일 / 응답 {weeklyDiet.lateSnackAnswers}일</li>
-              <li>운동 후 식사 {weeklyDiet.afterWorkoutDays}일 / 응답 {weeklyDiet.afterWorkoutAnswers}일</li>
-            </ul>
-          </section>
-          <DietFavorites meal={mealLog} lunchRice={lunchCarb} dinnerRice={dinnerCarb} supplement={lunchProtein} onApply={value => {
-            setMealLog(current => ({ ...current, ...value.patch }));
-            if (value.slot === 'lunch') { setLunchCarb(value.carb); setLunchProtein(value.supplement); } else setDinnerCarb(value.carb);
-          }} />
-          <DietPatterns store={store} today={dietPatternToday(now)} />
-          {hydrated && <DietWorkoutContext diet={store} workout={workoutContext} today={dietPatternToday(now)} />}
-          {hydrated && <WorkoutTimes initialDate={dietPatternToday(now)} meals={store} />}
-          {hydrated && <WorkoutTimeHistory today={dietPatternToday(now)} meals={store} />}
           <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
-            <h3 className="text-[15px] font-bold text-gray-900">단백질 합계</h3>
-            <div className="mt-3 flex items-end justify-between gap-3">
-              <p className="text-[28px] font-bold text-gray-900">{proteinTotal}g</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-[15px] font-bold text-gray-900">단백질 합계</h3>
+            <div className="flex items-baseline gap-2">
+              <p className="text-lg font-bold text-gray-900">{proteinTotal}g</p>
               <p className="text-[12px] text-gray-500">목표 {PROTEIN_TARGET_GRAMS}g</p>
+            </div>
             </div>
             <div className="mt-3 h-3 overflow-hidden rounded-full bg-gray-100">
               <div
@@ -1434,6 +1252,7 @@ export default function DietView() {
             </div>
           </section>
 
+        <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
           <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="text-[15px] font-bold text-gray-900">물 섭취</h3>
             <p className="mt-2 text-[20px] font-bold text-blue-700">
@@ -1510,6 +1329,7 @@ export default function DietView() {
             </p>
           </section>
 
+        </div>
           <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="text-[15px] font-bold text-gray-900">오늘 상태</h3>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1524,12 +1344,7 @@ export default function DietView() {
                 </button>
               ))}
             </div>
-            <div className="mt-4 rounded-xl bg-[#F7F6FF] px-3 py-2">
-              <p className="text-[10px] font-bold text-[#534AB7]">적용 중인 식사 일정</p>
-              <p className="mt-1 text-[13px] font-bold text-[#3C3489]">
-                {SOCIAL_MEAL_MODE_LABELS[socialMeal]}
-              </p>
-            </div>
+            <p className="mt-2 text-xs text-gray-600">식사 일정: {SOCIAL_MEAL_MODE_LABELS[socialMeal]}</p>
             <label className="mt-4 block text-xs font-bold text-gray-600" htmlFor="diet-digestion">소화 상태</label>
             <select id="diet-digestion" value={digestionStatus} onChange={event => setDigestionStatus(normalizeDigestion(event.target.value))} className="mt-2 min-h-11 w-full rounded-xl border border-gray-200 px-3 text-sm">{Object.entries(DIGESTION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
             {([{ id: 'late-snack', label: '야식을 먹었나요?', value: lateSnack, set: setLateSnack }, { id: 'after-workout-meal', label: '운동 후 식사를 했나요?', value: afterWorkoutMeal, set: setAfterWorkoutMeal }]).map(check => <label key={check.id} htmlFor={check.id} className="mt-3 block text-xs font-bold text-gray-600">{check.label}<select id={check.id} aria-label={check.label} value={check.value} onChange={event => check.set(normalizeMealCheck(event.target.value))} className="mt-2 min-h-11 w-full rounded-xl border border-gray-200 px-3 text-sm"><option value="unrecorded">미기록</option><option value="yes">예</option><option value="no">아니요</option></select></label>)}
@@ -1544,15 +1359,15 @@ export default function DietView() {
               className="mt-2 min-h-24 w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px]"
             />
           </section>
-        </aside>
       </div>
 
-      <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+
+      <section id="diet-save" className="scroll-mt-28 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
         <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
-            <p className="text-[13px] font-bold text-gray-900">{plan.description}</p>
+            <p className="text-[13px] font-bold text-gray-900">오늘 입력한 식단 기록</p>
             <p className="mt-1 text-[11px] text-gray-500">
-              입력값은 오늘 날짜의 기존 식단·달력 기록과 함께 저장됩니다.
+              오늘 식단·달력 기록에 함께 저장합니다.
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -1578,6 +1393,232 @@ export default function DietView() {
           </p>
         )}
       </section>
+
+      <DietDetails title="영양·식단 기준" description="점심·저녁 기준과 현재 식단 설명">
+        <p className="text-xs leading-5 text-gray-600">{plan.description}</p>
+        <h3 className="text-sm font-bold">점심 기준</h3>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  {awayLunch
+                    ? '식당 식사 · 정확한 무게를 몰라도 가장 가까운 양으로 기록'
+                    : '통곡물밥 100~130g + 실제 식품 단백질 20g 이상'}
+                </p>
+        <h3 className="text-sm font-bold">저녁 기준</h3>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  {awayDinner
+                    ? '외식·약속 식사 · 단백질과 채소를 먼저, 밥·면은 먹은 만큼 기록'
+                    : '단백질 20g 이상 + 채소 · 밥은 기본 제외'}
+                </p>
+      </DietDetails>
+      <DietDetails title="식사 즐겨찾기" description="자주 먹는 구성을 저장하거나 불러옵니다.">
+          <DietFavorites meal={mealLog} lunchRice={lunchCarb} dinnerRice={dinnerCarb} supplement={lunchProtein} onApply={value => {
+            setMealLog(current => ({ ...current, ...value.patch }));
+            if (value.slot === 'lunch') { setLunchCarb(value.carb); setLunchProtein(value.supplement); } else setDinnerCarb(value.carb);
+          }} />
+      </DietDetails>
+      <DietDetails title="식단 분석·추세" description={`최근 7일 중 ${weeklyDiet.recordedDays}일 기록 · 28일 비교와 운동 연계`}>
+      <div className="space-y-4" data-diet-insights>
+          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5" aria-label="최근 7일 식단 요약">
+            <h3 className="text-[15px] font-bold text-gray-900">최근 7일 식단 요약</h3>
+            <p className="mt-2 text-xs text-gray-500">저장한 {weeklyDiet.recordedDays}일 기준 · 미응답은 계산에서 제외</p>
+            <ul className="mt-3 space-y-2 text-xs leading-5 text-gray-700">
+              <li>단백질 평균 {weeklyDiet.averageProtein === null ? '미기록' : `${weeklyDiet.averageProtein}g · ${weeklyDiet.proteinDays}일 입력`}</li>
+              <li>수분 평균 {weeklyDiet.averageWater === null ? '미기록' : `${weeklyDiet.averageWater}mL · ${weeklyDiet.waterDays}일 입력`}</li>
+              <li>소화 불편 {weeklyDiet.discomfortDays}일 / 상태 응답 {weeklyDiet.digestionDays}일</li>
+              <li>야식 {weeklyDiet.lateSnackDays}일 / 응답 {weeklyDiet.lateSnackAnswers}일</li>
+              <li>운동 후 식사 {weeklyDiet.afterWorkoutDays}일 / 응답 {weeklyDiet.afterWorkoutAnswers}일</li>
+            </ul>
+          </section>
+          <DietPatterns store={store} today={dietPatternToday(now)} />
+          {hydrated && <DietWorkoutContext diet={store} workout={workoutContext} today={dietPatternToday(now)} />}
+
+      </div>
+      </DietDetails>
+      <DietDetails title="운동·식사 시각과 과거 기록" description="운동 시각 입력 · 최근 28일 이력">
+          {hydrated && <WorkoutTimes initialDate={dietPatternToday(now)} meals={store} />}
+          {hydrated && <WorkoutTimeHistory today={dietPatternToday(now)} meals={store} />}
+      </DietDetails>
+              <article className="rounded-2xl border border-[#D9D6F5] bg-[#F7F6FF] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[14px] font-bold text-gray-900">사진으로 입력 보조</p>
+                    <p className="mt-1 text-[11px] leading-5 text-gray-600">
+                      사진은 앱 기록으로 저장되지 않습니다. AI 추정값을 직접 확인한 뒤 입력칸에만 반영합니다.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-[10px] font-bold text-[#534AB7]">
+                    무료 AI · 선택 기능
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {([['lunch', '점심'], ['dinner', '저녁']] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      disabled={photoLoading}
+                      onClick={() => {
+                        setPhotoMealSlot(value);
+                        setPhotoAnalysis(null);
+                        setPhotoConfirmed(false);
+                        setPhotoMessage('');
+                      }}
+                      className={choiceButton(photoMealSlot === value)}
+                    >
+                      {label} 사진
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <label className="block text-[11px] font-bold text-gray-700">
+                    음식 사진 선택
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      capture="environment"
+                      disabled={photoLoading}
+                      onChange={(event) => selectDietPhoto(event.target.files?.[0] ?? null)}
+                      className="mt-1 block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-[12px] text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-[#EEEDFE] file:px-3 file:py-1.5 file:text-[11px] file:font-bold file:text-[#3C3489]"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void analyzeDietPhoto()}
+                    disabled={!photoFile || photoLoading || !photoDataUseAcknowledged}
+                    className="min-h-11 rounded-xl bg-[#534AB7] px-4 py-2.5 text-[12px] font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    {photoLoading ? '분석 중…' : 'AI로 분석'}
+                  </button>
+                  {photoLoading && <button type="button" onClick={cancelDietPhoto} className="min-h-11 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-bold">분석 대기 중단</button>}
+                </div>
+                <p className="mt-2 text-[10px] leading-4 text-gray-500">
+                  ‘AI로 분석’을 누르면 압축된 사진 1장이 Google Gemini로 전송됩니다. 무료 한도에 도달하면 직접 입력으로 이어갈 수 있습니다.
+                </p>
+                <p id="diet-photo-free-data-notice" className="mt-2 text-[10px] leading-4 text-gray-600">
+                  Google 무료 서비스는 사진과 응답을 서비스 개선에 활용할 수 있고 담당자가 검토할 수 있습니다. 얼굴·이름·영수증 등 개인정보가 없는 음식 사진만 선택해 주세요.{' '}
+                  <a href="https://ai.google.dev/gemini-api/terms#unpaid-services" target="_blank" rel="noopener noreferrer" className="underline">데이터 활용 안내</a>
+                </p>
+                <label className="mt-2 flex min-h-11 items-center gap-2 text-[11px] leading-5 text-gray-700">
+                  <input type="checkbox" checked={photoDataUseAcknowledged} disabled={!photoFile || photoLoading}
+                    aria-describedby="diet-photo-free-data-notice"
+                    onChange={(event) => setPhotoDataUseAcknowledged(event.target.checked)} className="h-4 w-4 shrink-0" />
+                  무료 분석의 사진·응답 활용 안내를 확인했습니다.
+                </label>
+
+                {photoPreviewUrl && (
+                  <div className="mt-3 flex items-start gap-3 rounded-xl bg-white p-3">
+                    <NextImage
+                      src={photoPreviewUrl}
+                      alt="분석할 식사 사진 미리보기"
+                      width={96}
+                      height={96}
+                      unoptimized
+                      className="h-24 w-24 shrink-0 rounded-xl object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12px] font-bold text-gray-800">{photoFile?.name}</p>
+                      <p className="mt-1 text-[10px] text-gray-500">
+                        {photoFile ? `${(photoFile.size / 1024 / 1024).toFixed(1)}MB · 전송 전 자동 압축` : ''}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => selectDietPhoto(null)}
+                        disabled={photoLoading}
+                        className="mt-2 rounded-lg bg-gray-100 px-2.5 py-1.5 text-[10px] font-bold text-gray-600"
+                      >
+                        사진 지우기
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {photoAnalysis && (
+                  <div className="mt-3 rounded-2xl border border-[#CFCBF2] bg-white p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[13px] font-bold text-gray-900">AI 추정 결과</p>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                        photoAnalysis.confidence === 'high'
+                          ? 'bg-green-50 text-green-700'
+                          : photoAnalysis.confidence === 'medium'
+                            ? 'bg-amber-50 text-amber-700'
+                            : 'bg-red-50 text-red-700'
+                      }`}>
+                        신뢰도 {photoAnalysis.confidence === 'high' ? '높음' : photoAnalysis.confidence === 'medium' ? '보통' : '낮음'}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-5 text-gray-600">
+                      보이는 음식: {photoAnalysis.foods.length ? photoAnalysis.foods.join(', ') : '판단 어려움'}
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <label className="text-[11px] font-bold text-gray-700">
+                        단백질 추정 g
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          max={100}
+                          value={photoAnalysis.proteinGrams ?? ''}
+                          onChange={(event) => setPhotoAnalysis((current) => current ? {
+                            ...current,
+                            proteinGrams: event.target.value === '' ? null : Math.max(0, Number(event.target.value) || 0),
+                          } : current)}
+                          placeholder="판단 어려움"
+                          className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px]"
+                        />
+                      </label>
+                      <label className="text-[11px] font-bold text-gray-700">
+                        조리된 밥 추정 g
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          max={500}
+                          value={photoAnalysis.cookedRiceGrams ?? ''}
+                          onChange={(event) => setPhotoAnalysis((current) => current ? {
+                            ...current,
+                            cookedRiceGrams: event.target.value === '' ? null : Math.max(0, Number(event.target.value) || 0),
+                          } : current)}
+                          placeholder="판단 어려움"
+                          className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px]"
+                        />
+                      </label>
+                    </div>
+                    {photoAnalysis.note && (
+                      <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-800">
+                        오차 참고: {photoAnalysis.note}
+                      </p>
+                    )}
+                    <label className="mt-3 flex items-start gap-2 text-[11px] leading-5 text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={photoConfirmed}
+                        onChange={(event) => setPhotoConfirmed(event.target.checked)}
+                        className="mt-1"
+                      />
+                      사진 분석은 추정치이며, 음식과 양을 직접 확인했습니다.
+                    </label>
+                    <button
+                      type="button"
+                      onClick={applyDietPhotoAnalysis}
+                      disabled={!photoConfirmed || (photoAnalysis.proteinGrams === null && photoAnalysis.cookedRiceGrams === null)}
+                      className="mt-3 w-full rounded-xl bg-[#3C3489] px-4 py-2.5 text-[12px] font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                    >
+                      {photoMealSlot === 'lunch' ? '점심' : '저녁'} 입력칸에 반영
+                    </button>
+                    <p className="mt-2 text-[10px] text-gray-500">
+                      반영 후에도 자동 저장되지 않습니다. ‘오늘 식단 저장’을 눌러야 기록됩니다.
+                    </p>
+                  </div>
+                )}
+
+                {photoMessage && (
+                  <p role="status" className="mt-3 rounded-xl bg-white px-3 py-2 text-[11px] font-semibold text-gray-700">
+                    {photoMessage}
+                  </p>
+                )}
+                <a href="#diet-save" className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-white px-3 text-xs font-bold text-[#534AB7]">오늘 식단 저장으로 이동</a>
+              </article>
 
       <details className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
         <summary className="cursor-pointer text-[13px] font-bold text-gray-700">

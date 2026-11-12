@@ -11,7 +11,7 @@ import { useTaskCommandDrafts } from '@/hooks/useTaskCommandDrafts';
 
 type ShortcutResponse = { reply?: string; error?: string; action?: { label: string; href: string }; proposal?: AssistantCommandProposal };
 
-const samples = ["오늘 브리핑 보여줘", "오늘 운동 계획 보여줘", "오늘 운동 완료했어", "오늘 운동 피로도 4 기록해줘", "오늘 운동 마지막 세트 RPE 7 기록해줘", "오늘 유산소 실내 걷기 총 20분 기록해줘", "오늘 타자 연습 완료했어", "오늘 손글씨 15분 완료했어", "오늘 점심 단백질 30g 기록해줘", "오늘 저녁 밥 80g 기록해줘", "오늘 마지막 식사 18:30 기록해줘", "오늘 물 총 500ml 기록해줘", "오늘 식단 메모 추가: 점심 닭가슴살", "일본어 복습 시작해줘", "오늘 단어 학습 완료했어", "오늘 할 일에 우유 사기 추가해줘", "우유 사기 할 일 완료해줘", "가계부 오늘 편의점 지출 금액을 5,000원으로 수정해줘"];
+const samples = ["오늘 브리핑 보여줘", "오늘 운동 계획 보여줘", "오늘 운동 완료했어", "오늘 운동 피로도 4 기록해줘", "오늘 운동 마지막 세트 RPE 7 기록해줘", "오늘 유산소 실내 걷기 총 20분 기록해줘", "오늘 손글씨 15분 완료했어", "오늘 점심 단백질 30g 기록해줘", "오늘 저녁 밥 80g 기록해줘", "오늘 마지막 식사 18:30 기록해줘", "오늘 물 총 500ml 기록해줘", "오늘 식단 메모 추가: 점심 닭가슴살", "일본어 복습 시작해줘", "오늘 단어 학습 완료했어", "오늘 할 일에 우유 사기 추가해줘", "우유 사기 할 일 완료해줘", "가계부 오늘 편의점 지출 금액을 5,000원으로 수정해줘"];
 
 function isIncompleteVoiceCommand(value: string) {
   const compact = value.replace(/\s/g, "");
@@ -89,15 +89,16 @@ function QuickCommandContent() {
         <section className="mt-5 rounded-[28px] bg-white p-5 shadow-sm sm:p-6">
           <label htmlFor="quick-command" className="text-sm font-bold">실행할 명령</label>
           <textarea id="quick-command" value={command} onChange={(event) => setCommand(event.target.value)} maxLength={500} rows={3} placeholder="예: 오늘 할 일에 거래처 전화 추가해줘" className="mt-2 w-full resize-none rounded-2xl border-0 bg-yeoni-bg px-4 py-3 text-base outline-none ring-1 ring-gray-100 focus:ring-[#7F77DD]" />
+          <p className="mt-2 text-xs leading-5 text-gray-600">{sending ? '처리 중에는 예시를 바꾸지 않아요.' : command.trim() ? '작성 중인 명령은 유지해요. 다른 예시는 입력을 지운 뒤 고르세요.' : '예시를 고르면 입력만 채워져요. 실행은 아래 버튼을 눌러요.'}</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {samples.map((sample) => <button key={sample} type="button" onClick={() => setCommand(sample)} className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6]">{sample}</button>)}
+            {samples.map((sample) => <button key={sample} type="button" disabled={sending || Boolean(command.trim())} onClick={() => { if (!sending) setCommand(current => current.trim() ? current : sample); }} className="rounded-full bg-[#F1EFFF] px-3 py-2 text-xs font-bold text-[#5146A6] disabled:opacity-50">{sample}</button>)}
           </div>
           <div role="note" className="mt-4 rounded-2xl bg-[#F7F6FF] px-4 py-3 text-sm leading-6 text-[#5146A6]"><b>Zephyr 음성</b><p>답변의 ‘답변 읽기’를 누르면 음성을 준비해요. 자동으로 읽거나 생성하지 않아요.</p></div>
           <button type="button" onClick={() => void run()} disabled={sending || !command.trim() || !draftsReady} className="mt-4 w-full rounded-2xl bg-[#5146A6] px-5 py-3.5 text-sm font-bold text-white disabled:bg-gray-300">{sending ? "처리 중…" : shouldAutoRun && !result ? "자동 실행 준비 중…" : "명령 실행"}</button>
           {result && <div role="status" aria-live="polite" className={`mt-4 rounded-2xl p-4 text-sm leading-6 ${result.error ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-900"}`}><p>{result.error || result.reply}</p><div className="mt-3 flex flex-wrap gap-2">{result.action && <Link href={result.action.href} className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-[#5146A6] ring-1 ring-[#D9D5F2]">{result.action.label} →</Link>}</div></div>}
           {result?.reply && !result.error && <ZephyrReadButton text={result.reply} />}
           {pending.error && <p role="alert" className="mt-3 text-red-700">{pending.error}</p>}
-          {pending.drafts.map(draft => <AssistantCommandReview key={`${pending.ownerId}:${draft.proposal.requestId}`} proposal={draft.proposal} ownerId={pending.ownerId ?? undefined} initiallyAttempted={draft.attempted} onAttempt={() => pending.markAttempted(draft.proposal.requestId)} onSettled={() => pending.remove(draft.proposal.requestId)} />)}
+          {pending.drafts.map(draft => <AssistantCommandReview key={`${pending.ownerId}:${draft.proposal.requestId}`} proposal={draft.proposal} ownerId={pending.ownerId ?? undefined} initiallyAttempted={draft.attempted} onAttempt={(signal) => pending.markAttempted(draft.proposal.requestId, signal)} onSettled={(signal) => pending.remove(draft.proposal.requestId, signal)} />)}
           <Link href="/assistant/history" className="mt-4 inline-block text-sm font-bold text-violet-700">실행 이력 보기 →</Link>
         </section>
 

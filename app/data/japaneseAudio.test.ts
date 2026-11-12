@@ -4,7 +4,7 @@ import { japaneseAudioErrorMessage, speakJapaneseWithPreferredTts } from "../../
 import { speakJapaneseWithBrowserTts } from "../../utils/japaneseTts.ts";
 
 function device(context: TestContext, onSpeak?: (utterance: SpeechSynthesisUtterance) => void, japanese = true) {
-  const descriptors = ["window", "SpeechSynthesisUtterance"].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);
+  const descriptors = ["window", "document", "SpeechSynthesisUtterance"].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);
   const played: SpeechSynthesisUtterance[] = [];
   let cancelled = 0;
   const voices = [{ lang: japanese ? "ja-JP" : "en-US", name: "Remote voice", localService: false }, { lang: japanese ? "ja-JP" : "en-US", name: "Device voice", localService: true }];
@@ -14,7 +14,8 @@ function device(context: TestContext, onSpeak?: (utterance: SpeechSynthesisUtter
     if (onSpeak) onSpeak(utterance);
     else { utterance.onstart?.({} as SpeechSynthesisEvent); queueMicrotask(() => utterance.onend?.({} as SpeechSynthesisEvent)); }
   } };
-  Object.defineProperty(globalThis, "window", { configurable: true, value: { speechSynthesis: synth } });
+  Object.defineProperty(globalThis, "window", { configurable: true, value: Object.assign(new EventTarget(), { speechSynthesis: synth }) });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: Object.assign(new EventTarget(), { hidden: false }) });
   Object.defineProperty(globalThis, "SpeechSynthesisUtterance", { configurable: true, value: Utterance });
   context.after(() => descriptors.forEach(([key, value]) => value ? Object.defineProperty(globalThis, key, value) : Reflect.deleteProperty(globalThis, key)));
   const fetchMock = context.mock.method(globalThis, "fetch", async () => { throw new Error("Paid TTS must not be requested"); });
@@ -28,6 +29,25 @@ test("무료 음성은 서버를 호출하지 않고 설치된 일본어 음성�
   assert.equal(fixture.played[0].lang, "ja-JP");
   assert.equal(fixture.fetchMock.mock.calls.length, 0);
 });
+
+for (const rate of [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2]) {
+  test(`무료 음성은 가나·단어·문장 설정의 ${rate} 속도를 그대로 전달한다`, async context => {
+    const fixture = device(context);
+    await speakJapaneseWithPreferredTts("こんにちは", { rate });
+    assert.equal(fixture.played[0].rate, rate);
+    assert.equal(fixture.fetchMock.mock.calls.length, 0);
+  });
+}
+
+test("무료 음성은 기본 속도와 설정 범위 밖 속도의 경계를 유지한다", async context => {
+  const fixture = device(context);
+  for (const [rate, expected] of [[undefined, 0.9], [NaN, 0.9], [null, 0.9], ["0.5", 0.9], [-Infinity, 0.5], [0, 0.5], [2, 1.2], [Infinity, 1.2]] as const) {
+    await speakJapaneseWithPreferredTts("こんにちは", { rate: rate as unknown as number | undefined });
+    assert.equal(fixture.played.at(-1)?.rate, expected);
+  }
+  assert.equal(fixture.fetchMock.mock.calls.length, 0);
+});
+
 test("무료 음성도 반복 횟수와 시작·완료 콜백을 지킨다", async context => {
   const fixture = device(context); let started = 0; let ended = 0;
   await speakJapaneseWithPreferredTts("あ", { repeatCount: 3, onStart: () => { started++; }, onEnd: () => { ended++; } });
@@ -58,4 +78,23 @@ test("기기 재생 오류를 성공으로 처리하지 않는다", async contex
 });
 test("음성을 지원하지 않는 환경에서는 오류를 전달한다", async () => {
   await assert.rejects(() => speakJapaneseWithBrowserTts("こんにちは"), /음성 재생을 지원하지/);
+});
+
+test("공통 캐릭터 음성 시작은 일본어 반복과 완료 콜백을 중지한다", async context => {
+  let completed = 0;
+  const fixture = device(context, () => window.dispatchEvent(new CustomEvent('yeoni-zephyr-play', { detail: 'character' })));
+  await speakJapaneseWithPreferredTts('あ', { repeatCount: 3, onEnd: () => completed++ });
+  assert.equal(fixture.played.length, 1); assert.equal(completed, 0);
+  assert.equal(fixture.fetchMock.mock.calls.length, 0);
+});
+
+test("페이지 이탈은 일본어 음성을 중지하고 다음 발화는 정상 시작한다", async context => {
+  let first = true;
+  const fixture = device(context, utterance => {
+    if (first) { first = false; window.dispatchEvent(new Event('pagehide')); }
+    else queueMicrotask(() => utterance.onend?.({} as SpeechSynthesisEvent));
+  });
+  await speakJapaneseWithPreferredTts('あ', { repeatCount: 3 });
+  await speakJapaneseWithPreferredTts('い');
+  assert.equal(fixture.played.length, 2); assert.equal(fixture.fetchMock.mock.calls.length, 0);
 });
