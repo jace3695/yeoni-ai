@@ -43,7 +43,7 @@ const fresh = async () => {
 };
 
 // These hashes freeze the reused test bodies and guards without copying fixture values.
-const preserved = { 'tests/e2e/workout-core-state.ts': 'caeb59d96e3e4dbaf7aaa675ca05ee4ecdf43e34c788667b7157269b40676b43', 'tests/e2e/workout-progression.spec.ts': '360709a14c2e3920b12ab710162781e41e476bee0779d602991d9c8ff2778f96', 'tests/e2e/budget-first-manual-state.ts': '5d3a50d56dbdca79b422a46ef6c75e7f509603c8b2c8251d9747acd8122afaf8', 'tests/e2e/budget-first-manual.spec.ts': 'cc4a677ae7f3cbc79d39c110140ff0d75a924e8714a204312483ff50bf478152',
+const preserved = { 'tests/e2e/budget-delete-undo.spec.ts': '25061946cb8b7391444f51146d636f230a0493bf16ea93ec2bb81d4da5995296', 'tests/e2e/workout-times.spec.ts': '1053929fe6bc9bf6f5563f2abf3cd637cb34dbbc4a26e8b7fe913036e551d568', 'tests/e2e/workout-core-state.ts': 'caeb59d96e3e4dbaf7aaa675ca05ee4ecdf43e34c788667b7157269b40676b43', 'tests/e2e/workout-progression.spec.ts': '360709a14c2e3920b12ab710162781e41e476bee0779d602991d9c8ff2778f96', 'tests/e2e/budget-first-manual-state.ts': '5d3a50d56dbdca79b422a46ef6c75e7f509603c8b2c8251d9747acd8122afaf8', 'tests/e2e/budget-first-manual.spec.ts': 'cc4a677ae7f3cbc79d39c110140ff0d75a924e8714a204312483ff50bf478152',
   "playwright.config.ts": "3ce090d0a97f0632ded5aa75e8b041d7ca0c46b803a82281cb1271d4e9997e0f",
   "scripts/qa-playwright.mjs": "38e8cc6623aaaa343e9f15e9e69930c17ed7ebb20199acf9aed8067c41be4d6c",
   "tests/e2e/fixture.ts": "3fa0ffcbd57a35dfa12c5d26d71b3c608561d34da48d4bdb14e0f8b358dd2595",
@@ -76,10 +76,10 @@ const levelFlowHashes = {
 const workflowHash = 'c65190845968db7077198840dbdeb9d9a42ae4e57038f1dcfbcdcbc3bd0e5bf6';
 
 test('exact command, fixed project/source inventory, readiness and ceilings stay narrow', async () => {
-  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 tests/e2e/japanese-middle-reading.spec.ts:3 tests/e2e/japanese-upper-reading.spec.ts:3 tests/e2e/japanese-level-choice.spec.ts:3 tests/e2e/japanese-due-review.spec.ts:3 tests/e2e/curriculum-corruption.spec.ts:3 tests/e2e/curriculum-terminal.spec.ts:3 tests/e2e/japanese-settings-recovery.spec.ts:3 tests/e2e/japanese-grammar-chunk.spec.ts:3 tests/e2e/japanese-reference-routine.spec.ts:3 tests/e2e/budget-first-manual.spec.ts:3 tests/e2e/workout-progression.spec.ts:37 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
+  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 tests/e2e/japanese-middle-reading.spec.ts:3 tests/e2e/japanese-upper-reading.spec.ts:3 tests/e2e/japanese-level-choice.spec.ts:3 tests/e2e/japanese-due-review.spec.ts:3 tests/e2e/curriculum-corruption.spec.ts:3 tests/e2e/curriculum-terminal.spec.ts:3 tests/e2e/japanese-settings-recovery.spec.ts:3 tests/e2e/japanese-grammar-chunk.spec.ts:3 tests/e2e/japanese-reference-routine.spec.ts:3 tests/e2e/budget-first-manual.spec.ts:3 tests/e2e/workout-progression.spec.ts:37 tests/e2e/budget-delete-undo.spec.ts:10 tests/e2e/workout-times.spec.ts:43 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
   assert.deepEqual(inventory, [{ source: 19, line: 3, column: 5, project: 5 }, { source: 38, line: 3, column: 5, project: 5 },
-    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }, { source: 51, line: 3, column: 5, project: 5 }, { source: 52, line: 3, column: 5, project: 5 }, { source: 53, line: 3, column: 5, project: 5 }, { source: 54, line: 3, column: 5, project: 5 }, { source: 55, line: 3, column: 5, project: 5 }, { source: 56, line: 3, column: 5, project: 5 }, { source: 57, line: 3, column: 5, project: 5 }, { source: 58, line: 3, column: 5, project: 5 }, { source: 41, line: 37, column: 5, project: 5 }]);
-  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts', 'tests/e2e/japanese-settings-recovery.spec.ts', 'tests/e2e/japanese-grammar-chunk.spec.ts', 'tests/e2e/japanese-reference-routine.spec.ts', 'tests/e2e/budget-first-manual.spec.ts', 'tests/e2e/workout-progression.spec.ts']);
+    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }, { source: 51, line: 3, column: 5, project: 5 }, { source: 52, line: 3, column: 5, project: 5 }, { source: 53, line: 3, column: 5, project: 5 }, { source: 54, line: 3, column: 5, project: 5 }, { source: 55, line: 3, column: 5, project: 5 }, { source: 56, line: 3, column: 5, project: 5 }, { source: 57, line: 3, column: 5, project: 5 }, { source: 58, line: 3, column: 5, project: 5 }, { source: 41, line: 37, column: 5, project: 5 }, { source: 20, line: 10, column: 5, project: 5 }, { source: 42, line: 43, column: 5, project: 5 }]);
+  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts', 'tests/e2e/japanese-settings-recovery.spec.ts', 'tests/e2e/japanese-grammar-chunk.spec.ts', 'tests/e2e/japanese-reference-routine.spec.ts', 'tests/e2e/budget-first-manual.spec.ts', 'tests/e2e/workout-progression.spec.ts', 'tests/e2e/budget-delete-undo.spec.ts', 'tests/e2e/workout-times.spec.ts']);
   assert.equal(stages[0].command, 'node --test --test-reporter=./scripts/qa-private-safety-reporter.mjs scripts/isolated-chromium-smoke/safety.test.mjs');
   assert.equal(stages[1].command, 'pinned-bundled-chromium-readiness');
   assert.equal(stages[1].lifecycleDiagnostics, true);
@@ -93,7 +93,7 @@ test('exact command, fixed project/source inventory, readiness and ceilings stay
   assert.equal(lock.packages['node_modules/@playwright/test'].version, '1.63.0');
   assert.equal(lock.packages['node_modules/playwright'].version, '1.63.0');
   assert.equal(diagnosticInvocations(browserCommand), 1);
-  for (const changed of [browserCommand.replace('tests/e2e/workout-progression.spec.ts:37 ', ''), browserCommand.replace('workout-progression.spec.ts:37', 'workout-progression.spec.ts:38'), browserCommand.replace('tests/e2e/budget-first-manual.spec.ts:3 ', ''), browserCommand.replace('budget-first-manual.spec.ts:3', 'budget-first-manual.spec.ts:4'), browserCommand.replace('tests/e2e/japanese-reference-routine.spec.ts:3 ', ''), browserCommand.replace('japanese-reference-routine.spec.ts:3', 'japanese-reference-routine.spec.ts:4'), browserCommand.replace('tests/e2e/japanese-grammar-chunk.spec.ts:3 ', ''), browserCommand.replace('japanese-grammar-chunk.spec.ts:3', 'japanese-grammar-chunk.spec.ts:4'), browserCommand.replace('tests/e2e/japanese-settings-recovery.spec.ts:3 ', ''), browserCommand.replace('japanese-settings-recovery.spec.ts:3', 'japanese-settings-recovery.spec.ts:4'), browserCommand.replace('tests/e2e/curriculum-corruption.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/curriculum-terminal.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-level-choice.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-due-review.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-middle-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-upper-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
+  for (const changed of [browserCommand.replace('tests/e2e/budget-delete-undo.spec.ts:10 ', ''), browserCommand.replace('budget-delete-undo.spec.ts:10', 'budget-delete-undo.spec.ts:11'), browserCommand.replace('tests/e2e/workout-times.spec.ts:43 ', ''), browserCommand.replace('workout-times.spec.ts:43', 'workout-times.spec.ts:20'), browserCommand.replace('tests/e2e/workout-progression.spec.ts:37 ', ''), browserCommand.replace('workout-progression.spec.ts:37', 'workout-progression.spec.ts:38'), browserCommand.replace('tests/e2e/budget-first-manual.spec.ts:3 ', ''), browserCommand.replace('budget-first-manual.spec.ts:3', 'budget-first-manual.spec.ts:4'), browserCommand.replace('tests/e2e/japanese-reference-routine.spec.ts:3 ', ''), browserCommand.replace('japanese-reference-routine.spec.ts:3', 'japanese-reference-routine.spec.ts:4'), browserCommand.replace('tests/e2e/japanese-grammar-chunk.spec.ts:3 ', ''), browserCommand.replace('japanese-grammar-chunk.spec.ts:3', 'japanese-grammar-chunk.spec.ts:4'), browserCommand.replace('tests/e2e/japanese-settings-recovery.spec.ts:3 ', ''), browserCommand.replace('japanese-settings-recovery.spec.ts:3', 'japanese-settings-recovery.spec.ts:4'), browserCommand.replace('tests/e2e/curriculum-corruption.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/curriculum-terminal.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-level-choice.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-due-review.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-middle-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-upper-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
     browserCommand.replace('--project chromium-app-smoke', '--project chromium'), stages[1].command, 'echo ' + browserCommand]) {
     assert.equal(diagnosticInvocations(changed), 0);
   }
@@ -169,7 +169,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
   assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 349);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
-  const addition = "      - name: Verify eighteen authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
+  const addition = "      - name: Verify twenty authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
   assert.equal(workflow.split('len(tests) == 349').length, 2);
   assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 349', 'len(tests) == 343')).digest('hex'), workflowHash);
@@ -202,7 +202,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
   });
   assert.equal(result.status, 0); const config = JSON.parse(result.stdout);
   assert.deepEqual(config.projects, [{ name: 'chromium-app-smoke' }]);
-  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts', 'curriculum-corruption.spec.ts', 'curriculum-terminal.spec.ts', 'japanese-settings-recovery.spec.ts', 'japanese-grammar-chunk.spec.ts', 'japanese-reference-routine.spec.ts', 'budget-first-manual.spec.ts', 'workout-progression.spec.ts']);
+  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts', 'curriculum-corruption.spec.ts', 'curriculum-terminal.spec.ts', 'japanese-settings-recovery.spec.ts', 'japanese-grammar-chunk.spec.ts', 'japanese-reference-routine.spec.ts', 'budget-first-manual.spec.ts', 'workout-progression.spec.ts', 'budget-delete-undo.spec.ts', 'workout-times.spec.ts']);
   assert.equal(config.fullyParallel, false); assert.equal(config.workers, 1); assert.equal(config.retries, 0);
   assert.equal(config.forbidOnly, true); assert.equal(config.repeatEach, 1); assert.equal(config.timeout, 90000);
   assert.equal(config.expect.timeout, 15000); assert.equal(config.use.browserName, 'chromium'); assert.equal(config.use.headless, true);
@@ -220,7 +220,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
     url: 'http://127.0.0.1:3000/diet/settings', reuseExistingServer: false, timeout: 120000 });
 });
 
-test('Playwright list-only collection resolves exactly eighteen titles and coordinates without fixtures', () => {
+test('Playwright list-only collection resolves exactly twenty titles and coordinates without fixtures', () => {
   // --list does not start webServer, browsers, test bodies or fixture hooks.
   const args = browserCommand.split(' ').slice(1).concat(['--list', '--reporter=json']);
   const result = spawnSync(process.execPath, args, { env: environment(), encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
@@ -228,7 +228,7 @@ test('Playwright list-only collection resolves exactly eighteen titles and coord
   assert.deepEqual(report.errors, []);
   const specs = suite => [...(suite.specs ?? []), ...(suite.suites ?? []).flatMap(specs)];
   const selected = report.suites.flatMap(specs);
-  assert.equal(selected.length, 18);
+  assert.equal(selected.length, 20);
   const expected = new Map([
     ['auth.spec.ts:3', 'login, logout and same-account relogin preserve all 17 original keys without PATCH'],
     ['sync.spec.ts:3', 'first GET delivery delayed while a real form saves: originals and new input survive'],
@@ -245,7 +245,7 @@ test('Playwright list-only collection resolves exactly eighteen titles and coord
     ['curriculum-terminal.spec.ts:3', 'terminal beginner f12 completes twice through silent meaning UI with real saves and manual intermediate choice'],
     ['japanese-settings-recovery.spec.ts:3', 'active settings preserve extensions and reject stale partial or uncertain saves through explicit recovery and reentry'],
     ['japanese-grammar-chunk.spec.ts:3', 'grammar expression chunks and silent listening fallback preserve wrong-answer history through real saves and relogin'],
-    ['japanese-reference-routine.spec.ts:3', 'kana and word ordinary quizzes retry exact daily completion once and preserve records through invalidation boards settings and relogin'], ['budget-first-manual.spec.ts:3', 'first budget profile and manual expense require review and preserve both owners through authentic save and reload'], ['workout-progression.spec.ts:37', 'authenticated workout review requires confirmation before applying one load step'],
+    ['japanese-reference-routine.spec.ts:3', 'kana and word ordinary quizzes retry exact daily completion once and preserve records through invalidation boards settings and relogin'], ['budget-first-manual.spec.ts:3', 'first budget profile and manual expense require review and preserve both owners through authentic save and reload'], ['workout-progression.spec.ts:37', 'authenticated workout review requires confirmation before applying one load step'], ['budget-delete-undo.spec.ts:10', 'expense, income and saving deletion can each restore the exact server row'], ['workout-times.spec.ts:43', 'actual workout times protect later changes and reject invalid intervals without touching app state'],
   ]);
   for (const spec of selected) {
     const key = `${spec.file}:${spec.line}`;
@@ -395,7 +395,7 @@ test('three-stage sequencing propagates safety/readiness/browser failures, cance
     assert.equal(code, failure < 0 ? 0 : 1); assert.equal(calls.length, failure < 0 ? 3 : failure + 1);
     privateOutput(options.output);
     assert.equal(options.output.at(-1).includes('realBrowser=true'), failure < 0);
-    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=18 browser=playwright-chromium-headless-shell realBrowser=true fixtureCleanup=passed');
+    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=20 browser=playwright-chromium-headless-shell realBrowser=true fixtureCleanup=passed');
   }
   const options = await fresh(), controller = new AbortController(); controller.abort();
   assert.equal(await supervise({ ...options, signal: controller.signal, run: () => { throw new Error(canary); } }), 1);
@@ -1422,7 +1422,7 @@ test('grammar four literal phases retain source 56 native failure coordinates in
     });
     assert.equal(child.error, undefined); assert.equal(child.status, 1);
     const output = [];
-    // Diagnostic-only intentionally failed tests, not the eighteen-case app lane.
+    // Diagnostic-only intentionally failed tests, not the twenty-case app lane.
     const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
     assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
     const invocation = report.invocations[0];
@@ -1791,7 +1791,7 @@ test('reference twenty literal phases retain source 57 numeric native attributio
     assert.equal(child.status === 1, true, 'reference-native-twenty-intended-failures');
     const output = [];
     // One diagnostic-only invocation containing twenty intentional failures.
-    // It is unrelated to the actual eighteen-case application lane inventory.
+    // It is unrelated to the actual twenty-case application lane inventory.
     const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
     assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
     const invocation = report.invocations[0];
