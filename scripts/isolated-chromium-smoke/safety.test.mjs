@@ -43,7 +43,7 @@ const fresh = async () => {
 };
 
 // These hashes freeze the reused test bodies and guards without copying fixture values.
-const preserved = { 'tests/e2e/budget-delete-undo.spec.ts': '25061946cb8b7391444f51146d636f230a0493bf16ea93ec2bb81d4da5995296', 'tests/e2e/workout-times.spec.ts': '1053929fe6bc9bf6f5563f2abf3cd637cb34dbbc4a26e8b7fe913036e551d568', 'tests/e2e/workout-core-state.ts': 'caeb59d96e3e4dbaf7aaa675ca05ee4ecdf43e34c788667b7157269b40676b43', 'tests/e2e/workout-progression.spec.ts': '360709a14c2e3920b12ab710162781e41e476bee0779d602991d9c8ff2778f96', 'tests/e2e/budget-first-manual-state.ts': '5d3a50d56dbdca79b422a46ef6c75e7f509603c8b2c8251d9747acd8122afaf8', 'tests/e2e/budget-first-manual.spec.ts': 'cc4a677ae7f3cbc79d39c110140ff0d75a924e8714a204312483ff50bf478152',
+const preserved = { 'tests/e2e/budget-delete-undo.spec.ts': '25061946cb8b7391444f51146d636f230a0493bf16ea93ec2bb81d4da5995296', 'tests/e2e/workout-times.spec.ts': '7a56514a18d2df512e1bca488f112baeabbc9f317222a1ba3ee24372177b26e8', 'tests/e2e/workout-core-state.ts': 'caeb59d96e3e4dbaf7aaa675ca05ee4ecdf43e34c788667b7157269b40676b43', 'tests/e2e/workout-progression.spec.ts': '360709a14c2e3920b12ab710162781e41e476bee0779d602991d9c8ff2778f96', 'tests/e2e/budget-first-manual-state.ts': '5d3a50d56dbdca79b422a46ef6c75e7f509603c8b2c8251d9747acd8122afaf8', 'tests/e2e/budget-first-manual.spec.ts': 'cc4a677ae7f3cbc79d39c110140ff0d75a924e8714a204312483ff50bf478152',
   "playwright.config.ts": "3ce090d0a97f0632ded5aa75e8b041d7ca0c46b803a82281cb1271d4e9997e0f",
   "scripts/qa-playwright.mjs": "38e8cc6623aaaa343e9f15e9e69930c17ed7ebb20199acf9aed8067c41be4d6c",
   "tests/e2e/fixture.ts": "3fa0ffcbd57a35dfa12c5d26d71b3c608561d34da48d4bdb14e0f8b358dd2595",
