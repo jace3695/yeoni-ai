@@ -1,5 +1,5 @@
 import { test, expect, login, canonical, type State } from './fixture';
-import { LEVEL_JOURNEY_KEY, emptyLevelJourney, getJapaneseReadingLesson, historicalAnswer, oldTime, uuid, journeySnapshot, localMatches, persisted, synced, observeSilentReading, writeCount, type LevelJourney } from './japanese-level-flow-state';
+import { LEVEL_JOURNEY_KEY, emptyLevelJourney, getJapaneseReadingLesson, historicalAnswer, oldTime, uuid, journeySnapshot, localMatches, persisted, restoredLevelJourney, synced, observeSilentReading, writeCount, type LevelJourney } from './japanese-level-flow-state';
 test('synthetic overdue reading subset keeps its queue and saves helped repeats without completing the full unit', async ({ page, qa }) => {
   const silent = observeSilentReading(page);
   const lesson = getJapaneseReadingLesson('middle-core-01')!; const foreign = getJapaneseReadingLesson('upper-core-01')!;
@@ -107,7 +107,7 @@ test('synthetic overdue reading subset keeps its queue and saves helped repeats 
       await page.goto(path);
       const restored = async () => {
         await synced(page); await expect(page.getByRole('heading', { level: 1, name: '지금 예정된 복습은 없어요', exact: true })).toBeVisible();
-        await expect(questionRegion()).toHaveCount(0); preserved((await journeySnapshot(page)).journey); await unchanged();
+        await expect(questionRegion()).toHaveCount(0); preserved((await journeySnapshot(page)).journey); saved = await restoredLevelJourney(page, qa, saved, fitness);
       };
       await restored(); await page.reload(); await restored();
       await page.getByRole('button', { name: '로그아웃', exact: true }).click(); await expect(page.getByLabel('이메일', { exact: true })).toBeVisible();

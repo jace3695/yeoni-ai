@@ -69,9 +69,9 @@ const readingHashes = {
   "tests/e2e/japanese-upper-reading.spec.ts": "c7a6234b96690727fa083e7d9f819fc0076ae39c4d51329637121b44af28229f"
 };
 const levelFlowHashes = {
-  "tests/e2e/japanese-level-flow-state.ts": "b2bc9bff77c248bb46be6c0481335a89861818bb9b83b2c02ef50deec2e67c3c",
-  "tests/e2e/japanese-level-choice.spec.ts": "5049de6219c95026284430dc845f3fd9b759262aea648cbb1bc98e5efc000d6f",
-  "tests/e2e/japanese-due-review.spec.ts": "a6eb4d8782137152668bb11ccd8a8c24588440e424a19758cbca8b83d4232c38"
+  "tests/e2e/japanese-level-flow-state.ts": "042da540d19db5b7f7df5d499545c1dfe9318353eb9267a0ddf31f8448847eb3",
+  "tests/e2e/japanese-level-choice.spec.ts": "2b4b3055876f0b3b36aabfccfdfed1d08010d51a8bcd3102fec49a7f00d225e2",
+  "tests/e2e/japanese-due-review.spec.ts": "d3aafce7665dff67a74e0a8a379d7e8fd87117e8027fd45447f6efb35183d988"
 };
 const workflowHash = 'c65190845968db7077198840dbdeb9d9a42ae4e57038f1dcfbcdcbc3bd0e5bf6';
 
@@ -556,19 +556,46 @@ test('each new literal phase maps external helper failure only to its exact priv
       const lines = source.split('\n');
       const positions = lines.flatMap((line, index) => line.includes('await test.step(') ? [index + 1] : []);
       assert.deepEqual(positions, expectedLines);
+      const terminalHelpers = sourceId === 54 ? [
+        { name: 'preservationSync', line: 8, column: 5, returnLine: 62, title: 'terminal sync confirmation' },
+        { name: 'preservationLocal', line: 8, column: 49, returnLine: 65, title: 'terminal local preservation' },
+        { name: 'preservationServer', line: 9, column: 5, returnLine: 68, title: 'terminal server preservation' },
+        { name: 'preservationFitness', line: 9, column: 115, returnLine: 71, title: 'terminal fitness preservation' },
+      ] : [];
       // Offline coordinate fixture: retain each actual literal step call prefix at
       // its original line, replacing app bodies with a throwing external helper.
       // This checks native attribution only, not application execution.
       const synthetic = Array(lines.length).fill('');
-      synthetic[0] = `import { test } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};`;
+      synthetic[0] = `import { test, expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};`;
       synthetic[1] = "import { fail } from './offline-phase-helper';";
       synthetic[2] = "test('synthetic private phase', async () => {";
+      if (terminalHelpers.length) {
+        // Actual unchanged() calls, byte-for-byte at their native source lines.
+        // Only external dependencies are synthetic. Failure is injected before
+        // a dependency returns, never by changing the owning spec's assertions.
+        synthetic[3] = 'const page = {}, saved = {}, fitness = {}; const canonical = value => JSON.stringify(value);';
+        synthetic[4] = 'const synced = async () => { await fail(0); }; const localMatches = async () => { await fail(1); };';
+        synthetic[5] = 'const qa = { readLanguage: async () => { await fail(2); return saved; }, read: async () => { await fail(3); return fitness; } };';
+        assert.equal(lines[6], '  const unchanged = async () => {'); assert.equal(lines[9], '  };');
+        for (const index of [6, 7, 8, 9]) synthetic[index] = lines[index];
+      }
       for (const [index, line] of positions.entries()) {
         const prefix = lines[line - 1].split('async () => {')[0];
         assert.ok(prefix.includes('await test.step('));
-        synthetic[line - 1] = `${prefix}async () => { await fail(${index}); });`;
+        const helper = terminalHelpers[index];
+        synthetic[line - 1] = `${prefix}async () => { ${helper ? `if (Number(process.env.QA_LEVEL_FAILURE_PHASE) === ${index}) await unchanged()` : `await fail(${index})`}; });`;
       }
       synthetic[positions.at(-1)] = '});';
+      // Reuse the existing five terminal invocations, not four extra CLI runs.
+      // Playwright attributes these returned steps to the unchanged() callsite,
+      // not the return statement. Keep both the real callers and wrappers.
+      for (const helper of terminalHelpers) {
+        assert.equal(lines[helper.line - 1].indexOf('await ' + helper.name) + 1, helper.column);
+        assert.equal(lines[helper.returnLine - 2], `function ${helper.name}(action: () => Promise<void>) {`);
+        assert.equal(lines[helper.returnLine - 1], `  return test.step('${helper.title}', action);`);
+        assert.equal(lines[helper.returnLine], '}');
+        for (const index of [helper.returnLine - 2, helper.returnLine - 1, helper.returnLine]) synthetic[index] = lines[index];
+      }
       await mkdir(join(root, 'tests/e2e'), { recursive: true });
       await writeFile(join(root, path), synthetic.join('\n'));
       await writeFile(join(root, 'tests/e2e/offline-phase-helper.ts'), `import { expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};\nexport async function fail(index) { if (index === Number(process.env.QA_LEVEL_FAILURE_PHASE)) expect(${JSON.stringify(canary)}).toBe('PRIVATE_EXPECTED'); }\n`);
@@ -588,11 +615,13 @@ test('each new literal phase maps external helper failure only to its exact priv
         const detail = invocation.details[0];
         assert.equal(detail.source, sourceId); assert.equal(detail.line, 3); assert.equal(detail.column, 5); assert.equal(detail.project, 5);
         assert.equal(detail.failure.category, 1); assert.deepEqual(detail.failure.errors, []); assert.deepEqual(detail.failure.failedOperations, []);
-        assert.equal(detail.failure.failedSteps.length, 1);
+        const helper = terminalHelpers[phase];
+        assert.equal(detail.failure.failedSteps.length, helper ? 2 : 1);
         assert.equal(detail.failure.failedSteps[0].source, sourceId); assert.equal(detail.failure.failedSteps[0].line, line);
+        if (helper) assert.deepEqual(detail.failure.failedSteps[1], { source: sourceId, line: helper.line, column: helper.column });
         assert.equal(detail.failure.stepScanTruncated, 0); privateOutput(output);
         const text = output.join('\n'), bytes = await readFile(journalPath, 'utf8');
-        for (const secret of [canary, 'PRIVATE_EXPECTED', file, 'offline-phase-helper', root, 'synthetic private phase']) {
+        for (const secret of [canary, 'PRIVATE_EXPECTED', file, 'offline-phase-helper', root, 'synthetic private phase', ...terminalHelpers.map(helper => helper.title)]) {
           assert.ok(!text.includes(secret)); assert.ok(!bytes.includes(secret));
         }
       }
@@ -651,7 +680,7 @@ test('reviewed curriculum repair and bounded real-UI scenarios retain exact sour
   "utils/curriculumProgress.ts": "c9ce21e1c5e3be1deb15fe97f681169fc6a5a1364c766cc44c1940514b1912ef",
   "utils/learningSession.ts": "b672566336eca17ce5ba4017b6c32a25cd0a50a8c191a93b431fc113c1eef528",
   "tests/e2e/curriculum-corruption.spec.ts": "77d9bcccc9f3bf3e285dc2f97a5cda9ff2af9c01eb7dfbf342fb9225ac0f91af",
-  "tests/e2e/curriculum-terminal.spec.ts": "9d7becc76a7cb1fceb07475368b68987b7d3247149d1902dd66d2d4b44cac908",
+  "tests/e2e/curriculum-terminal.spec.ts": "18847114d43198589168f95303a44b770325e46278acc921515c68834f33420a",
   "tests/e2e/curriculum-browser-state.ts": "276908fe0cc7b095cf34ad530b4cfa04c51271c3ee8402a885caca42fe3d0a7b"
 };
   for (const [path, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash, path);
@@ -774,12 +803,18 @@ test('active settings coverage pins its reviewed product overlay and narrowly sc
   "app/language/settings/page.tsx": "b6242717b70eff28322f6f64641ffae302f4525b129d5b0f7773140ded2e6b50",
   "utils/languageSettingsPage.ts": "6093eecb8f0857251c5b97034fd9033d0b0a3e948ef1b4ef1830add5c2635b5a",
   "tests/japanese-preview-session-options.test.ts": "ca017c35715ee180e704dc59d7ccbebef17df7b1ed73f8f87e68f1d0b8d57877",
-  "tests/e2e/japanese-settings-recovery.spec.ts": "dd87b33d0461bdc7798b0b1606e16b0aeb3a432ed723c0f6cc266ff840e32669",
+  "tests/e2e/japanese-settings-recovery.spec.ts": "3b315176ad0a7f40e471753140cb70fc2abe5dfc34a5ddab453a8e5097123052",
   "tests/e2e/japanese-settings-state.ts": "005613b394514b151d8b134325c19fe637f37c31fd86b605fb5b5277dc697878"
 };
   for (const [path, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash, path);
   const source = await readFile('tests/e2e/japanese-settings-recovery.spec.ts', 'utf8');
   const helper = await readFile('tests/e2e/japanese-settings-state.ts', 'utf8');
+  // Nested select options are part of Playwright's exact label text, not its accessible name.
+  // Keep exact role/name matching; do not broaden to substring labels or hide ambiguity.
+  for (const [name, count] of Object.entries({ '하루 학습 시간': 8, '글자·문제 도움': 2, '우선 학습 과정': 2, '기본 음성 속도': 2 })) {
+    assert.equal(source.split(`getByRole('combobox', { name: '${name}', exact: true })`).length - 1, count);
+    assert.ok(!source.includes(`getByLabel('${name}'`));
+  }
   assert.equal(source.match(/test\('/g)?.length, 1); assert.ok(source.split('\n')[2].startsWith('test('));
   for (const text of [source, helper]) for (const forbidden of ['page.route', 'route.fulfill', 'addInitScript', 'waitForTimeout',
     'test.setTimeout', 'test.skip', 'test.fixme', 'audio.play', 'speakJapanese', 'qa.createAccount(', 'process.env.', 'saveLanguageSettingsPage(', 'readLanguageSettingsPage(', 'createRoot(']) assert.ok(!text.includes(forbidden), forbidden);
@@ -921,4 +956,81 @@ test('settings eight literal phases retain unique native test identities in one 
       assert.ok(!text.includes(secret)); assert.ok(!bytes.includes(secret));
     }
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('valid journey restoration accepts only serialization differences and rebases after fresh exact server confirmation', async () => {
+  const { expect } = await import('@playwright/test');
+  const { readLevelJourney, LEVEL_JOURNEY_KEY, emptyLevelJourney } = await import('../../utils/japaneseLevelJourney.ts');
+  const ts = (await import('typescript')).default;
+  const source = await readFile('tests/e2e/japanese-level-flow-state.ts', 'utf8');
+  const body = source.slice(source.indexOf('export async function journeySnapshot'), source.indexOf('export function observeSilentReading'));
+  const compiled = ts.transpileModule(body.replaceAll('export ', ''), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  const canonical = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+  const helpers = new Function('expect', 'readLevelJourney', 'LEVEL_JOURNEY_KEY', 'canonical', 'synced',
+    compiled + '; return { restoredLevelJourney, localMatches, persisted };')(
+    expect, readLevelJourney, LEVEL_JOURNEY_KEY, canonical, async () => {});
+  const stamp = '2026-11-12T00:00:00.000Z';
+  const original = { ...emptyLevelJourney(), selectedLevel: 'intermediate', selectionUpdatedAt: stamp, updatedAt: stamp,
+    answers: { q: { lessonId: 'middle-core-01', questionId: 'q', lastAttemptId: 'synthetic:q', lastAnsweredAt: stamp,
+      correct: true, neededHelp: false, attempts: 2, intervalDays: 3, nextReviewAt: '2026-11-15T00:00:00.000Z', successDates: ['2026-11-11', '2026-11-12'] } },
+    practicedUnits: { old: stamp }, future: { array: [7, '8'], nested: { keep: null, constructor: { keep: 9 } } },
+    ...JSON.parse('{"__proto__":{"keep":7},"constructor":{"keep":8}}') };
+  const before = { [LEVEL_JOURNEY_KEY]: JSON.stringify(original), unrelated: '{"keep": 7}' };
+  const normalized = JSON.stringify(Object.fromEntries(Object.entries(original).reverse()), null, 2);
+  const after = { ...before, [LEVEL_JOURNEY_KEY]: normalized }, fitness = { unrelated: { keep: 7 } };
+  const clone = value => JSON.parse(JSON.stringify(value));
+  const fixture = ({ local = after, remote = local, workout = fitness, afterRead } = {}) => {
+    const state = { local: { ...local }, reads: 0 };
+    const page = { evaluate: async (_callback, keys) => Array.isArray(keys)
+      ? Object.fromEntries(keys.map(key => [key, state.local[key] ?? null]))
+      : { raw: state.local[keys] ?? null, at: Date.now() } };
+    const qa = { readLanguage: async () => { state.reads++; afterRead?.(state); return remote; }, read: async () => workout };
+    return { page, qa, state };
+  };
+  const check = async (options, expected = before) => {
+    const f = fixture(options), preserved = clone(expected);
+    const result = await helpers.restoredLevelJourney(f.page, f.qa, expected, fitness);
+    assert.deepEqual(expected, preserved); assert.equal(f.state.reads, 1); return result;
+  };
+  assert.deepEqual(await check({}), after);
+  assert.deepEqual(await check({ local: before }), before);
+  const f = fixture();
+  await assert.rejects(helpers.localMatches(f.page, before));
+  await assert.rejects(helpers.persisted(f.page, f.qa, before, fitness));
+  assert.equal(f.state.reads, 0, 'ordinary raw-byte/save checks still reject changed bytes first');
+  const changes = [
+    value => { value.selectedLevel = 'advanced'; },
+    value => { value.selectionUpdatedAt = '2026-11-11T00:00:00.000Z'; },
+    value => { value.updatedAt = '2026-11-11T00:00:00.000Z'; },
+    value => { delete value.answers.q; }, value => { delete value.practicedUnits.old; },
+    value => { value.answers.q.lastAttemptId = 'stale:q'; },
+    value => { value.answers.q.lastAnsweredAt = '2026-11-11T00:00:00.000Z'; },
+    value => { value.answers.q.nextReviewAt = '2026-11-16T00:00:00.000Z'; },
+    value => { value.answers.q.attempts = 3; }, value => { value.answers.q.correct = false; },
+    value => { value.answers.q.neededHelp = true; }, value => { value.answers.q.intervalDays = 7; },
+    value => { value.answers.q.lessonId = 'other'; }, value => { value.answers.q.attempts = '2'; },
+    value => { value.answers.q.successDates.reverse(); },
+    value => { value.future.array.reverse(); }, value => { value.future.array[0] = '7'; },
+    value => { value.future.nested.keep = false; }, value => { delete value.future; },
+    value => { delete value.future.nested.constructor; }, value => { value.future.array = { 0: 7, 1: '8' }; },
+    value => { delete value.__proto__; }, value => { delete value.constructor; },
+    value => { value.extra = 1; }, value => { delete value.selectionUpdatedAt; },
+  ];
+  for (const change of changes) {
+    const value = clone(original); change(value);
+    await assert.rejects(check({ local: { ...after, [LEVEL_JOURNEY_KEY]: JSON.stringify(value) } }));
+  }
+  for (const raw of [null, '{broken', 'null', '[]', '7', before[LEVEL_JOURNEY_KEY].replace('\"keep\":null', '\"keep\":1e400'), JSON.stringify({ ...original, version: 2 }), JSON.stringify({ ...original, answers: [] })]) {
+    await assert.rejects(check({ local: { ...after, [LEVEL_JOURNEY_KEY]: raw } }));
+    await assert.rejects(check({}, { ...before, [LEVEL_JOURNEY_KEY]: raw }));
+  }
+  await assert.rejects(check({ local: { ...after, unrelated: '{"keep":7}' } }));
+  await assert.rejects(check({ remote: before }), 'semantic equality cannot replace fresh server byte equality');
+  await assert.rejects(check({ remote: { ...after, unrelated: 'stale' } }));
+  await assert.rejects(check({ remote: { ...after, unexpected: 'new' } }));
+  await assert.rejects(check({ workout: { unrelated: { keep: 8 } } }));
+  await assert.rejects(check({ afterRead: state => { state.local[LEVEL_JOURNEY_KEY] = before[LEVEL_JOURNEY_KEY]; } }));
 });

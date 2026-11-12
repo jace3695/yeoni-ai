@@ -10,15 +10,15 @@ test('active settings preserve extensions and reject stale partial or uncertain 
   };
   context.on('request', onRequest);
   const goal = (count: number) => selectedGoal(page, count).click();
-  const minutes = (value: number) => page.getByLabel('하루 학습 시간', { exact: true }).selectOption(String(value));
+  const minutes = (value: number) => page.getByRole('combobox', { name: '하루 학습 시간', exact: true }).selectOption(String(value));
   const noWrites = { japaneseAppSettings: 0, learningSettings: 0, integratedLearningSettingsV1: 0 };
   const restoredEditor = async () => {
     await synced(page);
     await expect(selectedGoal(page, 1)).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByLabel('하루 학습 시간', { exact: true })).toHaveValue('10');
-    await expect(page.getByLabel('글자·문제 도움', { exact: true })).toHaveValue('reader');
-    await expect(page.getByLabel('우선 학습 과정', { exact: true })).toHaveValue('travel');
-    await expect(page.getByLabel('기본 음성 속도', { exact: true })).toHaveValue('0.8');
+    await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('10');
+    await expect(page.getByRole('combobox', { name: '글자·문제 도움', exact: true })).toHaveValue('reader');
+    await expect(page.getByRole('combobox', { name: '우선 학습 과정', exact: true })).toHaveValue('travel');
+    await expect(page.getByRole('combobox', { name: '기본 음성 속도', exact: true })).toHaveValue('0.8');
     await expect(page.locator('#kana-tts-rate')).toHaveValue('0.8');
     await expect(page.locator('#words-repeat-count')).toHaveValue('2');
     for (const name of ['수업의 한글 발음 보조 표시', '읽는 법 표시', '한국어 뜻 표시']) await expect(page.getByLabel(name, { exact: true })).not.toBeChecked();
@@ -41,9 +41,9 @@ test('active settings preserve extensions and reject stale partial or uncertain 
       saved = changed(saved, 'japaneseAppSettings', { sections: { ...detail.sections, kana: { ...detail.sections.kana, ttsRate: 0.8 } } });
       await confirmedSettings(page, qa, saved, fitness);
       await goal(4); await minutes(20);
-      await page.getByLabel('글자·문제 도움', { exact: true }).selectOption('reader');
-      await page.getByLabel('우선 학습 과정', { exact: true }).selectOption('travel');
-      await page.getByLabel('기본 음성 속도', { exact: true }).selectOption('0.8');
+      await page.getByRole('combobox', { name: '글자·문제 도움', exact: true }).selectOption('reader');
+      await page.getByRole('combobox', { name: '우선 학습 과정', exact: true }).selectOption('travel');
+      await page.getByRole('combobox', { name: '기본 음성 속도', exact: true }).selectOption('0.8');
       await page.getByLabel('수업의 한글 발음 보조 표시', { exact: true }).uncheck();
       await page.getByLabel('읽는 법 표시', { exact: true }).uncheck();
       await page.getByLabel('한국어 뜻 표시', { exact: true }).uncheck();
@@ -67,7 +67,7 @@ test('active settings preserve extensions and reject stale partial or uncertain 
     await test.step('two actual open settings screens reject stale writes and preserve cancel before explicit reread', async () => {
       peer = await context.newPage(); await peer.goto('/language/settings'); await synced(peer);
       await expect(selectedGoal(peer, 4)).toHaveAttribute('aria-pressed', 'true'); await localSettings(peer, saved);
-      await selectedGoal(peer, 3).click(); await peer.getByLabel('하루 학습 시간', { exact: true }).selectOption('5'); await saveLearning(peer);
+      await selectedGoal(peer, 3).click(); await peer.getByRole('combobox', { name: '하루 학습 시간', exact: true }).selectOption('5'); await saveLearning(peer);
       saved = changed(changed(saved, 'learningSettings', { dailyGoalCount: 3 }), 'integratedLearningSettingsV1', { dailyMinutes: 5 });
       await confirmedSettings(peer, qa, saved, fitness);
       await page.bringToFront(); await goal(2); await minutes(10);
@@ -77,9 +77,9 @@ test('active settings preserve extensions and reject stale partial or uncertain 
         expect((await observe.stats()).writes).toEqual(noWrites);
       } finally { await observe.restore(); }
       await rereadSettings(page, false); await expect(selectedGoal(page, 2)).toHaveAttribute('aria-pressed', 'true');
-      await expect(page.getByLabel('하루 학습 시간', { exact: true })).toHaveValue('10'); await localSettings(page, saved);
+      await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('10'); await localSettings(page, saved);
       await rereadSettings(page, true); await expect(selectedGoal(page, 3)).toHaveAttribute('aria-pressed', 'true');
-      await expect(page.getByLabel('하루 학습 시간', { exact: true })).toHaveValue('5'); await localSettings(page, saved); await noSuccess(page);
+      await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('5'); await localSettings(page, saved); await noSuccess(page);
       await qa.traffic.drain(); await peer.close(); peer = undefined;
     });
     await test.step('targeted automatic and first-key write failures retain selections and allow unchanged-choice retries', async () => {
@@ -101,7 +101,7 @@ test('active settings preserve extensions and reject stale partial or uncertain 
         expect(await firstFault.stats()).toEqual({ writes: { ...noWrites, learningSettings: 1 }, hits: 1, failedReads: 0 });
       } finally { await firstFault.restore(); }
       await expect(selectedGoal(page, 2)).toHaveAttribute('aria-pressed', 'true');
-      await expect(page.getByLabel('하루 학습 시간', { exact: true })).toHaveValue('10'); await saveLearning(page);
+      await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('10'); await saveLearning(page);
       saved = changed(changed(saved, 'learningSettings', { dailyGoalCount: 2 }), 'integratedLearningSettingsV1', { dailyMinutes: 10 });
       await confirmedSettings(page, qa, saved, fitness);
     });
@@ -114,7 +114,7 @@ test('active settings preserve extensions and reject stale partial or uncertain 
         expect(await fault.stats()).toEqual({ writes: { ...noWrites, learningSettings: 1, integratedLearningSettingsV1: 1 }, hits: 1, failedReads: 0 });
       } finally { await fault.restore(); }
       await expect(selectedGoal(page, 1)).toHaveAttribute('aria-pressed', 'true');
-      await expect(page.getByLabel('하루 학습 시간', { exact: true })).toHaveValue('5');
+      await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('5');
       const retry = await installSettingsFault(page, 'integratedLearningSettingsV1', 'observe');
       try { await saveLearning(page); expect((await retry.stats()).writes).toEqual({ ...noWrites, integratedLearningSettingsV1: 1 }); }
       finally { await retry.restore(); }
@@ -139,7 +139,7 @@ test('active settings preserve extensions and reject stale partial or uncertain 
       await confirmedSettings(page, qa, uncertain, fitness);
       await rereadSettings(page, false); await expect(selectedGoal(page, 2)).toHaveAttribute('aria-pressed', 'true'); await noSuccess(page);
       await rereadSettings(page, true); await expect(selectedGoal(page, 1)).toHaveAttribute('aria-pressed', 'true');
-      await expect(page.getByLabel('하루 학습 시간', { exact: true })).toHaveValue('20'); await noSuccess(page);
+      await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('20'); await noSuccess(page);
       await minutes(10); await saveLearning(page); saved = changed(uncertain, 'integratedLearningSettingsV1', { dailyMinutes: 10 });
       await confirmedSettings(page, qa, saved, fitness);
     });

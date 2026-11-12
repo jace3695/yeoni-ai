@@ -35,6 +35,33 @@ export async function persisted(page: Page, qa: Qa, expected: State, fitness: St
   await synced(page); qa.traffic.assertLanguageConfirmed(expected);
   expect(await qa.read()).toEqual(fitness);
 }
+// A valid restore may reserialize the journey's object keys. Compare every
+// decoded field before adopting those bytes; all other stores and the fresh
+// authenticated server read must still match exactly. Saves use persisted above.
+export async function restoredLevelJourney(page: Page, qa: Qa, expected: State, fitness: State): Promise<State> {
+  await synced(page);
+  const current = await journeySnapshot(page);
+  const raw = expected[LEVEL_JOURNEY_KEY];
+  expect(typeof raw).toBe('string');
+  const previous = readLevelJourney({ getItem: () => raw as string, setItem: () => { throw new Error('Read-only restoration'); } });
+  // A JSON object can own a field named constructor. Matcher type detection
+  // must not mistake that data for a prototype. Retain every key and leaf in a
+  // tagged tree, sorting object keys only; array order and scalar types remain.
+  const contents = (value: unknown): unknown => {
+    if (Array.isArray(value)) return ['array', value.map(contents)];
+    if (value !== null && typeof value === 'object') return ['object', Object.entries(value)
+      .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, contents(item)])];
+    if (typeof value === 'number') expect(Number.isFinite(value)).toBe(true);
+    return ['value', value];
+  };
+  expect(contents(current.journey)).toStrictEqual(contents(previous));
+  const restored = { ...expected, [LEVEL_JOURNEY_KEY]: current.raw };
+  await localMatches(page, restored);
+  expect(canonical(await qa.readLanguage())).toBe(canonical(restored));
+  expect(await qa.read()).toEqual(fitness);
+  await synced(page); await localMatches(page, restored);
+  return restored;
+}
 export function observeSilentReading(page: Page) {
   let ttsRequests = 0;
   page.context().on('request', request => {

@@ -1,5 +1,5 @@
 import { test, expect, login, canonical, type State } from './fixture';
-import { LEVEL_JOURNEY_KEY, CURRICULUM_PROGRESS_KEY, CURRICULUM, emptyLevelJourney, getJapaneseReadingLesson, historicalAnswer, oldTime, uuid, journeySnapshot, localMatches, persisted, synced, observeSilentReading, writeCount } from './japanese-level-flow-state';
+import { LEVEL_JOURNEY_KEY, CURRICULUM_PROGRESS_KEY, CURRICULUM, emptyLevelJourney, getJapaneseReadingLesson, historicalAnswer, oldTime, uuid, journeySnapshot, localMatches, persisted, restoredLevelJourney, synced, observeSilentReading, writeCount } from './japanese-level-flow-state';
 test('explicit Japanese level choices and preview backtracking preserve earlier records through real save, reload and relogin', async ({ page, qa }) => {
   const silent = observeSilentReading(page);
   const oldReading = getJapaneseReadingLesson('upper-01')!;
@@ -50,10 +50,10 @@ test('explicit Japanese level choices and preview backtracking preserve earlier 
     await test.step('explicit intermediate and advanced choice', async () => {
       await page.getByRole('link', { name: '중급 살펴보기', exact: true }).click(); await expect(preview('중급')).toBeVisible(); await choose('intermediate', '중급');
       await page.getByRole('link', { name: '고급 살펴보기', exact: true }).click(); await expect(preview('고급')).toBeVisible(); await choose('advanced', '고급');
-      await page.reload(); await synced(page); await expect(preview('고급')).toBeVisible(); await unchanged();
+      await page.reload(); await synced(page); await expect(preview('고급')).toBeVisible(); saved = await restoredLevelJourney(page, qa, saved, fitness);
       await page.getByRole('button', { name: '로그아웃', exact: true }).click(); await expect(page.getByLabel('이메일', { exact: true })).toBeVisible();
       await expect.poll(() => page.evaluate(key => localStorage.getItem(key), LEVEL_JOURNEY_KEY)).toBeNull();
-      await login(page, qa.account, '/language/levels'); await synced(page); await expect(preview('고급')).toBeVisible(); await unchanged();
+      await login(page, qa.account, '/language/levels'); await synced(page); await expect(preview('고급')).toBeVisible(); saved = await restoredLevelJourney(page, qa, saved, fitness);
     });
     await test.step('earlier beginner material and allowed draft', async () => {
       const writes = writeCount(qa);
@@ -83,7 +83,7 @@ test('explicit Japanese level choices and preview backtracking preserve earlier 
     });
     await test.step('explicit beginner choice and restoration', async () => {
       await choose('beginner', '초급');
-      const restore = async () => { await synced(page); await expect(preview('초급')).toBeVisible(); await unchanged(); };
+      const restore = async () => { await synced(page); await expect(preview('초급')).toBeVisible(); saved = await restoredLevelJourney(page, qa, saved, fitness); };
       await page.reload(); await restore();
       await page.getByRole('button', { name: '로그아웃', exact: true }).click(); await expect(page.getByLabel('이메일', { exact: true })).toBeVisible();
       await expect.poll(() => page.evaluate(key => localStorage.getItem(key), LEVEL_JOURNEY_KEY)).toBeNull();
