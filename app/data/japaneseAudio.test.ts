@@ -29,6 +29,25 @@ test("무료 음성은 서버를 호출하지 않고 설치된 일본어 음성�
   assert.equal(fixture.played[0].lang, "ja-JP");
   assert.equal(fixture.fetchMock.mock.calls.length, 0);
 });
+
+for (const rate of [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2]) {
+  test(`무료 음성은 가나·단어·문장 설정의 ${rate} 속도를 그대로 전달한다`, async context => {
+    const fixture = device(context);
+    await speakJapaneseWithPreferredTts("こんにちは", { rate });
+    assert.equal(fixture.played[0].rate, rate);
+    assert.equal(fixture.fetchMock.mock.calls.length, 0);
+  });
+}
+
+test("무료 음성은 기본 속도와 설정 범위 밖 속도의 경계를 유지한다", async context => {
+  const fixture = device(context);
+  for (const [rate, expected] of [[undefined, 0.9], [NaN, 0.9], [null, 0.9], ["0.5", 0.9], [-Infinity, 0.5], [0, 0.5], [2, 1.2], [Infinity, 1.2]] as const) {
+    await speakJapaneseWithPreferredTts("こんにちは", { rate: rate as unknown as number | undefined });
+    assert.equal(fixture.played.at(-1)?.rate, expected);
+  }
+  assert.equal(fixture.fetchMock.mock.calls.length, 0);
+});
+
 test("무료 음성도 반복 횟수와 시작·완료 콜백을 지킨다", async context => {
   const fixture = device(context); let started = 0; let ended = 0;
   await speakJapaneseWithPreferredTts("あ", { repeatCount: 3, onStart: () => { started++; }, onEnd: () => { ended++; } });

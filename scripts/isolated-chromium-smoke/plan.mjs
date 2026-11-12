@@ -18,7 +18,7 @@ export const inventory = Object.freeze([
 ]);
 export const browserCommand = 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 tests/e2e/japanese-middle-reading.spec.ts:3 tests/e2e/japanese-upper-reading.spec.ts:3 tests/e2e/japanese-level-choice.spec.ts:3 tests/e2e/japanese-due-review.spec.ts:3 tests/e2e/curriculum-corruption.spec.ts:3 tests/e2e/curriculum-terminal.spec.ts:3 tests/e2e/japanese-settings-recovery.spec.ts:3 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke';
 export const stages = Object.freeze([
-  Object.freeze({ id: 'stage-01', command: 'node --test scripts/isolated-chromium-smoke/safety.test.mjs', timeoutMs: 60_000 }),
+  Object.freeze({ id: 'stage-01', command: 'node --test scripts/isolated-chromium-smoke/safety.test.mjs', timeoutMs: 60_000, lifecycleDiagnostics: true }),
   Object.freeze({ id: 'stage-02', command: 'pinned-bundled-chromium-readiness', timeoutMs: 240_000, lifecycleDiagnostics: true }),
   Object.freeze({ id: 'stage-03', command: browserCommand, timeoutMs: 465_000, diagnosticInventory: inventory }),
 ]);

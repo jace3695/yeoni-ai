@@ -83,7 +83,8 @@ test('exact command, fixed project/source inventory, readiness and ceilings stay
   assert.equal(stages[0].command, 'node --test scripts/isolated-chromium-smoke/safety.test.mjs');
   assert.equal(stages[1].command, 'pinned-bundled-chromium-readiness');
   assert.equal(stages[1].lifecycleDiagnostics, true);
-  assert.ok(stages.filter(stage => stage.lifecycleDiagnostics).every(stage => stage.id === 'stage-02'));
+  assert.equal(stages[0].lifecycleDiagnostics, true);
+  assert.deepEqual(stages.filter(stage => stage.lifecycleDiagnostics).map(stage => stage.id), ['stage-01', 'stage-02']);
   assert.equal(stages[2].command, browserCommand); assert.equal(stages[2].diagnosticInventory, inventory);
   assert.deepEqual(stages.map(stage => stage.timeoutMs), [60000, 240000, 465000]);
   assert.equal(totalTimeoutMs, 775000); assert.ok(totalTimeoutMs + 5000 <= 13 * 60000);
@@ -96,6 +97,40 @@ test('exact command, fixed project/source inventory, readiness and ceilings stay
     browserCommand.replace('--project chromium-app-smoke', '--project chromium'), stages[1].command, 'echo ' + browserCommand]) {
     assert.equal(diagnosticInvocations(changed), 0);
   }
+});
+
+test('stage one lifecycle opt-in distinguishes native exit and timeout without exposing captured content', async () => {
+  const context = await fresh();
+  try {
+    for (const mode of ['exit', 'timeout']) {
+      const script = join(context.root, `${mode}.mjs`);
+      await writeFile(script, `import { writeFileSync } from 'node:fs';
+console.log(${JSON.stringify(canary)}); console.error(${JSON.stringify(canary)});
+for (const key of ['GITHUB_OUTPUT', 'GITHUB_STATE', 'GITHUB_STEP_SUMMARY', 'GITHUB_PATH']) writeFileSync(process.env[key], ${JSON.stringify(canary)});
+${mode === 'exit' ? 'process.exitCode = 7;' : 'setTimeout(() => process.exit(9), 2000);'}
+`);
+      const output = []; let runs = 0, readinessCalls = 0;
+      const code = await supervise({ ...context, emit: value => output.push(value),
+        readiness: async () => { readinessCalls++; return 0; },
+        run: async (items, options) => {
+          runs++; assert.deepEqual(items, [stages[0]]); assert.equal(options.timeoutMs, 60000);
+          // Only the finite synthetic command and its short test deadline differ.
+          // The real caller's unchanged plan and actual lifecycle path are checked.
+          return runStages([{ ...items[0], command: `${JSON.stringify(process.execPath)} ${JSON.stringify(script)}` }], {
+            ...options, timeoutMs: mode === 'exit' ? 1000 : 250,
+          });
+        },
+      });
+      assert.equal(code, 1); assert.equal(runs, 1); assert.equal(readinessCalls, 0);
+      assert.equal(output.length, 5);
+      assert.match(output[0], new RegExp(`^stage-01 lifecycle reason=${mode === 'exit' ? 'none code=7 signal=0' : 'timeout code=-1 signal=15'} `));
+      assert.match(output[0], /leader=exited capture=drained processCleanup=unverified/);
+      assert.deepEqual(output.slice(1), ['stage-01 failed', 'stage-02 not-run', 'stage-03 not-run',
+        'chromium-app-smoke failed browser=playwright-chromium-headless-shell realBrowser=unverified fixtureCleanup=unverified']);
+      privateOutput(output);
+      for (const value of [canary, script, context.root]) assert.ok(!output.join('\n').includes(value));
+    }
+  } finally { await rm(context.root, { recursive: true, force: true }); }
 });
 
 test('existing tests, fixtures, WebKit guards, dependencies, schema and stack are byte-preserved', async () => {
@@ -566,16 +601,15 @@ test('each new literal phase maps external helper failure only to its exact priv
       // its original line, replacing app bodies with a throwing external helper.
       // This checks native attribution only, not application execution.
       const synthetic = Array(lines.length).fill('');
-      synthetic[0] = `import { test, expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};`;
-      synthetic[1] = "import { fail } from './offline-phase-helper';";
-      synthetic[2] = "test('synthetic private phase', async () => {";
+      synthetic[0] = `import { test, expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))}; import { fail } from './offline-phase-helper'; for (let phase = 0; phase < ${positions.length}; phase++) {`;
+      synthetic[2] = "test('synthetic private phase ' + phase, async () => {";
       if (terminalHelpers.length) {
         // Actual unchanged() calls, byte-for-byte at their native source lines.
         // Only external dependencies are synthetic. Failure is injected before
         // a dependency returns, never by changing the owning spec's assertions.
         synthetic[3] = 'const page = {}, saved = {}, fitness = {}; const canonical = value => JSON.stringify(value);';
-        synthetic[4] = 'const synced = async () => { await fail(0); }; const localMatches = async () => { await fail(1); };';
-        synthetic[5] = 'const qa = { readLanguage: async () => { await fail(2); return saved; }, read: async () => { await fail(3); return fitness; } };';
+        synthetic[4] = 'const synced = async () => { await fail(phase, 0); }; const localMatches = async () => { await fail(phase, 1); };';
+        synthetic[5] = 'const qa = { readLanguage: async () => { await fail(phase, 2); return saved; }, read: async () => { await fail(phase, 3); return fitness; } };';
         assert.equal(lines[6], '  const unchanged = async () => {'); assert.equal(lines[9], '  };');
         for (const index of [6, 7, 8, 9]) synthetic[index] = lines[index];
       }
@@ -583,10 +617,10 @@ test('each new literal phase maps external helper failure only to its exact priv
         const prefix = lines[line - 1].split('async () => {')[0];
         assert.ok(prefix.includes('await test.step('));
         const helper = terminalHelpers[index];
-        synthetic[line - 1] = `${prefix}async () => { ${helper ? `if (Number(process.env.QA_LEVEL_FAILURE_PHASE) === ${index}) await unchanged()` : `await fail(${index})`}; });`;
+        synthetic[line - 1] = `${prefix}async () => { ${helper ? `if (phase === ${index}) await unchanged()` : `await fail(phase, ${index})`}; });`;
       }
       synthetic[positions.at(-1)] = '});';
-      // Reuse the existing five terminal invocations, not four extra CLI runs.
+      // All five terminal phase identities keep their nested checkpoint failures.
       // Playwright attributes these returned steps to the unchanged() callsite,
       // not the return statement. Keep both the real callers and wrappers.
       for (const helper of terminalHelpers) {
@@ -596,34 +630,46 @@ test('each new literal phase maps external helper failure only to its exact priv
         assert.equal(lines[helper.returnLine], '}');
         for (const index of [helper.returnLine - 2, helper.returnLine - 1, helper.returnLine]) synthetic[index] = lines[index];
       }
+      synthetic.push('}');
       await mkdir(join(root, 'tests/e2e'), { recursive: true });
       await writeFile(join(root, path), synthetic.join('\n'));
-      await writeFile(join(root, 'tests/e2e/offline-phase-helper.ts'), `import { expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};\nexport async function fail(index) { if (index === Number(process.env.QA_LEVEL_FAILURE_PHASE)) expect(${JSON.stringify(canary)}).toBe('PRIVATE_EXPECTED'); }\n`);
+      await writeFile(join(root, 'tests/e2e/offline-phase-helper.ts'), `import { expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};\nexport async function fail(selected, current) { if (selected === current) expect(${JSON.stringify(canary)}).toBe('PRIVATE_EXPECTED'); }\n`);
       await writeFile(join(root, 'offline.config.mjs'), `export default ${JSON.stringify({ testDir: './tests/e2e', workers: 1, retries: 0, projects: [{ name: 'chromium-app-smoke' }], reporter: [[join(repository, 'tests/e2e/reporter.ts')]] })};\n`);
-      for (const [phase, line] of positions.entries()) {
-        const journalPath = join(root, `journal-${phase}.jsonl`); await writeFile(journalPath, '', { mode: 0o600 });
-        const child = spawnSync(process.execPath, [join(repository, 'node_modules/@playwright/test/cli.js'), 'test', '--config', 'offline.config.mjs'], {
-          cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
-          env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: 'true', QA_LEVEL_FAILURE_PHASE: String(phase), QA_PRIVATE_DIAGNOSTIC_FILE: journalPath, QA_PRIVATE_DIAGNOSTIC_TOKEN: token },
-        });
-        assert.equal(child.error, undefined); assert.equal(child.status, 1);
-        const output = [];
-        const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
-        assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
-        const invocation = report.invocations[0]; assert.equal(invocation.counts.failed, 1); assert.equal(invocation.runnerErrors, 0);
-        assert.equal(invocation.details.length, 1);
-        const detail = invocation.details[0];
+      // Share only CLI/config startup. Each phase is a unique native test at 3:5;
+      // workers=1 and retries=0 are unchanged, and failures still restart workers.
+      const journalPath = join(root, 'journal.jsonl'); await writeFile(journalPath, '', { mode: 0o600 });
+      const child = spawnSync(process.execPath, [join(repository, 'node_modules/@playwright/test/cli.js'), 'test', '--config', 'offline.config.mjs'], {
+        cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: 'true', QA_PRIVATE_DIAGNOSTIC_FILE: journalPath, QA_PRIVATE_DIAGNOSTIC_TOKEN: token },
+      });
+      assert.equal(child.error, undefined); assert.equal(child.status, 1);
+      const output = [];
+      // This coordinate-only fixture is not the official 14-case app inventory.
+      const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
+      assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
+      const invocation = report.invocations[0];
+      assert.deepEqual(invocation.counts, { passed: 0, failed: positions.length, timedOut: 0, skipped: 0, interrupted: 0, unknown: 0 });
+      assert.equal(invocation.status, 'failed'); assert.deepEqual(invocation.active, []); assert.equal(invocation.omitted, 0);
+      assert.equal(invocation.runnerErrors, 0); assert.equal(invocation.details.length, positions.length);
+      assert.deepEqual(invocation.details.map(detail => detail.test), positions.map((_, index) => index + 1));
+      const actualLines = [];
+      for (const [phase, detail] of invocation.details.entries()) {
+        const line = positions[phase];
+        assert.equal(detail.status, 'failed');
         assert.equal(detail.source, sourceId); assert.equal(detail.line, 3); assert.equal(detail.column, 5); assert.equal(detail.project, 5);
         assert.equal(detail.failure.category, 1); assert.deepEqual(detail.failure.errors, []); assert.deepEqual(detail.failure.failedOperations, []);
         const helper = terminalHelpers[phase];
         assert.equal(detail.failure.failedSteps.length, helper ? 2 : 1);
         assert.equal(detail.failure.failedSteps[0].source, sourceId); assert.equal(detail.failure.failedSteps[0].line, line);
+        assert.equal(detail.failure.failedSteps[0].column, 5);
         if (helper) assert.deepEqual(detail.failure.failedSteps[1], { source: sourceId, line: helper.line, column: helper.column });
-        assert.equal(detail.failure.stepScanTruncated, 0); privateOutput(output);
-        const text = output.join('\n'), bytes = await readFile(journalPath, 'utf8');
-        for (const secret of [canary, 'PRIVATE_EXPECTED', file, 'offline-phase-helper', root, 'synthetic private phase', ...terminalHelpers.map(helper => helper.title)]) {
-          assert.ok(!text.includes(secret)); assert.ok(!bytes.includes(secret));
-        }
+        assert.equal(detail.failure.stepScanTruncated, 0); actualLines.push(detail.failure.failedSteps[0].line);
+      }
+      assert.equal(new Set(actualLines).size, positions.length); assert.deepEqual(actualLines, expectedLines); privateOutput(output);
+      const text = output.join('\n'), bytes = await readFile(journalPath, 'utf8');
+      for (const secret of [canary, 'PRIVATE_EXPECTED', file, 'offline-phase-helper', root, 'synthetic private phase',
+        ...positions.map(line => lines[line - 1]), ...terminalHelpers.map(helper => helper.title)]) {
+        assert.ok(!text.includes(secret)); assert.ok(!bytes.includes(secret));
       }
     } finally { await rm(root, { recursive: true, force: true }); }
   }

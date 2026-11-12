@@ -14,7 +14,8 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 
 function clampRate(rate?: number) {
   if (typeof rate !== "number" || Number.isNaN(rate)) return 0.9;
-  return Math.min(1, Math.max(0.8, rate));
+  // Match section speed settings; integrated courses pass their narrower range.
+  return Math.min(1.2, Math.max(0.5, rate));
 }
 
 function getBestJapaneseVoice(voices: SpeechSynthesisVoice[]) {
