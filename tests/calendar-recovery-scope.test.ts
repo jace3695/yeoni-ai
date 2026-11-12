@@ -46,11 +46,7 @@ function fixture() {
     const code = ts.transpileModule(raw, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
     const requireLocal = (request: string) => {
       const target = request.replace(/\.ts$/, '').replace(/^\.\//, '');
-      if (['storageOwnership', 'storageTransaction', 'recordStorage', 'bodyRecordSave'].includes(target)) return load(target);
-      if (target === 'dietPlans') return { DIET_GOAL_CHECK_ITEMS: [], DIET_SAFETY_CHECK_ITEMS: [],
-        getLocalDateKey: () => DAY, normalizeDinnerCarbStore: (value: unknown) => value,
-        normalizeLunchCarbStore: (value: unknown) => value, normalizeLunchProteinStore: (value: unknown) => value };
-      if (target === 'workoutCompletion') return { WORKOUT_COMPLETED_DAYS_KEY: 'synthetic-workouts' };
+      if (['storageOwnership', 'storageTransaction', 'recordStorage', 'bodyRecordSave', 'workoutCompletion', 'dietPlans'].includes(target)) return load(target);
       if (request === '../../lib/diet-time.ts') return { fastingStartForDay: () => '' };
       throw new Error(`Unexpected dependency: ${request}`);
     };

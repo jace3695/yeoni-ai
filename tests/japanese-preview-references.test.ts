@@ -339,9 +339,36 @@ test('hash-authorized QA CSS exactly supplies every public glyph group style wit
   assert.doesNotMatch(response, /unsafe-inline|unsafe-hashes|style-src-attr/);
 });
 
+// This synthetic element models the data-* attributes used by the actual Next client.
+// Removing an attribute must also remove its reflected dataset entry, not be a no-op.
+function dataAttributeElement(initial: Record<string, string> = {}) {
+  const dataset = { ...initial };
+  return { dataset, removeAttribute(name: string) {
+    const attribute = name.toLowerCase();
+    if (attribute.startsWith('data-')) {
+      const key = attribute.slice(5).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+      delete dataset[key];
+    }
+  } };
+}
+
+test('actual Next deployment reader consumes only its reflected data attribute and preserves the captured value', async () => {
+  const documentElement = dataAttributeElement({ dplId: 'synthetic-deployment', keepValue: 'retained' });
+  const compiled = await compile('export { getDeploymentId, getDeploymentIdQuery } from "next/dist/shared/lib/deployment-id";',
+    { window: {}, document: { documentElement } });
+  assert.equal((compiled.getDeploymentId as () => string)(), 'synthetic-deployment');
+  assert.equal((compiled.getDeploymentIdQuery as () => string)(), '?dpl=synthetic-deployment');
+  assert.equal(Object.hasOwn(documentElement.dataset, 'dplId'), false);
+  assert.deepEqual(documentElement.dataset, { keepValue: 'retained' });
+  documentElement.removeAttribute('data-dpl-id'); // Absent attribute removal is idempotent.
+  assert.deepEqual(documentElement.dataset, { keepValue: 'retained' });
+  documentElement.removeAttribute('DATA-KEEP-VALUE'); // HTML attribute names are case-insensitive.
+  assert.deepEqual(documentElement.dataset, {});
+});
+
 test('original home, curriculum and first-letter pages preserve product journeys in the memory-only preview', async () => {
   const window = { addEventListener() {}, removeEventListener() {} };
-  const document = { documentElement: { dataset: {} }, addEventListener() {}, removeEventListener() {} };
+  const document = { documentElement: dataAttributeElement(), addEventListener() {}, removeEventListener() {} };
   for (const [page, pathname, heading] of [
     ['', '/language', '글자부터 문장까지'],
     ['/learn', '/language/learn', '한 번에 하나씩, 내 속도로'],

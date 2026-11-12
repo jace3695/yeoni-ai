@@ -85,7 +85,7 @@ function context(client: string, locks: OriginLocks, values: Map<string, string>
     const requireFixture = (specifier: string) => {
       if (specifier === './recordStorage.ts') return { isValidInbodyRecord };
       if (specifier === '../lib/supabase.ts') return { supabase: null };
-      assert.ok(['./storageOwnership.ts', './storageTransaction.ts', './appRecordReset.ts'].includes(specifier), specifier);
+      assert.ok(['./storageOwnership.ts', './storageTransaction.ts', './appRecordReset.ts', './workoutCompletion.ts', './dietPlans.ts'].includes(specifier), specifier);
       return load(specifier);
     };
     vm.runInContext(`(function(exports, require) { ${source(name)}\n})`, sandbox)(exports, requireFixture);
@@ -94,7 +94,8 @@ function context(client: string, locks: OriginLocks, values: Map<string, string>
   const manager = load('./storageOwnership.ts') as Manager;
   const tx = load('./storageTransaction.ts') as Transactions;
   const cloud = load('./cloudSync.ts') as Cloud;
-  Object.assign(sandbox, { recoverStorageTransaction: tx.recoverStorageTransaction });
+  const workout = load('./workoutCompletion.ts');
+  Object.assign(sandbox, { recoverStorageTransaction: tx.recoverStorageTransaction, WORKOUT_COMPLETED_DAYS_KEY: workout.WORKOUT_COMPLETED_DAYS_KEY, readWorkoutCompletionStore: workout.readWorkoutCompletionStore });
   const genericRead = vm.runInContext(readJsonCode, sandbox) as (key: string, fallback: object) => object;
   return {
     manager, tx, cloud, storage, operations, window, genericRead,
@@ -261,4 +262,26 @@ test('throwing UI subscribers cannot reject the lock callback or transfer owners
   await flush();
   assert.equal(locks.owner?.client, 'a');
   assert.equal(locks.settledCallbacks, 0);
+});
+
+test('actual completion reader in owner VM rejects corrupted raw without writes', () => {
+  const key = 'ai-fitness-workout-completed-days', raw = '{synthetic-broken';
+  const values = new Map([[key, raw]]), locks = new OriginLocks();
+  const a = context('completion-owner', locks, values); a.manager.beginStorageAccess();
+  assert.equal(a.manager.getStorageAccessStatus(), 'ready');
+  assert.throws(() => a.genericRead(key, {}), /운동 기록/);
+  assert.throws(() => a.cloud.readLocalCloudState(), /운동 기록/);
+  assert.equal(values.get(key), raw);
+  assert.equal(a.operations.some(operation => operation.startsWith('set:') || operation.startsWith('remove:')), false);
+});
+
+test('actual completion reader uses each VM storage and preserves dated records', () => {
+  const key = 'ai-fitness-workout-completed-days', raw = '{"2026-11-12":{"workoutDone":true,"cardioMinutes":12}}';
+  const values = new Map([[key, raw]]), locks = new OriginLocks();
+  const a = context('completion-owner', locks, values), waiting = context('completion-waiting', locks, values);
+  a.manager.beginStorageAccess(); waiting.manager.beginStorageAccess();
+  assert.equal(JSON.stringify(a.genericRead(key, {})), raw);
+  assert.throws(() => waiting.genericRead(key, {}), /기록 접근/);
+  assert.deepEqual(waiting.operations, []);
+  assert.equal(values.get(key), raw);
 });
