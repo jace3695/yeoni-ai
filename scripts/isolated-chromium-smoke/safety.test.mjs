@@ -1591,7 +1591,7 @@ test('reference source 57 pins the finite route graph and six exact source mutat
   "components/AppCompanion.tsx": "d1c667c4c06fa5a2684f67ba4ad945f04e28cf3c397873860a334e6945f4e1b6",
   "tests/e2e/reporter.ts": "21a52f1e73ca9e116284cd578bf0ea5a3a67900d5ba0b5ec3c1dd3e7be7faeef",
   "tests/e2e/japanese-reference-routine-state.ts": "a76d81adee68e628e9f5ff4aecd458662ea8ac0b603d6bfaac9d9fc293f00786", "scripts/isolated-chromium-smoke/reference-pin-status-controls.mjs": "67279b42d96db44ce5514f3e5573841c778fcbea64ed717088f11f902d10f8a7",
-  "tests/e2e/japanese-reference-routine.spec.ts": "ce0e5594eb4713f4735ebce21eb0445ce634635834839f9e72e096410df6f042"
+  "tests/e2e/japanese-reference-routine.spec.ts": "eb148cc11660600c332cc7116a392d95bff6ea7ec8415893673e13ca858151b4"
 };
   for (const [file, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(file)).digest('hex'), hash, file);
   const spec = await readFile('tests/e2e/japanese-reference-routine.spec.ts', 'utf8');
@@ -1744,12 +1744,12 @@ assert.equal(positives, 7); assert.equal(negatives, 17);
 
 });
 
-// Thirteen distinct source positions, NOT proof of assignment/finally execution.
+// Nineteen distinct source positions, NOT proof of assignment/finally execution.
 // Whitespace-only prefixes prove native call attribution; actual browser CI remains required.
-test('reference thirteen literal phases retain source 57 numeric native attribution without fixtures', async () => {
+test('reference nineteen literal phases retain source 57 numeric native attribution without fixtures', async () => {
   const repository = process.cwd(), root = await mkdtemp(join(tmpdir(), 'reference-native-phases-'));
   const file = 'tests/e2e/japanese-reference-routine.spec.ts';
-  const expectedCoordinates = [{"source": 57, "line": 4, "column": 19}, {"source": 57, "line": 6, "column": 33}, {"source": 57, "line": 7, "column": 5}, {"source": 57, "line": 8, "column": 5}, {"source": 57, "line": 9, "column": 5}, {"source": 57, "line": 10, "column": 27}, {"source": 57, "line": 12, "column": 7}, {"source": 57, "line": 32, "column": 7}, {"source": 57, "line": 64, "column": 7}, {"source": 57, "line": 82, "column": 26}, {"source": 57, "line": 87, "column": 5}, {"source": 57, "line": 98, "column": 5}, {"source": 57, "line": 116, "column": 15}];
+  const expectedCoordinates = [{"source": 57, "line": 4, "column": 19}, {"source": 57, "line": 6, "column": 33}, {"source": 57, "line": 7, "column": 5}, {"source": 57, "line": 8, "column": 5}, {"source": 57, "line": 9, "column": 5}, {"source": 57, "line": 10, "column": 27}, {"source": 57, "line": 12, "column": 7}, {"source": 57, "line": 21, "column": 9}, {"source": 57, "line": 24, "column": 11}, {"source": 57, "line": 25, "column": 11}, {"source": 57, "line": 32, "column": 7}, {"source": 57, "line": 64, "column": 7}, {"source": 57, "line": 82, "column": 26}, {"source": 57, "line": 87, "column": 5}, {"source": 57, "line": 98, "column": 5}, {"source": 57, "line": 116, "column": 15}, {"source": 57, "line": 120, "column": 84}, {"source": 57, "line": 121, "column": 82}, {"source": 57, "line": 122, "column": 73}];
 
 
 
@@ -1767,8 +1767,8 @@ test('reference thirteen literal phases retain source 57 numeric native attribut
     // Match every original await column using inert whitespace, not source prefixes.
     // Synthetic labels and sequential calls do not execute assignment/finally control flow. None of
     // the real case body/helper/fixture, page/context/qa or services is imported.
-    synthetic[0] = `import { test } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))}; import { fail } from './offline-reference-helper'; for (let phase = 0; phase < 13; phase++) {`;
-    synthetic[2] = "test('synthetic reference phase ' + phase, async () => { if (phase < 12) test.fail();";
+    synthetic[0] = `import { test } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))}; import { fail } from './offline-reference-helper'; for (let phase = 0; phase < 19; phase++) {`;
+    synthetic[2] = "test('synthetic reference phase ' + phase, async () => { if (phase < 18) test.fail();";
     for (const [index, position] of positions.entries()) {
       const prefix = ' '.repeat(position.column - 1) + `await test.step('synthetic phase ${index}', `;
       assert.equal(prefix.indexOf('await test.step(') + 1, position.column);
@@ -1788,17 +1788,17 @@ test('reference thirteen literal phases retain source 57 numeric native attribut
     // Safe boolean actuals cannot serialize a raw spawn Error or stream.
     assert.equal(child.error === undefined, true, 'reference-native-child-error');
     assert.equal(child.signal === null, true, 'reference-native-child-signal');
-    assert.equal(child.status === 1, true, 'reference-native-thirteen-intended-failures');
+    assert.equal(child.status === 1, true, 'reference-native-nineteen-intended-failures');
     const output = [];
-    // One diagnostic-only invocation containing thirteen intentional failures.
+    // One diagnostic-only invocation containing nineteen intentional failures.
     // It is unrelated to the actual sixteen-case application lane inventory.
     const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
     assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
     const invocation = report.invocations[0];
-    assert.deepEqual(invocation.counts, { passed: 0, failed: 13, timedOut: 0, skipped: 0, interrupted: 0, unknown: 0 });
+    assert.deepEqual(invocation.counts, { passed: 0, failed: 19, timedOut: 0, skipped: 0, interrupted: 0, unknown: 0 });
     assert.equal(invocation.status, 'failed'); assert.deepEqual(invocation.active, []); assert.equal(invocation.omitted, 0);
-    assert.equal(invocation.runnerErrors, 0); assert.equal(invocation.details.length, 13);
-    assert.deepEqual(invocation.details.map(detail => detail.test), Array.from({ length: 13 }, (_, index) => index + 1));
+    assert.equal(invocation.runnerErrors, 0); assert.equal(invocation.details.length, 19);
+    assert.deepEqual(invocation.details.map(detail => detail.test), Array.from({ length: 19 }, (_, index) => index + 1));
     const actual = [];
     for (const [index, detail] of invocation.details.entries()) {
       assert.equal(detail.source, 57); assert.equal(detail.line, 3); assert.equal(detail.column, 5); assert.equal(detail.project, 5);
@@ -1806,7 +1806,7 @@ test('reference thirteen literal phases retain source 57 numeric native attribut
       assert.deepEqual(detail.failure.failedSteps, [expectedCoordinates[index]]);
       assert.equal(detail.failure.stepScanTruncated, 0); actual.push(detail.failure.failedSteps[0]);
     }
-    assert.equal(new Set(actual.map(item => `${item.line}:${item.column}`)).size, 13);
+    assert.equal(new Set(actual.map(item => `${item.line}:${item.column}`)).size, 19);
     assert.deepEqual(actual, expectedCoordinates); privateOutput(output);
     // Raw child streams are private lifecycle capture, not public diagnostic output.
     const { SafetyEventCollector } = await import('../qa-private-safety-diagnostics.mjs');

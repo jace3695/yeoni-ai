@@ -18,16 +18,16 @@ test('kana and word ordinary quizzes retry exact daily completion once and prese
           await synced(page);
         }
         await expect(page.getByRole('heading', { name: id === 'kana' ? '히라가나 / 가타카나 훈련' : '단어 학습', exact: true })).toBeVisible();
-        await page.getByRole('button', { name: '퀴즈 모드', exact: true }).click(); await score(page, id, 0);
+        await test.step('reference ordinary initial quiz score', async () => { await page.getByRole('button', { name: '퀴즈 모드', exact: true }).click(); await score(page, id, 0); });
         const snapshot = await referenceSnapshot(page), writes = languageWrites(qa);
         for (let count = 1; count <= 4; count++) {
-          await (await correctChoice(page, id, kana)).click(); await score(page, id, count);
-          await unchanged(page, qa, saved, fitness, snapshot, writes);
+          await test.step('reference ordinary answer and score', async () => { await (await correctChoice(page, id, kana)).click(); await score(page, id, count); });
+          await test.step('reference ordinary unchanged records', async () => { await unchanged(page, qa, saved, fitness, snapshot, writes); });
           await expect(page.getByText(localSuccess, { exact: true })).toHaveCount(0);
           await expect(retryButton(page)).toHaveCount(0);
           await nextButton(page, id).click();
         }
-        await silence.check(); await noApplicationAlerts(page); await noOverflow(page);
+        await ordinarySilence(silence); await ordinaryAlerts(page); await ordinaryLayout(page);
       });
       await test.step(`${id}: fifth score survives targeted pre-write failure and genuine UI retry`, async () => {
         const snapshot = await referenceSnapshot(page), writes = languageWrites(qa);
@@ -115,3 +115,8 @@ test('kana and word ordinary quizzes retry exact daily completion once and prese
     });
   } finally { await test.step('reference silent guard restoration', () => silence.restore()); }
 });
+
+// Spec-owned helper phases retain numeric attribution without exposing helper sources.
+async function ordinarySilence(silence: Awaited<ReturnType<typeof silentGuard>>) { await test.step('reference ordinary silence', () => silence.check()); }
+async function ordinaryAlerts(page: Parameters<typeof noApplicationAlerts>[0]) { await test.step('reference ordinary application alerts', () => noApplicationAlerts(page)); }
+async function ordinaryLayout(page: Parameters<typeof noOverflow>[0]) { await test.step('reference ordinary layout', () => noOverflow(page)); }
