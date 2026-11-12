@@ -357,3 +357,27 @@ WebKit and physical devices. Existing normal relogin/reset tests are retained bu
 are not relabeled as the new settings-error recovery evidence. The exact candidate
 still needs independent review, backup, source-matched build/CI and all fourteen
 real browser results, including measured timing and actual cleanup success.
+
+
+### Settings reentry alert boundary
+
+The pinned Next 16.3.2 App Router always mounts an accessible route announcer,
+even with empty text after reload. Its exact node is an assertive alert inside
+an open `next-route-announcer` shadow root. A global zero-alert count therefore
+rejects normal framework accessibility infrastructure. Reentry now requires
+exactly one structurally identified announcer, that same node in Playwright's
+accessible alert-role set, and exactly one global accessible alert. These three
+checks establish that no application alert is present; they do not exempt alerts
+by text, ID alone, or by being a live region. Settings read/save/detail errors,
+LanguageCloudSync needsAttention and all other additional app alerts still fail.
+
+The added bounded control executes the actual pinned Next announcer construction
+and Playwright injected role/CSS/shadow engines with modeled DOM nodes, native
+simple-CSS matching and computed styles. Old global-zero rejection is reproduced;
+missing, hidden, malformed or duplicate announcers and additional/spoofed app
+alerts are negative controls. This is synthetic selector evidence, not a real
+browser/React/layout result. It adds no Playwright CLI/worker startup. All existing
+14 scenarios, source coordinates and time/privacy limits remain unchanged.
+The prior actual CI failure identifies the global-alert assertion but does not
+prove the framework announcer was the only alert at runtime. The next actual run
+must still pass the complete application-error and saved-state checks.

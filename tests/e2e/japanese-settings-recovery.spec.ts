@@ -23,7 +23,7 @@ test('active settings preserve extensions and reject stale partial or uncertain 
     await expect(page.locator('#words-repeat-count')).toHaveValue('2');
     for (const name of ['수업의 한글 발음 보조 표시', '읽는 법 표시', '한국어 뜻 표시']) await expect(page.getByLabel(name, { exact: true })).not.toBeChecked();
     await expect(page.getByRole('button', { name: '설정 저장', exact: true })).toBeVisible();
-    await expect(page.getByRole('alert')).toHaveCount(0); await noSuccess(page); await localSettings(page, saved);
+    await noApplicationAlerts(page); await noSuccess(page); await localSettings(page, saved);
   };
   try {
     await test.step('real settings entry preserves complete synthetic raw settings and unrelated history', async () => {
@@ -240,4 +240,15 @@ async function closeSettingsPeer(peerContext: import('@playwright/test').Browser
       }
     }
   }
+}
+
+// Next App Router always mounts one accessible alert in its open shadow root,
+// including an empty announcement on reload. Require that exact framework node
+// to be the entire alert set; any additional application alert still fails.
+async function noApplicationAlerts(page: import('@playwright/test').Page) {
+  const announcer = page.locator('next-route-announcer > div#__next-route-announcer__[role="alert"][aria-live="assertive"]');
+  const alerts = page.getByRole('alert');
+  await expect(announcer).toHaveCount(1);
+  await expect(alerts.and(announcer)).toHaveCount(1);
+  await expect(alerts).toHaveCount(1);
 }

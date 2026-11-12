@@ -849,7 +849,7 @@ test('active settings coverage pins its reviewed product overlay and narrowly sc
   "app/language/settings/page.tsx": "b6242717b70eff28322f6f64641ffae302f4525b129d5b0f7773140ded2e6b50",
   "utils/languageSettingsPage.ts": "6093eecb8f0857251c5b97034fd9033d0b0a3e948ef1b4ef1830add5c2635b5a",
   "tests/japanese-preview-session-options.test.ts": "ca017c35715ee180e704dc59d7ccbebef17df7b1ed73f8f87e68f1d0b8d57877",
-  "tests/e2e/japanese-settings-recovery.spec.ts": "c4c6de9ae6cc2eba1fa416c0f2eef951d1ef7a3273194ce3c2f5da88deea8d95",
+  "tests/e2e/japanese-settings-recovery.spec.ts": "c31ef5d36e208378ccacd23d58f47547fcf687a5780c1d6934180a788394b1ba",
   "tests/e2e/japanese-settings-state.ts": "005613b394514b151d8b134325c19fe637f37c31fd86b605fb5b5277dc697878"
 };
   for (const [path, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash, path);
@@ -1114,4 +1114,132 @@ test('valid journey restoration accepts only serialization differences and rebas
   await assert.rejects(check({ remote: { ...after, unexpected: 'new' } }));
   await assert.rejects(check({ workout: { unrelated: { keep: 8 } } }));
   await assert.rejects(check({ afterRead: state => { state.local[LEVEL_JOURNEY_KEY] = before[LEVEL_JOURNEY_KEY]; } }));
+});
+
+test('settings reentry permits only the actual accessible Next announcer and rejects every extra application alert', async () => {
+  // Actual pinned Next construction and Playwright injected role/CSS engines.
+  // DOM nodes, computed style and primitive native CSS matching are modeled;
+  // this is no browser, React scheduler, rendering or real DOM inspection.
+  const { Script } = await import('node:vm');
+  const ts = (await import('typescript')).default;
+  const nextPath = 'node_modules/next/dist/client/components/app-router-announcer.js';
+  const next = await readFile(nextPath, 'utf8');
+  const router = await readFile('node_modules/next/dist/client/components/app-router.js', 'utf8');
+  assert.ok(router.includes('_approuterannouncer.AppRouterAnnouncer'));
+  assert.equal(JSON.parse(await readFile('node_modules/next/package.json', 'utf8')).version, '16.3.2');
+  assert.equal(JSON.parse(await readFile('node_modules/playwright-core/package.json', 'utf8')).version, '1.63.0');
+  assert.ok(next.includes("mode: 'open'")); assert.ok(next.includes("announcer.role = 'alert'"));
+  assert.ok(next.includes("announcer.ariaLive = 'assertive'"));
+  assert.ok(next.includes('getAnnouncerNode()')); assert.ok(next.includes("useState)('')"));
+  const bundle = await readFile('node_modules/playwright-core/lib/coreBundle.js', 'utf8');
+  const packed = bundle.match(/^    source4 = ('(?:\\.|[^'\\])*');$/m);
+  assert.ok(packed);
+  const injected = new Script(packed[1]).runInNewContext();
+  const source = await readFile('tests/e2e/japanese-settings-recovery.spec.ts', 'utf8');
+  const start = source.indexOf('async function noApplicationAlerts('); assert.ok(start >= 0);
+  const body = ts.transpileModule(source.slice(start), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  assert.ok(source.split('\n')[25].includes('await noApplicationAlerts(page); await noSuccess(page); await localSettings(page, saved)'));
+  for (const forbidden of ['hasText', 'filter(', 'includeHidden', 'toBeLessThan', 'toBeGreaterThan', '.first()', '.nth(']) assert.ok(!body.includes(forbidden), forbidden);
+  const expectedSelector = 'next-route-announcer > div#__next-route-announcer__[role="alert"][aria-live="assertive"]';
+
+  class ElementModel {
+    nodeType = 1; childNodes = []; attributes = new Map(); parentNode = null; shadowRoot = null;
+    constructor(tag, document) { this.nodeName = this.tagName = tag.toUpperCase(); this.localName = tag; this.ownerDocument = document;
+      this.namespaceURI = 'http://www.w3.org/1999/xhtml'; this.style = { cssText: '', display: 'block', visibility: 'visible' }; }
+    get parentElement() { return this.parentNode?.nodeType === 1 ? this.parentNode : null; }
+    get firstChild() { return this.childNodes[0] ?? null; }
+    get nextSibling() { const siblings = this.parentNode?.childNodes ?? []; return siblings[siblings.indexOf(this) + 1] ?? null; }
+    get children() { return this.childNodes; }
+    get isConnected() { return true; }
+    setAttribute(name, value) { this.attributes.set(name, String(value)); }
+    getAttribute(name) { return this.attributes.get(name) ?? null; }
+    hasAttribute(name) { return this.attributes.has(name); }
+    appendChild(child) { child.parentNode = this; this.childNodes.push(child); return child; }
+    removeChild(child) { this.childNodes.splice(this.childNodes.indexOf(child), 1); child.parentNode = null; }
+    attachShadow({ mode }) { assert.equal(mode, 'open'); const shadow = new ElementModel('shadow-root', this.ownerDocument);
+      shadow.nodeType = 11; shadow.host = this; this.shadowRoot = shadow; return shadow; }
+    matches(selector) {
+      if (selector === '*') return true;
+      if (selector.includes(',')) return selector.split(',').some(part => this.matches(part.trim()));
+      const tag = selector.match(/^[a-z][a-z0-9-]*/i)?.[0];
+      if (tag && this.localName !== tag.toLowerCase()) return false;
+      const id = selector.match(/#([a-zA-Z0-9_-]+)/)?.[1];
+      if (id && this.getAttribute('id') !== id) return false;
+      for (const match of selector.matchAll(/\[([a-z-]+)="([^"]*)"\]/g)) if (this.getAttribute(match[1]) !== match[2]) return false;
+      assert.ok(/^(?:[a-z][a-z0-9-]*)?(?:#[a-zA-Z0-9_-]+)?(?:\[[a-z-]+="[^"]*"\])*$/i.test(selector), 'Only modeled native simple CSS permitted');
+      return true;
+    }
+    querySelectorAll(selector) { const result = []; for (const child of this.childNodes) {
+      if (child.nodeType === 1 && child.matches(selector)) result.push(child); result.push(...child.querySelectorAll(selector));
+    } return result; }
+    closest(selector) { for (let item = this; item; item = item.parentElement) if (item.matches(selector)) return item; return null; }
+    checkVisibility() { for (let item = this; item; item = item.parentElement ?? item.parentNode?.host) if (item.style.display === 'none') return false; return true; }
+  }
+  for (const [property, attribute] of Object.entries({ id: 'id', role: 'role', ariaLive: 'aria-live' })) Object.defineProperty(ElementModel.prototype, property, {
+    get() { return this.getAttribute(attribute); }, set(value) { this.setAttribute(attribute, value); },
+  });
+  async function run(mutate = () => {}, oldAssertion = false) {
+    const document = new ElementModel('document'); document.nodeType = 9; document.ownerDocument = document;
+    document.createElement = tag => new ElementModel(tag, document);
+    document.body = document.appendChild(document.createElement('body')); document.documentElement = document.body;
+    document.getElementsByName = () => [];
+    document.defaultView = { getComputedStyle: element => element.style };
+    const nextExports = {};
+    const construct = new Script(`(function(exports, module, require) { ${next}\nreturn getAnnouncerNode; })`).runInNewContext({ document });
+    const announcer = construct(nextExports, { exports: nextExports }, () => ({}))();
+    const host = document.body.childNodes[0];
+    assert.equal(announcer.getAttribute('role'), 'alert'); assert.equal(announcer.getAttribute('aria-live'), 'assertive');
+    assert.equal(announcer.parentNode, host.shadowRoot); assert.match(announcer.style.cssText, /clip:rect\(0 0 0 0\)/);
+    assert.equal(announcer.getAttribute('aria-hidden'), null);
+    mutate({ document, host, announcer });
+    const engine = new Script(injected + '\n({ queryRole, SelectorEvaluatorImpl, parseCSS });').runInNewContext({
+      module: { exports: {} }, Element: ElementModel, Node: { ELEMENT_NODE: 1, DOCUMENT_NODE: 9, DOCUMENT_FRAGMENT_NODE: 11 },
+      document, window: document.defaultView, console,
+    });
+    const roles = () => engine.queryRole(document, { role: 'alert' }, true);
+    const css = selector => new engine.SelectorEvaluatorImpl().query({ scope: document, pierceShadow: true }, engine.parseCSS(selector).selector);
+    const locator = query => ({ query, and(other) { return locator(() => query().filter(element => other.query().includes(element))); } });
+    const page = { getByRole(role) { assert.equal(role, 'alert'); return locator(roles); }, locator(selector) { assert.equal(selector, expectedSelector); return locator(() => css(selector)); } };
+    let stage = 0;
+    const expect = subject => ({ async toHaveCount(count) { assert.equal(subject.query().length, count, `alert-count-stage-${++stage}`); } });
+    const verify = new Function('expect', body + '; return noApplicationAlerts;')(expect);
+    if (oldAssertion) await expect(page.getByRole('alert')).toHaveCount(0); else await verify(page);
+    return { frameworkCount: css(expectedSelector).length, globalCount: roles().length };
+  }
+  const countFailure = (stage, actual, expected = 1) => error => error instanceof assert.AssertionError
+    && error.code === 'ERR_ASSERTION' && error.actual === actual && error.expected === expected
+    && error.message.startsWith(`alert-count-stage-${stage}\n`);
+  await assert.rejects(() => run(undefined, true), countFailure(1, 1, 0), 'Old global-zero rejects the genuine framework alert');
+  const positive = await run(); assert.equal(positive.frameworkCount, 1); assert.equal(positive.globalCount, 1);
+  const extraAlert = ({ document }, attributes = {}) => { const alert = document.createElement('p'); alert.role = 'alert';
+    for (const [key, value] of Object.entries(attributes)) alert.setAttribute(key, value); document.body.appendChild(alert); };
+  const controls = [
+    ['Settings read error', value => extraAlert(value)],
+    ['Settings save error', value => extraAlert(value)],
+    ['Settings detail error', value => extraAlert(value)],
+    ['LanguageCloudSync needsAttention', value => extraAlert(value, { class: 'yeoni-sync-notice' })],
+    ['other application alert', value => extraAlert(value)],
+    ['same ID outside host', value => extraAlert(value, { id: '__next-route-announcer__', 'aria-live': 'assertive' })],
+    ['missing framework with spoof instead', value => { value.document.body.removeChild(value.host); extraAlert(value, { id: '__next-route-announcer__', 'aria-live': 'assertive' }); }],
+    ['missing announcer', ({ host, announcer }) => host.shadowRoot.removeChild(announcer)],
+    ['aria-hidden announcer', ({ announcer }) => announcer.setAttribute('aria-hidden', 'true')],
+    ['display-hidden announcer', ({ announcer }) => { announcer.style.display = 'none'; }],
+    ['visibility-hidden announcer', ({ announcer }) => { announcer.style.visibility = 'hidden'; }],
+    ['hidden announcer with application alert', value => { value.announcer.setAttribute('aria-hidden', 'true'); extraAlert(value); }],
+    ['duplicate announcer', ({ document, host }) => { const extra = document.createElement('div'); extra.id = '__next-route-announcer__'; extra.role = 'alert'; extra.ariaLive = 'assertive'; host.shadowRoot.appendChild(extra); }],
+    ['hidden duplicate announcer', ({ document, host }) => { const extra = document.createElement('div'); extra.id = '__next-route-announcer__'; extra.role = 'alert'; extra.ariaLive = 'assertive'; extra.setAttribute('aria-hidden', 'true'); host.shadowRoot.appendChild(extra); }],
+    ['wrong announcement tag', ({ announcer }) => { announcer.localName = 'p'; announcer.nodeName = announcer.tagName = 'P'; }],
+    ['aria-hidden host', ({ host }) => host.setAttribute('aria-hidden', 'true')],
+    ['wrong live semantics', ({ announcer }) => { announcer.ariaLive = 'polite'; }],
+    ['wrong role', ({ announcer }) => { announcer.role = 'status'; }],
+    ['wrong host', ({ host }) => { host.localName = 'app-error-host'; host.nodeName = host.tagName = 'APP-ERROR-HOST'; }],
+    ['wrong shadow-child structure', ({ document, host, announcer }) => { host.shadowRoot.removeChild(announcer); const wrapper = document.createElement('section'); wrapper.appendChild(announcer); host.shadowRoot.appendChild(wrapper); }],
+  ];
+  const failures = [[3, 2], [3, 2], [3, 2], [3, 2], [3, 2], [3, 2], [1, 0], [1, 0], [2, 0], [2, 0],
+    [2, 0], [2, 0], [1, 2], [1, 2], [1, 0], [2, 0], [1, 0], [1, 0], [1, 0], [1, 0]];
+  assert.equal(failures.length, controls.length);
+  for (const [index, [name, mutate]] of controls.entries()) await assert.rejects(() => run(mutate), countFailure(...failures[index]), name);
+  // Engine paths explicitly exercise shadow traversal and default accessible-role
+  // filtering. No text from an actual browser/page is read or written here.
+  assert.equal(controls.length, 20);
 });

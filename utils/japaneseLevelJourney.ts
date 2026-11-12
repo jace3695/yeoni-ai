@@ -86,6 +86,53 @@ export function dueUpperAnswers(state: LevelJourney, now = Date.now()) {
     .sort((a, b) => Number(a.correct) - Number(b.correct) || a.nextReviewAt.localeCompare(b.nextReviewAt));
 }
 
+const missingJourneyField = Symbol('missing journey field');
+const journeyFields = new Set(['version', 'selectedLevel', 'selectionUpdatedAt', 'updatedAt', 'answers', 'practicedUnits']);
+const extensionConflict = () => new Error('단계별 학습의 추가 기록이 서로 달라요. 두 기기의 원본 기록을 보존하고 동기화를 멈췄습니다.');
+
+// Parsed JSON can contain nonfinite numbers (for example 1e400) or negative
+// zero. Do not turn accepted opaque values into null/zero while merging.
+function assertJourneyJsonSerializable(value: unknown): void {
+  if (typeof value === 'number' && (!Number.isFinite(value) || Object.is(value, -0))) {
+    throw new Error('단계별 학습 기록을 손실 없이 저장할 수 없어 동기화를 멈췄습니다. 원본 기록은 보존합니다.');
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const item of Object.values(value)) assertJourneyJsonSerializable(item);
+  }
+}
+
+function sameJourneyJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b)
+    && a.length === b.length && a.every((item, index) => sameJourneyJson(item, b[index]));
+  if (!record(a) || !record(b)) return false;
+  return Object.keys(a).length === Object.keys(b).length
+    && Object.keys(a).every(key => Object.hasOwn(b, key) && sameJourneyJson(a[key], b[key]));
+}
+
+const ownJourneyField = (value: Record<string, unknown>, key: string): unknown => Object.hasOwn(value, key) ? value[key] : missingJourneyField;
+
+/** Unknown fields have no timestamp/winner contract. Preserve agreed and
+ * disjoint changes, but never interpret a lone omission by an old client as
+ * deletion. Both incoming sides may omit a field without reviving the base.
+ * Arrays are opaque values, not sets or independent answer observations. */
+function mergeJourneyExtension(base: unknown, remote: unknown, local: unknown): unknown {
+  if (sameJourneyJson(remote, local)) return remote;
+  if (base !== missingJourneyField && (remote === missingJourneyField || local === missingJourneyField)) throw extensionConflict();
+  if (record(remote) && record(local) && (record(base) || base === missingJourneyField)) {
+    const original = record(base) ? base : {};
+    const entries: [string, unknown][] = [];
+    for (const key of new Set([...Object.keys(original), ...Object.keys(remote), ...Object.keys(local)])) {
+      const value = mergeJourneyExtension(ownJourneyField(original, key), ownJourneyField(remote, key), ownJourneyField(local, key));
+      if (value !== missingJourneyField) entries.push([key, value]);
+    }
+    return Object.fromEntries(entries);
+  }
+  if (sameJourneyJson(local, base)) return remote;
+  if (sameJourneyJson(remote, base)) return local;
+  throw extensionConflict();
+}
+
 /** Merge independent question/unit updates, never a whole JSON-string winner.
  * A conflicting answer uses the latest complete observation; fields from two
  * attempts are not combined into fictitious mastery. Explicit selection has
@@ -98,21 +145,37 @@ export function mergeLevelJourneySnapshots(baseRaw: unknown, remoteRaw: string, 
     return raw;
   }, setItem: () => { throw new Error('Read-only merge'); } });
   const base = parse(baseRaw), remote = parse(remoteRaw), local = parse(localRaw);
+  [base, remote, local].forEach(assertJourneyJsonSerializable);
+  const extensions: [string, unknown][] = [];
+  for (const key of new Set([...Object.keys(base), ...Object.keys(remote), ...Object.keys(local)])) {
+    if (journeyFields.has(key)) continue;
+    const value = mergeJourneyExtension(ownJourneyField(base, key), ownJourneyField(remote, key), ownJourneyField(local, key));
+    if (value !== missingJourneyField) extensions.push([key, value]);
+  }
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   const latest = <T,>(a: T, b: T, stamp: (item: T) => string) => {
     const difference = Date.parse(stamp(a)) - Date.parse(stamp(b));
     return difference > 0 ? a : difference < 0 ? b : JSON.stringify(a).localeCompare(JSON.stringify(b)) >= 0 ? a : b;
   };
-  const answers: LevelJourney['answers'] = {};
+  const answerEntries: [string, UpperAnswerRecord][] = [];
+  const ownAnswer = (state: LevelJourney, id: string) => Object.hasOwn(state.answers, id) ? state.answers[id] : undefined;
   for (const id of new Set([...Object.keys(remote.answers), ...Object.keys(local.answers)])) {
-    const r = remote.answers[id], l = local.answers[id], b = base.answers[id];
-    answers[id] = !r ? l : !l ? r : same(l, b) ? r : same(r, b) ? l : latest(r, l, item => item.lastAnsweredAt);
+    const r = ownAnswer(remote, id), l = ownAnswer(local, id), b = ownAnswer(base, id);
+    const answer = !r ? l : !l ? r : same(l, b) ? r : same(r, b) ? l : latest(r, l, item => item.lastAnsweredAt);
+    if (answer) answerEntries.push([id, answer]);
   }
-  const practicedUnits = { ...remote.practicedUnits };
-  for (const [id, date] of Object.entries(local.practicedUnits)) if (!practicedUnits[id] || Date.parse(date) > Date.parse(practicedUnits[id])) practicedUnits[id] = date;
+  const answers: LevelJourney['answers'] = Object.fromEntries(answerEntries);
+  const practiceEntries: [string, string][] = [];
+  for (const id of new Set([...Object.keys(remote.practicedUnits), ...Object.keys(local.practicedUnits)])) {
+    const r = Object.hasOwn(remote.practicedUnits, id) ? remote.practicedUnits[id] : undefined;
+    const l = Object.hasOwn(local.practicedUnits, id) ? local.practicedUnits[id] : undefined;
+    const date = !r ? l : l && Date.parse(l) > Date.parse(r) ? l : r;
+    if (date) practiceEntries.push([id, date]);
+  }
+  const practicedUnits: LevelJourney['practicedUnits'] = Object.fromEntries(practiceEntries);
   const selection = (state: LevelJourney) => ({ selectedLevel: state.selectedLevel, selectionUpdatedAt: state.selectionUpdatedAt });
   const remoteChoice = selection(remote), localChoice = selection(local), baseChoice = selection(base);
   const chosen = same(localChoice, baseChoice) ? remoteChoice : same(remoteChoice, baseChoice) ? localChoice : latest(remoteChoice, localChoice, item => item.selectionUpdatedAt ?? '1970-01-01T00:00:00Z');
   const updatedAt = [remote.updatedAt, local.updatedAt].filter(validDate).sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1);
-  return JSON.stringify({ version: 1, ...chosen, answers, practicedUnits, ...(updatedAt ? { updatedAt } : {}) });
+  return JSON.stringify({ version: 1, ...chosen, answers, practicedUnits, ...(updatedAt ? { updatedAt } : {}), ...Object.fromEntries(extensions) });
 }
