@@ -80,7 +80,7 @@ traversal: 18 questions and three lessons per unchanged 90-second test, with no
 omitted question or raised timeout. Actual fit in the unchanged overall lane
 remains unverified until a bounded run and fixture cleanup finish.
 
-The receipt test uses two generated owners. These fourteen tests plan sixteen disposable accounts in total; actual creation and cleanup require execution. The existing fixture handles
+The receipt test uses two generated owners. These sixteen tests plan eighteen disposable accounts in total; actual creation and cleanup require execution. The existing fixture handles
 account creation, route draining, browser closure, deletion and scoped zero-row
 checks. Passing requires completion of all test teardown assertions. Interrupted
 or failed teardown is not certified. The existing unconditional disposable stack
@@ -158,7 +158,7 @@ this private API dependency explicit; an upstream change fails closed and needs
 review. The installer may write a validation marker, but this route never reads
 it as proof. ffmpeg's pinned installation identity is checked; its no-op native
 validator is not represented as shared-library readiness. Video remains disabled.
-This readiness stage does not launch a browser or prove the fourteen app flows.
+This readiness stage does not launch a browser or prove the sixteen app flows.
 Real launch, runtime dependencies/resources and all flow assertions remain stage
 03 evidence. Missing host requirements stop rather than trigger installation,
 system-Chrome fallback, security changes or a validation bypass.
@@ -215,7 +215,7 @@ rows, URLs, credentials, errors or DOM is forwarded to public output.
 
 The private diagnostic channel has a fresh random token, bounded reads, no-follow
 file access and an exact schema. Acceptance requires one completed invocation,
-the fourteen exact source coordinates with project ID 5, fourteen passed tests and zero
+the sixteen exact source coordinates with project ID 5, sixteen passed tests and zero
 skips, failures, unknown outcomes, active tests or runner errors. Missing, stale,
 partial, duplicate, malformed or oversized reports fail closed, even with exit 0.
 Existing project IDs are unchanged. Public output contains fixed labels and
@@ -381,3 +381,112 @@ browser/React/layout result. It adds no Playwright CLI/worker startup. All exist
 The prior actual CI failure identifies the global-alert assertion but does not
 prove the framework announcer was the only alert at runtime. The next actual run
 must still pass the complete application-error and saved-state checks.
+
+
+## Grammar to chunk integration preparation (source 56)
+
+The fifteenth case (`japanese-grammar-chunk.spec.ts:3`) appends to the exact fourteen
+baseline cases from a388cc8; those bodies remain byte-identical. It uses one fresh
+synthetic account. The baseline passed CI43148628523; that result does not certify
+this new source. Actual execution of the candidate is still required.
+
+Normal authenticated navigation opens `/language/grammar?lesson=desu` at 320 CSS
+pixels, closes/reopens the example-stage chunk practice without writes, inspects
+all authored chunks and both word/tense variations, then answers meaning wrongly,
+gap correctly and the listening question through explicit text fallback. Four
+new UUID/timestamped UI events across three questions are required after a later
+correct repair. Every event preserves preceding events and requires exact local
+intent, genuine conditional language PATCH, subsequent GET and authenticated DB
+readback. Original grammar, curriculum progress/review, level journey, settings
+and all fitness data remain exact. Review cards, one-day schedules, logout local
+removal, reload/relogin and the matching main-lesson return link are checked.
+Initial historical values are explicitly synthetic fixture seeding before login;
+no new answer/completion/due date is seeded, and no application local state or
+clock is written to bypass UI. The fresh items are not due yet; this verifies
+saved next-day schedules and the no-due view, not passage of a day.
+
+Listening coverage is deliberately an **injected unavailable-audio boundary**.
+Before clicking, FREE_MODE is asserted and a narrow abort-only route blocks any
+`/api/language/tts` request from reaching the server. The fixture already blocks
+external HTTP origins. A temporary own getter makes speechSynthesis unavailable,
+counts capability checks, and restores its original descriptor (or inherited
+property) in finally. It never constructs a voice/utterance, calls native speech,
+or produces onstart/onend/success. The real button must show the real product
+error, release its busy state and permit text fallback. Zero attempted TTS HTTP
+requests is required. No normal native/external speech is attempted. Audible
+Japanese output/hearing remains unverified, as does physical-phone behavior.
+This one route complements source/data tests for all 51 grammar patterns; it does
+not claim 51 separately executed browser flows or independent language quality.
+
+The 345 unit paths, pinned browser, fixture cleanup, private numeric diagnostics,
+media/artifact prohibition and 60/90/465/775-second safety/test/browser/total
+budgets remain unchanged. New source pins, assertion negative controls and
+speech-descriptor recovery checks are synthetic safety evidence, not app/browser
+execution. Publication, CI execution and any production deployment remain separate.
+
+A single fixtureless native Playwright invocation intentionally fails four tests
+at source56's actual four literal phase lines (89, 106, 122, 145). It imports no
+application case body, page, context or qa fixture and starts no browser/services.
+The real reporter must produce exactly four failed identities (no timeout, skip,
+unknown, omitted or runner error) with source56/project5 and those exact numeric
+failed-step coordinates. Private canaries, titles, paths and phase text must be
+absent from the journal/public summaries. This is diagnostic attribution proof,
+not four additional app scenarios. Child heap is explicitly bounded at192/4 MiB.
+
+## Reference routine integration preparation (source 57)
+
+The sixteenth case (`japanese-reference-routine.spec.ts:3`) is appended without
+changing the original fourteen or grammar fifteenth case bodies. One synthetic
+owner traverses the real kana and word quizzes, checks that four correct answers
+produce no daily completion, and reaches score five before a narrowly injected
+pre-write journal failure. Native storage is restored in finally. The real retry
+button must save exactly one completion per route, preserving old history, own
+extension fields and every unrelated local/language/fitness record. Genuine
+conditional PATCH, later GET and authenticated DB readback are required.
+
+The mounted-page reset event is explicitly injected listener stimulus, not an
+actual account/reset action. It must stop the next answer without changing
+records, and reload must recover. Both completions survive reload and real
+logout/relogin. The 320 CSS-pixel kana board checks selected glyph identity,
+loaded paths, matching white/cross-guide backgrounds, square/aligned geometry,
+real pointer ink, erase and faint-guide controls. Settings checks normal controls
+and no displayed guide/common character under unchanged feature flags. This is
+not all-glyph, visual-aesthetics, enabled-character or physical-phone proof.
+
+An abort-only same-origin API fence is installed before navigation, while the
+unchanged fixture blocks external origins. A throwing native-speech guard is
+installed for every document, with descriptor restoration and listener/route
+cleanup. Zero API/native-speech attempts and zero application errors are required.
+No voice or paid/external call is made and no successful audio/HTTP is mocked.
+Audible Japanese remains unverified. User-deferred physical-phone checks remain
+separate from both new browser cases.
+
+Recurring safety adds three reference controls: 41 exact source pins with six
+source mutations, seven positive/seventeen exactly attributed helper controls,
+and one fixtureless native invocation with six intentionally failed identities.
+The six literal source57 step coordinates are 12:7, 32:7, 64:7, 82:26, 87:5 and
+98:5, with definition3:5/project5. The first three literals repeat across kana
+and words, so the actual application case has nine runtime phases. The native
+control proves six distinct coordinates, not nine executed browser phases.
+No case body, qa, page, context, app service or browser is used by that control.
+All numeric identities, failure counts, no-omission and private-canary checks
+must pass. Budgets, dependencies, fixture cleanup and artifact prohibition are
+unchanged; actual16-case execution and runtime fit still require exact-source CI.
+
+## Diagnostic amendment and aggregate acceptance
+
+The unchanged source51–54 fixtureless loop now reports closed lifecycle scalars
+on failure: source ID, invocation index, integer/null status, enumerated signal
+number and allowlisted spawn error code. Error-first and exact-exit1 expectations
+are preserved, using boolean assertion values so raw Error objects or streams
+cannot serialize. Its child environment, cap and assertions are unchanged. Two
+pure controls reject getters, coercion, unknown values and private-canary leaks.
+
+The baseline stage01 safety inventory completed265 tests. Grammar adds4,
+diagnostic amendment adds2, and reference adds3: complete expected inventory274.
+The failed grammar-only preparation reported262 (261pass/1fail), omitting final
+seven completion records. It is failed and incomplete; no cause is established.
+That evidence is preserved separately and cannot certify this union. A private
+validation uses the earlier curated environment and explicit TAP reporter to
+check all274 completion records and zero fail/cancel/skip/omissions under60s.
+The official stage01 command and every existing CI resource ceiling stay intact.

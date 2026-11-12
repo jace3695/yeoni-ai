@@ -355,7 +355,7 @@ test('journal revalidation rejects forged extra fields, categories, numeric boun
 });
 
 test('appended browser IDs retain private same-spec failure coordinates', async () => {
-  for (const [file, source] of [['tests/e2e/japanese-level-choice.spec.ts', 51], ['tests/e2e/japanese-due-review.spec.ts', 52], ['tests/e2e/curriculum-corruption.spec.ts', 53], ['tests/e2e/curriculum-terminal.spec.ts', 54], ['tests/e2e/japanese-settings-recovery.spec.ts', 55]]) {
+  for (const [file, source] of [['tests/e2e/japanese-level-choice.spec.ts', 51], ['tests/e2e/japanese-due-review.spec.ts', 52], ['tests/e2e/curriculum-corruption.spec.ts', 53], ['tests/e2e/curriculum-terminal.spec.ts', 54], ['tests/e2e/japanese-settings-recovery.spec.ts', 55], ['tests/e2e/japanese-grammar-chunk.spec.ts', 56], ['tests/e2e/japanese-reference-routine.spec.ts', 57]]) {
     const fixture = await fresh(), reporter = new PrivateDiagnostics(fixture);
     const definition = { file, line: 3, column: 5 };
     const at = { file, line: 8, column: 11 };
@@ -377,32 +377,32 @@ test('appended browser IDs retain private same-spec failure coordinates', async 
   }
 });
 
-test('smoke diagnostics require all fourteen exact identities and the sole appended command', () => {
+test('smoke diagnostics require all sixteen exact identities and the sole appended command', () => {
   const eventsFor = items => [start, ...items.flatMap((item, index) => [
     { event: 'begin', test: index + 1, ...item },
     { event: 'result', test: index + 1, status: 'passed' },
   ]), end];
   const events = eventsFor(inventory);
   const report = parseDiagnosticJournal(journal(events), token, 1, inventory);
-  assert.equal(inventory.length, 14);
-  assert.deepEqual(inventory.at(-1), { source: 55, line: 3, column: 5, project: 5 });
+  assert.equal(inventory.length, 16);
+  assert.deepEqual(inventory.at(-1), { source: 57, line: 3, column: 5, project: 5 });
   assert.equal(report.report, 'complete');
-  assert.equal(report.invocations[0].counts.passed, 14);
-  for (const badInventory of [inventory.slice(0, 13), [...inventory, { source: 55, line: 4, column: 5, project: 5 }],
-    [...inventory.slice(0, 13), inventory[0]]]) {
+  assert.equal(report.invocations[0].counts.passed, 16);
+  for (const badInventory of [inventory.slice(0, 15), [...inventory, { source: 57, line: 4, column: 5, project: 5 }],
+    [...inventory.slice(0, 15), inventory[0]]]) {
     assert.equal(parseDiagnosticJournal(journal(events), token, 1, badInventory).report, 'invalid');
   }
-  const invalidEvents = [eventsFor(inventory.slice(0, 13)),
-    eventsFor([...inventory.slice(0, 13), inventory[0]]),
-    ...[{ source: 54 }, { line: 4 }, { column: 6 }, { project: 1 }].map(change =>
-      eventsFor([...inventory.slice(0, 13), { ...inventory.at(-1), ...change }])),
-    events.map(entry => entry.event === 'result' && entry.test === 14 ? { ...entry, status: 'skipped' } : entry),
+  const invalidEvents = [eventsFor(inventory.slice(0, 15)),
+    eventsFor([...inventory.slice(0, 15), inventory[0]]),
+    ...[{ source: 56 }, { line: 4 }, { column: 6 }, { project: 1 }].map(change =>
+      eventsFor([...inventory.slice(0, 15), { ...inventory.at(-1), ...change }])),
+    events.map(entry => entry.event === 'result' && entry.test === 16 ? { ...entry, status: 'skipped' } : entry),
   ];
   for (const badEvents of invalidEvents) {
     assert.equal(parseDiagnosticJournal(journal(badEvents), token, 1, inventory).report, 'invalid');
   }
   assert.equal(diagnosticInvocations(browserCommand), 1);
-  for (const command of [browserCommand.replace(' tests/e2e/japanese-settings-recovery.spec.ts:3', ''),
+  for (const command of [browserCommand.replace(' tests/e2e/japanese-reference-routine.spec.ts:3', ''), browserCommand.replace('japanese-reference-routine.spec.ts:3', 'japanese-reference-routine.spec.ts:4'), browserCommand.replace(' tests/e2e/japanese-grammar-chunk.spec.ts:3', ''), browserCommand.replace('japanese-grammar-chunk.spec.ts:3', 'japanese-grammar-chunk.spec.ts:4'), browserCommand.replace(' tests/e2e/japanese-settings-recovery.spec.ts:3', ''),
     browserCommand.replace('japanese-settings-recovery.spec.ts:3', 'japanese-settings-recovery.spec.ts:4'),
     browserCommand + ' --list', browserCommand + ' --grep settings']) {
     assert.equal(diagnosticInvocations(command), 0);

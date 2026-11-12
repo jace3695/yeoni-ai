@@ -56,4 +56,6 @@ export const sources = Object.freeze([
   'tests/e2e/curriculum-corruption.spec.ts', // 53
   'tests/e2e/curriculum-terminal.spec.ts', // 54
   'tests/e2e/japanese-settings-recovery.spec.ts', // 55
+  'tests/e2e/japanese-grammar-chunk.spec.ts', // 56
+  'tests/e2e/japanese-reference-routine.spec.ts', // 57
 ]);

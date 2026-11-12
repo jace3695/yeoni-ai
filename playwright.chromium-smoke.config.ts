@@ -20,7 +20,7 @@ if (env.CI !== 'true' || env.GITHUB_ACTIONS !== 'true' || env.RUNNER_TEMP !== '/
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts', 'curriculum-corruption.spec.ts', 'curriculum-terminal.spec.ts', 'japanese-settings-recovery.spec.ts'],
+  testMatch: ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts', 'curriculum-corruption.spec.ts', 'curriculum-terminal.spec.ts', 'japanese-settings-recovery.spec.ts', 'japanese-grammar-chunk.spec.ts', 'japanese-reference-routine.spec.ts'],
   fullyParallel: false,
   workers: 1,
   retries: 0,

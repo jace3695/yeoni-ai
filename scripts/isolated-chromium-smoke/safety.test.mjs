@@ -5,7 +5,7 @@ import './bundled-driver.test.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, stat, chmod, symlink, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, constants } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -76,10 +76,10 @@ const levelFlowHashes = {
 const workflowHash = 'c65190845968db7077198840dbdeb9d9a42ae4e57038f1dcfbcdcbc3bd0e5bf6';
 
 test('exact command, fixed project/source inventory, readiness and ceilings stay narrow', async () => {
-  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 tests/e2e/japanese-middle-reading.spec.ts:3 tests/e2e/japanese-upper-reading.spec.ts:3 tests/e2e/japanese-level-choice.spec.ts:3 tests/e2e/japanese-due-review.spec.ts:3 tests/e2e/curriculum-corruption.spec.ts:3 tests/e2e/curriculum-terminal.spec.ts:3 tests/e2e/japanese-settings-recovery.spec.ts:3 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
+  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 tests/e2e/japanese-middle-reading.spec.ts:3 tests/e2e/japanese-upper-reading.spec.ts:3 tests/e2e/japanese-level-choice.spec.ts:3 tests/e2e/japanese-due-review.spec.ts:3 tests/e2e/curriculum-corruption.spec.ts:3 tests/e2e/curriculum-terminal.spec.ts:3 tests/e2e/japanese-settings-recovery.spec.ts:3 tests/e2e/japanese-grammar-chunk.spec.ts:3 tests/e2e/japanese-reference-routine.spec.ts:3 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
   assert.deepEqual(inventory, [{ source: 19, line: 3, column: 5, project: 5 }, { source: 38, line: 3, column: 5, project: 5 },
-    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }, { source: 51, line: 3, column: 5, project: 5 }, { source: 52, line: 3, column: 5, project: 5 }, { source: 53, line: 3, column: 5, project: 5 }, { source: 54, line: 3, column: 5, project: 5 }, { source: 55, line: 3, column: 5, project: 5 }]);
-  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts', 'tests/e2e/japanese-settings-recovery.spec.ts']);
+    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }, { source: 51, line: 3, column: 5, project: 5 }, { source: 52, line: 3, column: 5, project: 5 }, { source: 53, line: 3, column: 5, project: 5 }, { source: 54, line: 3, column: 5, project: 5 }, { source: 55, line: 3, column: 5, project: 5 }, { source: 56, line: 3, column: 5, project: 5 }, { source: 57, line: 3, column: 5, project: 5 }]);
+  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts', 'tests/e2e/japanese-settings-recovery.spec.ts', 'tests/e2e/japanese-grammar-chunk.spec.ts', 'tests/e2e/japanese-reference-routine.spec.ts']);
   assert.equal(stages[0].command, 'node --test scripts/isolated-chromium-smoke/safety.test.mjs');
   assert.equal(stages[1].command, 'pinned-bundled-chromium-readiness');
   assert.equal(stages[1].lifecycleDiagnostics, true);
@@ -93,7 +93,7 @@ test('exact command, fixed project/source inventory, readiness and ceilings stay
   assert.equal(lock.packages['node_modules/@playwright/test'].version, '1.63.0');
   assert.equal(lock.packages['node_modules/playwright'].version, '1.63.0');
   assert.equal(diagnosticInvocations(browserCommand), 1);
-  for (const changed of [browserCommand.replace('tests/e2e/japanese-settings-recovery.spec.ts:3 ', ''), browserCommand.replace('japanese-settings-recovery.spec.ts:3', 'japanese-settings-recovery.spec.ts:4'), browserCommand.replace('tests/e2e/curriculum-corruption.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/curriculum-terminal.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-level-choice.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-due-review.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-middle-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-upper-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
+  for (const changed of [browserCommand.replace('tests/e2e/japanese-reference-routine.spec.ts:3 ', ''), browserCommand.replace('japanese-reference-routine.spec.ts:3', 'japanese-reference-routine.spec.ts:4'), browserCommand.replace('tests/e2e/japanese-grammar-chunk.spec.ts:3 ', ''), browserCommand.replace('japanese-grammar-chunk.spec.ts:3', 'japanese-grammar-chunk.spec.ts:4'), browserCommand.replace('tests/e2e/japanese-settings-recovery.spec.ts:3 ', ''), browserCommand.replace('japanese-settings-recovery.spec.ts:3', 'japanese-settings-recovery.spec.ts:4'), browserCommand.replace('tests/e2e/curriculum-corruption.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/curriculum-terminal.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-level-choice.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-due-review.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-middle-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-upper-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
     browserCommand.replace('--project chromium-app-smoke', '--project chromium'), stages[1].command, 'echo ' + browserCommand]) {
     assert.equal(diagnosticInvocations(changed), 0);
   }
@@ -151,7 +151,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
     }
     if (path === 'scripts/qa-private-source-ids.mjs') {
       let text = bytes.toString('utf8');
-      for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n", "  'tests/e2e/language-reset-receipts.spec.ts', // 48\n", "  'tests/e2e/japanese-middle-reading.spec.ts', // 49\n", "  'tests/e2e/japanese-upper-reading.spec.ts', // 50\n", "  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", "  'tests/e2e/japanese-due-review.spec.ts', // 52\n", "  'tests/e2e/curriculum-corruption.spec.ts', // 53\n", "  'tests/e2e/curriculum-terminal.spec.ts', // 54\n", "  'tests/e2e/japanese-settings-recovery.spec.ts', // 55\n"]) {
+      for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n", "  'tests/e2e/language-reset-receipts.spec.ts', // 48\n", "  'tests/e2e/japanese-middle-reading.spec.ts', // 49\n", "  'tests/e2e/japanese-upper-reading.spec.ts', // 50\n", "  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", "  'tests/e2e/japanese-due-review.spec.ts', // 52\n", "  'tests/e2e/curriculum-corruption.spec.ts', // 53\n", "  'tests/e2e/curriculum-terminal.spec.ts', // 54\n", "  'tests/e2e/japanese-settings-recovery.spec.ts', // 55\n", "  'tests/e2e/japanese-grammar-chunk.spec.ts', // 56\n", "  'tests/e2e/japanese-reference-routine.spec.ts', // 57\n"]) {
         assert.equal(text.split(addition).length, 2); text = text.replace(addition, '');
       }
       bytes = Buffer.from(text);
@@ -169,7 +169,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
   assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 345);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
-  const addition = "      - name: Verify fourteen authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
+  const addition = "      - name: Verify sixteen authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
   assert.equal(workflow.split('len(tests) == 345').length, 2);
   assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 345', 'len(tests) == 343')).digest('hex'), workflowHash);
@@ -202,7 +202,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
   });
   assert.equal(result.status, 0); const config = JSON.parse(result.stdout);
   assert.deepEqual(config.projects, [{ name: 'chromium-app-smoke' }]);
-  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts', 'curriculum-corruption.spec.ts', 'curriculum-terminal.spec.ts', 'japanese-settings-recovery.spec.ts']);
+  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts', 'curriculum-corruption.spec.ts', 'curriculum-terminal.spec.ts', 'japanese-settings-recovery.spec.ts', 'japanese-grammar-chunk.spec.ts', 'japanese-reference-routine.spec.ts']);
   assert.equal(config.fullyParallel, false); assert.equal(config.workers, 1); assert.equal(config.retries, 0);
   assert.equal(config.forbidOnly, true); assert.equal(config.repeatEach, 1); assert.equal(config.timeout, 90000);
   assert.equal(config.expect.timeout, 15000); assert.equal(config.use.browserName, 'chromium'); assert.equal(config.use.headless, true);
@@ -220,7 +220,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
     url: 'http://127.0.0.1:3000/diet/settings', reuseExistingServer: false, timeout: 120000 });
 });
 
-test('Playwright list-only collection resolves exactly fourteen titles and coordinates without fixtures', () => {
+test('Playwright list-only collection resolves exactly sixteen titles and coordinates without fixtures', () => {
   // --list does not start webServer, browsers, test bodies or fixture hooks.
   const args = browserCommand.split(' ').slice(1).concat(['--list', '--reporter=json']);
   const result = spawnSync(process.execPath, args, { env: environment(), encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
@@ -228,7 +228,7 @@ test('Playwright list-only collection resolves exactly fourteen titles and coord
   assert.deepEqual(report.errors, []);
   const specs = suite => [...(suite.specs ?? []), ...(suite.suites ?? []).flatMap(specs)];
   const selected = report.suites.flatMap(specs);
-  assert.equal(selected.length, 14);
+  assert.equal(selected.length, 16);
   const expected = new Map([
     ['auth.spec.ts:3', 'login, logout and same-account relogin preserve all 17 original keys without PATCH'],
     ['sync.spec.ts:3', 'first GET delivery delayed while a real form saves: originals and new input survive'],
@@ -244,6 +244,8 @@ test('Playwright list-only collection resolves exactly fourteen titles and coord
     ['curriculum-corruption.spec.ts:3', 'corrupt curriculum bytes survive attempted UI writes and reload until explicit synthetic fixture correction'],
     ['curriculum-terminal.spec.ts:3', 'terminal beginner f12 completes twice through silent meaning UI with real saves and manual intermediate choice'],
     ['japanese-settings-recovery.spec.ts:3', 'active settings preserve extensions and reject stale partial or uncertain saves through explicit recovery and reentry'],
+    ['japanese-grammar-chunk.spec.ts:3', 'grammar expression chunks and silent listening fallback preserve wrong-answer history through real saves and relogin'],
+    ['japanese-reference-routine.spec.ts:3', 'kana and word ordinary quizzes retry exact daily completion once and preserve records through invalidation boards settings and relogin'],
   ]);
   for (const spec of selected) {
     const key = `${spec.file}:${spec.line}`;
@@ -393,7 +395,7 @@ test('three-stage sequencing propagates safety/readiness/browser failures, cance
     assert.equal(code, failure < 0 ? 0 : 1); assert.equal(calls.length, failure < 0 ? 3 : failure + 1);
     privateOutput(options.output);
     assert.equal(options.output.at(-1).includes('realBrowser=true'), failure < 0);
-    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=14 browser=playwright-chromium-headless-shell realBrowser=true fixtureCleanup=passed');
+    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=16 browser=playwright-chromium-headless-shell realBrowser=true fixtureCleanup=passed');
   }
   const options = await fresh(), controller = new AbortController(); controller.abort();
   assert.equal(await supervise({ ...options, signal: controller.signal, run: () => { throw new Error(canary); } }), 1);
@@ -445,10 +447,10 @@ test('sixth test requires the real notice fix and three distinct saved reviews w
 test('independently reviewed seventh receipt scenario is pinned while IDs 49–52 append reading, level choice and review coverage', async () => {
   assert.equal(createHash('sha256').update(await readFile('tests/e2e/language-reset-receipts.spec.ts')).digest('hex'), receiptTestHash);
   const sourceMap = await readFile('scripts/qa-private-source-ids.mjs', 'utf8');
-  const originalMap = sourceMap.replace("  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", '').replace("  'tests/e2e/japanese-due-review.spec.ts', // 52\n", '').replace("  'tests/e2e/curriculum-corruption.spec.ts', // 53\n", '').replace("  'tests/e2e/curriculum-terminal.spec.ts', // 54\n", '').replace("  'tests/e2e/japanese-settings-recovery.spec.ts', // 55\n", '');
+  const originalMap = sourceMap.replace("  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", '').replace("  'tests/e2e/japanese-due-review.spec.ts', // 52\n", '').replace("  'tests/e2e/curriculum-corruption.spec.ts', // 53\n", '').replace("  'tests/e2e/curriculum-terminal.spec.ts', // 54\n", '').replace("  'tests/e2e/japanese-settings-recovery.spec.ts', // 55\n", '').replace("  'tests/e2e/japanese-grammar-chunk.spec.ts', // 56\n", '').replace("  'tests/e2e/japanese-reference-routine.spec.ts', // 57\n", '');
   assert.equal(createHash('sha256').update(originalMap).digest('hex'), 'eadd83cc376147d355cf907670980a94166d57f16daf3365dda367e1a9d141c5');
-  assert.equal(sources.length, 55);
-  assert.deepEqual(sources.slice(48), ['tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts', 'tests/e2e/japanese-settings-recovery.spec.ts']);
+  assert.equal(sources.length, 57);
+  assert.deepEqual(sources.slice(48), ['tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts', 'tests/e2e/japanese-settings-recovery.spec.ts', 'tests/e2e/japanese-grammar-chunk.spec.ts', 'tests/e2e/japanese-reference-routine.spec.ts']);
 });
 
 test('reading scenarios retain all 36 source-mapped questions, UI writes and exact local-before-DB confirmation', async () => {
@@ -642,9 +644,9 @@ test('each new literal phase maps external helper failure only to its exact priv
         cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
         env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: 'true', QA_PRIVATE_DIAGNOSTIC_FILE: journalPath, QA_PRIVATE_DIAGNOSTIC_TOKEN: token },
       });
-      assert.equal(child.error, undefined); assert.equal(child.status, 1);
+      assertNativePhaseExit(sourceId - 50, sourceId, child);
       const output = [];
-      // This coordinate-only fixture is not the official 14-case app inventory.
+      // This coordinate-only fixture is not the official 16-case app inventory.
       const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
       assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
       const invocation = report.invocations[0];
@@ -1015,7 +1017,7 @@ test('settings eight literal phases retain unique native test identities in one 
     });
     assert.equal(child.error, undefined); assert.equal(child.status, 1);
     const output = [];
-    // This diagnostic-only invocation is not the official 14-item app inventory.
+    // This diagnostic-only invocation is not the official 15-item app inventory.
     const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
     assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
     const invocation = report.invocations[0];
@@ -1242,4 +1244,574 @@ test('settings reentry permits only the actual accessible Next announcer and rej
   // Engine paths explicitly exercise shadow traversal and default accessible-role
   // filtering. No text from an actual browser/page is read or written here.
   assert.equal(controls.length, 20);
+});
+
+// Grammar coverage preparation only: no browser/Auth/DB/server is launched here.
+test('grammar source 56 preserves the actual route graph and failure-only audio boundary', async () => {
+  const hashes = {
+  "app/language/layout.tsx": "237104dcc80d6763454d69fd2a8b1e0e12dae9bebac1b91e6bc5424cf80666df",
+  "app/language/grammar/page.tsx": "9c29bf86e670aca8950198ec308e247245f471a30c73fcdac44b7f3a5f53a8a3",
+  "app/language/chunk-review/page.tsx": "aa4bd476a183504a1d6c905f880a621d3259baf672500e47bfe73c4e58b48e02",
+  "components/language/JapaneseChunkPractice.tsx": "ea126f8eca3bd5bd6e661d1335565490b63d0f8bb35f78d340878fb2ca294360",
+  "components/language/ChunkReviewWorkspace.tsx": "643310701503852acc2804782ec86680b479f4830714121dc55e0f8831841ccb",
+  "components/language/useChunkReview.ts": "51bbcbc5a1db0ec51789dec1fdc08111ba5306a0fa05a594f034a77fbbdf7c83",
+  "components/language/useLearningAudio.ts": "b06dd5e6a66410f5d5b6f755da4654b03524b61abd1b9f7a63b92e8413229067",
+  "utils/speakJapanese.ts": "2840f5790e2732e08b340500bdffb7043a672526ddab6adff44144280d9a3b0d",
+  "utils/japaneseTts.ts": "b657c14ff7e715c9cb253b2e5bc08c1ef45f08e71016b70215e6d0f861242ec8",
+  "lib/free-mode.ts": "ee34f97f5a5b4e45c3378c06e795ab12d54c0af2f575a0ada1b021c68da8195f",
+  "app/api/language/tts/route.ts": "11538edfcd5df175d7170028d3488365255d13e5033f9bfa3c1ab75452576a59",
+  "utils/japaneseChunkReview.ts": "f125c626a286263c9925e72fdd080872008fd0af9e129cca2061b07e45c05ec2",
+  "utils/japaneseChunkCatalog.ts": "d09cdd6b62d9c63d1f7d7c2dea0d4319d11f779bec1f1e8ef27c8f851a000007",
+  "data/japaneseGrammarFoundationChunks.ts": "f47b509fb083148281d9b2a6828e2f257a987f0361d21981d20900481e913a80",
+  "tests/e2e/japanese-grammar-chunk.spec.ts": "21e0866bf0c72a5ca1197326316e3a2fb106de0aa1373d2ab334697d0db6e8d2",
+  "tests/e2e/japanese-grammar-chunk-state.ts": "f12507f7c772f9f3f32b37127904206f7994f272f5b80b097aa57bdcca7cb51e"
+};
+  for (const [path, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash, path);
+  const source = await readFile('tests/e2e/japanese-grammar-chunk.spec.ts', 'utf8');
+  const helper = await readFile('tests/e2e/japanese-grammar-chunk-state.ts', 'utf8');
+  assert.equal(source.match(/test\('/g)?.length, 1); assert.ok(source.split('\n')[2].startsWith('test('));
+  for (const required of ["getChunkLesson('grammar:desu')", "expect(FREE_MODE).toBe(true)", 'width: 320', "name: '2. 예문'", "level: 2, name: info.title, exact: true",
+    "name: '짧은 표현부터 조각으로 배우기'", 'lesson.chunks', 'lesson.variations', "answer(0, false, true, 'choice')",
+    "answer(1, true, true, 'choice')", "answer(2, true, true, 'reading')", "answer(0, true, false, 'choice')",
+    'assertChunkDelta(saved[CHUNK_REVIEW_KEY]', 'await confirmedSettings(page, qa, saved, fitness)',
+    'await settingsState(page)', 'await qa.readLanguage()', 'await qa.read()',
+    "route.abort('blockedbyclient')", 'await page.route(ttsRoute, blockTts)', 'await page.unroute(ttsRoute, blockTts)',
+    'const restore = await unavailableSpeech(page)', 'finally { expect(await restore()).toBeGreaterThan(0); }',
+    "name: '문제 소리 듣기'", "name: '문장 보기로 대신하기'", 'expect(ttsRequests).toBe(0)',
+    'await restored(true); await page.reload(); await restored(true)', "name: '로그아웃'",
+    'localStorage.getItem(key), CHUNK_REVIEW_KEY)).toBeNull()', "await login(page, qa.account, '/language/chunk-review')",
+    "name: '본수업 보기'", '86_400_000', 'repaired ? 4 : 3', 'toHaveLength(3)']) assert.ok(source.includes(required), required);
+  assert.ok(source.indexOf('await page.route(ttsRoute, blockTts)') < source.indexOf("name: '문제 소리 듣기'"));
+  assert.ok(source.indexOf('const restore = await unavailableSpeech(page)') < source.indexOf("name: '문제 소리 듣기'"));
+  assert.equal(source.match(/client\.from\('language_user_state'\)\.update/g)?.length, 1);
+  assert.ok(source.indexOf('.update({ state: saved })') < source.indexOf('await login('));
+  for (const forbidden of ['localStorage.setItem', 'localStorage.removeItem', 'sessionStorage.setItem', 'addInitScript', 'route.fulfill',
+    '.speak(', 'new SpeechSynthesisUtterance', 'page.clock', 'Date.now =', 'newCDPSession', 'storageState:']) {
+    assert.ok(!source.includes(forbidden), forbidden); assert.ok(!helper.includes(forbidden), forbidden);
+  }
+  for (const required of ["Object.getOwnPropertyDescriptor(window, 'speechSynthesis')", 'return undefined;',
+    "Object.defineProperty(window, 'speechSynthesis', descriptor)", "Reflect.deleteProperty(window, 'speechSynthesis')",
+    'delete target.__qaUnavailableSpeech']) assert.ok(helper.includes(required), required);
+});
+
+test('grammar delta assertions reject invented results lost wrong history and stale event times', async () => {
+  const ts = (await import('typescript')).default;
+  const { expect } = await import('@playwright/test');
+  const { parseChunkReview } = await import('../../utils/japaneseChunkReview.ts');
+  const source = await readFile('tests/e2e/japanese-grammar-chunk-state.ts', 'utf8');
+  const fn = source.slice(source.indexOf('export function assertChunkDelta'), source.indexOf('// Failure-only'));
+  const js = ts.transpileModule(fn.replace('export ', ''), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  const verify = new Function('expect', 'parseChunkReview', 'uuid', js + '; return assertChunkDelta;')(expect, parseChunkReview,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  const id1 = '00000000-0000-4000-8000-000000000001', id2 = '00000000-0000-4000-8000-000000000002';
+  const start = Date.parse('2026-11-12T01:00:00.000Z');
+  const previous = { version: 1, generation: null, events: { [id1]: { lessonId: 'grammar:desu', questionId: 'grammar:desu:meaning',
+    attemptId: id1, answeredAt: new Date(start - 5000).toISOString(), correct: false, neededHelp: true, mode: 'choice' } } };
+  const input = { lessonId: 'grammar:desu', questionId: 'grammar:desu:meaning', correct: true, neededHelp: false, mode: 'choice' };
+  const run = (mutate = () => {}, bounds = {}) => {
+    const current = JSON.parse(JSON.stringify(previous));
+    current.events[id2] = { ...input, attemptId: id2, answeredAt: new Date(start + 1).toISOString() };
+    mutate(current);
+    return verify(JSON.stringify(previous), JSON.stringify(current), input, bounds.start ?? start, bounds.end ?? start + 10);
+  };
+  assert.equal(run().attemptId, id2);
+  for (const [name, change, bounds = {}] of [
+    ['dropped wrong event', value => { delete value.events[id1]; }],
+    ['rewritten wrong event', value => { value.events[id1].correct = true; }],
+    ['rewritten help history', value => { value.events[id1].neededHelp = false; }],
+    ['rewritten prior timestamp', value => { value.events[id1].answeredAt = new Date(start).toISOString(); }],
+    ['missing new event', value => { delete value.events[id2]; }],
+    ['extra fabricated event', value => { value.events['extra'] = { ...value.events[id2], attemptId: 'extra' }; }],
+    ['wrong lesson', value => { value.events[id2].lessonId = 'grammar:masu'; }],
+    ['wrong question', value => { value.events[id2].questionId = 'grammar:desu:blank'; }],
+    ['wrong result', value => { value.events[id2].correct = false; }],
+    ['wrong help flag', value => { value.events[id2].neededHelp = true; }],
+    ['false audio claim', value => { value.events[id2].mode = 'audio'; }],
+    ['stale event', value => { value.events[id2].answeredAt = new Date(start - 1).toISOString(); }],
+    ['future event', value => { value.events[id2].answeredAt = new Date(start + 11).toISOString(); }],
+    ['invalid UUID', value => { value.events.extra = { ...value.events[id2], attemptId: 'extra' }; delete value.events[id2]; }],
+    ['invented generation', value => { value.generation = '2026-11-12T00:00:00.000Z|synthetic'; }],
+    ['unknown event field', value => { value.events[id2].heard = true; }],
+    ['inverted observation bounds', () => {}, { end: start - 1 }],
+    ['unbounded observation', () => {}, { end: start + 90_000 }],
+  ]) {
+    const matcher = {
+      'dropped wrong event': 'toBe', 'rewritten wrong event': 'toEqual', 'rewritten help history': 'toEqual',
+      'rewritten prior timestamp': 'toEqual', 'missing new event': 'toBe', 'extra fabricated event': 'toBe',
+      'wrong lesson': 'toEqual', 'wrong question': 'toEqual', 'wrong result': 'toEqual', 'wrong help flag': 'toEqual',
+      'false audio claim': 'toEqual', 'stale event': 'toBeGreaterThanOrEqual', 'future event': 'toBeLessThanOrEqual',
+      'invalid UUID': 'toMatch', 'invented generation': 'toBe', 'inverted observation bounds': 'toBeGreaterThanOrEqual',
+      'unbounded observation': 'toBeLessThan',
+    }[name];
+    const stage = {
+      'dropped wrong event': 'event-count', 'rewritten wrong event': `history:${id1}`, 'rewritten help history': `history:${id1}`,
+      'rewritten prior timestamp': `history:${id1}`, 'missing new event': 'event-count', 'extra fabricated event': 'event-count',
+      'wrong lesson': 'new-event', 'wrong question': 'new-event', 'wrong result': 'new-event', 'wrong help flag': 'new-event',
+      'false audio claim': 'new-event', 'stale event': 'earliest-answer', 'future event': 'latest-answer',
+      'invalid UUID': 'attempt-id', 'invented generation': 'generation', 'inverted observation bounds': 'clock-order',
+      'unbounded observation': 'observation-window',
+    }[name];
+    assert.throws(() => run(change, bounds), error => error instanceof Error && (name === 'unknown event field'
+      ? error.message === '보충 오답 기록의 형식을 확인해 주세요. 기존 기록은 덮어쓰지 않고 보존합니다.'
+      : error.matcherResult?.name === matcher && error.message.startsWith(`chunk-delta-${stage}\n`)
+        && (stage !== 'event-count' || error.matcherResult.expected === 2
+          && error.matcherResult.actual === (name === 'extra fabricated event' ? 3 : 1))), name);
+  }
+});
+
+test('grammar unavailable speech fault never calls native capability and restores exact own or inherited descriptors', async () => {
+  const ts = (await import('typescript')).default;
+  const source = await readFile('tests/e2e/japanese-grammar-chunk-state.ts', 'utf8');
+  const js = ts.transpileModule(source.slice(source.indexOf('export async function unavailableSpeech')).replace('export ', ''),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  for (const kind of ['own', 'inherited', 'absent']) {
+    let nativeReads = 0;
+    const prototype = {}, window = Object.create(prototype);
+    if (kind !== 'absent') Object.defineProperty(kind === 'own' ? window : prototype, 'speechSynthesis', {
+      configurable: true, enumerable: true, get() { nativeReads++; throw new Error('Native capability must not be invoked'); },
+    });
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
+    const install = new Function('window', js + '; return unavailableSpeech;')(window);
+    const page = { evaluate: async callback => callback() };
+    const restore = await install(page);
+    assert.equal(window.speechSynthesis, undefined);
+    assert.equal(nativeReads, 0);
+    await assert.rejects(() => install(page), /already installed/);
+    await assert.rejects(async () => {
+      try { assert.equal(window.speechSynthesis, undefined); throw new Error('Synthetic UI failure'); }
+      finally { assert.equal(await restore(), 2); }
+    }, /Synthetic UI failure/);
+    assert.deepEqual(Object.getOwnPropertyDescriptor(window, 'speechSynthesis'), descriptor);
+    assert.equal(Object.hasOwn(window, '__qaUnavailableSpeech'), false); assert.equal(nativeReads, 0);
+    await assert.rejects(() => restore(), /missing/);
+  }
+  const window = {};
+  Object.defineProperty(window, 'speechSynthesis', { configurable: false, value: {} });
+  const install = new Function('window', js + '; return unavailableSpeech;')(window);
+  await assert.rejects(() => install({ evaluate: async callback => callback() }), TypeError);
+  assert.equal(Object.hasOwn(window, '__qaUnavailableSpeech'), false);
+});
+
+test('grammar four literal phases retain source 56 native failure coordinates in one private fixtureless invocation', async () => {
+  const repository = process.cwd(), root = await mkdtemp(join(tmpdir(), 'grammar-native-phases-'));
+  const file = 'tests/e2e/japanese-grammar-chunk.spec.ts', expectedLines = [89, 106, 122, 145];
+  try {
+    const source = await readFile(file, 'utf8'), lines = source.split('\n');
+    const positions = lines.flatMap((line, index) => line.startsWith('    await test.step(') ? [index + 1] : []);
+    assert.deepEqual(positions, expectedLines);
+    const synthetic = Array(lines.length).fill('');
+    // Four native identities share the actual 3:5 definition and exact literal
+    // phase coordinates. No real case body, fixture, page or context is imported.
+    synthetic[0] = `import { test } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))}; import { fail } from './offline-grammar-helper'; for (let phase = 0; phase < 4; phase++) {`;
+    synthetic[2] = "test('synthetic grammar phase ' + phase, async () => {";
+    for (const [index, line] of positions.entries()) {
+      const prefix = lines[line - 1].split('async () => {')[0];
+      assert.ok(prefix.includes('await test.step('));
+      synthetic[line - 1] = `${prefix}async () => { await fail(phase, ${index}); });`;
+    }
+    synthetic[positions.at(-1)] = '}); }';
+    await mkdir(join(root, 'tests/e2e'), { recursive: true });
+    await writeFile(join(root, file), synthetic.join('\n'));
+    await writeFile(join(root, 'tests/e2e/offline-grammar-helper.ts'), `import { expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};\nexport async function fail(selected, current) { if (selected === current) expect(${JSON.stringify(canary)}).toBe('PRIVATE_EXPECTED'); }\n`);
+    await writeFile(join(root, 'offline.config.mjs'), `export default ${JSON.stringify({ testDir: './tests/e2e', workers: 1, retries: 0, projects: [{ name: 'chromium-app-smoke' }], reporter: [[join(repository, 'tests/e2e/reporter.ts')]] })};\n`);
+    const journalPath = join(root, 'journal.jsonl'); await writeFile(journalPath, '', { mode: 0o600 });
+    const child = spawnSync(process.execPath, [join(repository, 'node_modules/@playwright/test/cli.js'), 'test', '--config', 'offline.config.mjs'], {
+      cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: 'true', NODE_OPTIONS: '--max-old-space-size=192 --max-semi-space-size=4',
+        QA_PRIVATE_DIAGNOSTIC_FILE: journalPath, QA_PRIVATE_DIAGNOSTIC_TOKEN: token },
+    });
+    assert.equal(child.error, undefined); assert.equal(child.status, 1);
+    const output = [];
+    // Diagnostic-only intentionally failed tests, not the sixteen-case app lane.
+    const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
+    assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
+    const invocation = report.invocations[0];
+    assert.deepEqual(invocation.counts, { passed: 0, failed: 4, timedOut: 0, skipped: 0, interrupted: 0, unknown: 0 });
+    assert.equal(invocation.status, 'failed'); assert.deepEqual(invocation.active, []); assert.equal(invocation.omitted, 0);
+    assert.equal(invocation.runnerErrors, 0); assert.equal(invocation.details.length, 4);
+    assert.deepEqual(invocation.details.map(detail => detail.test), [1, 2, 3, 4]);
+    const actualLines = [];
+    for (const [index, detail] of invocation.details.entries()) {
+      assert.equal(detail.source, 56); assert.equal(detail.line, 3); assert.equal(detail.column, 5); assert.equal(detail.project, 5);
+      assert.equal(detail.failure.category, 1); assert.deepEqual(detail.failure.errors, []); assert.deepEqual(detail.failure.failedOperations, []);
+      assert.deepEqual(detail.failure.failedSteps, [{ source: 56, line: expectedLines[index], column: 5 }]);
+      assert.equal(detail.failure.stepScanTruncated, 0); actualLines.push(detail.failure.failedSteps[0].line);
+    }
+    assert.equal(new Set(actualLines).size, 4); assert.deepEqual(actualLines, expectedLines); privateOutput(output);
+    const text = output.join('\n'), bytes = await readFile(journalPath, 'utf8');
+    for (const secret of [canary, 'PRIVATE_EXPECTED', file, 'offline-grammar-helper', root, 'synthetic grammar phase', ...positions.map(line => lines[line - 1])]) {
+      assert.ok(!text.includes(secret)); assert.ok(!bytes.includes(secret));
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// Diagnostic-only adapter for the existing source51–54 fixtureless children.
+// Keep spawn configuration and exit expectations unchanged. Only closed scalar
+// data may reach assertion messages, never raw spawn errors or output streams.
+function nativePhaseExitDiagnostic(invocation, source, child) {
+  const unknown = Symbol('unreadable');
+  const own = (value, key) => {
+    try {
+      if (value === null || typeof value !== 'object') return unknown;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      return descriptor === undefined ? undefined : 'value' in descriptor ? descriptor.value : unknown;
+    } catch { return unknown; }
+  };
+  let plain = false;
+  try { plain = child !== null && typeof child === 'object' && [Object.prototype, null].includes(Object.getPrototypeOf(child)); }
+  catch { /* Unknown object behavior cannot enter diagnostics or pass assertions. */ }
+  const error = plain ? own(child, 'error') : unknown;
+  const status = plain ? own(child, 'status') : unknown;
+  const signal = plain ? own(child, 'signal') : unknown;
+  const integer = (value, min, max, fallback) => Number.isSafeInteger(value) && value >= min && value <= max ? value : fallback;
+  const signalNumber = signal === null || signal === undefined ? 0
+    : typeof signal === 'string' && Object.hasOwn(constants.signals, signal) ? integer(constants.signals[signal], 1, 64, 99) : 99;
+  const errorCode = own(error, 'code');
+  const allowedErrors = ['ENOENT', 'EACCES', 'EPERM', 'ETIMEDOUT', 'ENOBUFS', 'ENOMEM', 'EAGAIN', 'EMFILE', 'ENFILE', 'EINVAL'];
+  const spawnError = error === undefined ? 'none' : allowedErrors.includes(errorCode) ? errorCode : 'unknown';
+  return {
+    spawnOk: error === undefined, exitOk: status === 1,
+    line: `source=${integer(source, 51, 54, 0)} invocation=${integer(invocation, 1, 4, 0)}`
+      + ` status=${integer(status, 0, 255, null)} signal=${signalNumber} spawnError=${spawnError}`,
+  };
+}
+function assertNativePhaseExit(invocation, source, child) {
+  const safe = nativePhaseExitDiagnostic(invocation, source, child);
+  // Original order and outcome: require absent spawn error, then exit exactly1.
+  // Boolean actual values prevent node:assert from inspecting a raw Error.
+  assert.equal(safe.spawnOk, true, `native-phase check=spawn ${safe.line}`);
+  assert.equal(safe.exitOk, true, `native-phase check=exit ${safe.line}`);
+}
+
+test('native phase diagnostics expose only closed scalar lifecycle fields and never inspect private canaries', () => {
+  const good = { error: undefined, status: 1, signal: null };
+  assert.deepEqual(nativePhaseExitDiagnostic(1, 51, good), {
+    spawnOk: true, exitOk: true, line: 'source=51 invocation=1 status=1 signal=0 spawnError=none',
+  });
+  for (const [signal, number] of [['SIGKILL', 9], ['SIGTERM', 15], ['SIGABRT', 6]]) {
+    assert.equal(nativePhaseExitDiagnostic(3, 53, { status: null, signal }).line,
+      `source=53 invocation=3 status=null signal=${number} spawnError=none`);
+  }
+  for (const code of ['ENOENT', 'EACCES', 'EPERM', 'ETIMEDOUT', 'ENOBUFS', 'ENOMEM', 'EAGAIN', 'EMFILE', 'ENFILE', 'EINVAL']) {
+    const error = Object.assign(new Error(canary), { code, path: canary, spawnargs: [canary] });
+    const safe = nativePhaseExitDiagnostic(4, 54, { error, status: null, signal: 'SIGTERM', stdout: canary, stderr: canary, output: [canary] });
+    assert.equal(safe.line, `source=54 invocation=4 status=null signal=15 spawnError=${code}`);
+    assert.equal(safe.spawnOk, false); assert.equal(safe.exitOk, false); privateOutput([safe.line]);
+  }
+  let reads = 0;
+  const hostile = { toString() { reads++; throw new Error(canary); } };
+  const accessor = {}; Object.defineProperty(accessor, 'code', { get() { reads++; throw new Error(canary); } });
+  const proxy = new Proxy({}, { getOwnPropertyDescriptor() { throw new Error(canary); }, getPrototypeOf() { throw new Error(canary); } });
+  const samples = [
+    { error: Object.assign(new Error(canary), { code: canary }), status: canary, signal: canary },
+    { error: accessor, status: NaN, signal: 'constructor' },
+    { error: hostile, status: Infinity, signal: hostile },
+    { error: null, status: -1, signal: 9 },
+    { error: {}, status: 256, signal: 'SIGKILL' + canary },
+    proxy, Object.create({ error: canary }),
+  ];
+  const propertyGetters = {};
+  for (const key of ['error', 'status', 'signal', 'stdout', 'stderr', 'output', 'path', 'spawnargs']) {
+    Object.defineProperty(propertyGetters, key, { get() { reads++; throw new Error(canary); } });
+  }
+  samples.push(propertyGetters);
+  for (const child of samples) {
+    const safe = nativePhaseExitDiagnostic(canary, hostile, child);
+    assert.equal(safe.line, 'source=0 invocation=0 status=null signal=99 spawnError=unknown');
+    assert.equal(safe.spawnOk, false); assert.equal(safe.exitOk, false); privateOutput([safe.line]);
+  }
+  assert.equal(reads, 0);
+  for (const status of [0, 1, 255]) {
+    const safe = nativePhaseExitDiagnostic(2, 52, { status, signal: null });
+    assert.equal(safe.line, `source=52 invocation=2 status=${status} signal=0 spawnError=none`);
+    assert.equal(safe.exitOk, status === 1);
+  }
+});
+
+test('native phase exit assertions preserve error-first exact exit-one outcomes without raw error serialization', () => {
+  assert.doesNotThrow(() => assertNativePhaseExit(1, 51, { status: 1, signal: null }));
+  const matches = (check, line) => error => error instanceof assert.AssertionError && error.code === 'ERR_ASSERTION'
+    && error.actual === false && error.expected === true && error.operator === 'strictEqual'
+    && [`native-phase check=${check} ${line}`, `native-phase check=${check} ${line}\n\nfalse !== true\n`].includes(error.message)
+    && !error.message.includes(canary);
+  for (const status of [1, 0, null]) {
+    const error = Object.assign(new Error(canary), { code: 'ENOENT', path: canary, spawnargs: [canary] });
+    assert.throws(() => assertNativePhaseExit(2, 52, { error, status, signal: null, stdout: canary, stderr: canary }),
+      matches('spawn', `source=52 invocation=2 status=${status} signal=0 spawnError=ENOENT`));
+  }
+  for (const status of [0, 2, 255, null, undefined, '1']) {
+    assert.throws(() => assertNativePhaseExit(3, 53, { status, signal: status === null ? 'SIGKILL' : null }),
+      matches('exit', `source=53 invocation=3 status=${Number.isSafeInteger(status) ? status : 'null'} signal=${status === null ? 9 : 0} spawnError=none`));
+  }
+  assert.throws(() => assertNativePhaseExit(4, 54, { error: null, status: 1, signal: null }),
+    matches('spawn', 'source=54 invocation=4 status=1 signal=0 spawnError=unknown'));
+});
+
+// Reference addition. Preserve all existing fifteen cases and safety tests.
+// No app/browser/Auth/DB execution occurs in the source/helper controls below.
+test('reference source 57 pins the finite route graph and six exact source mutations', async () => {
+  const hashes = {
+  "public/kana-strokes.json": "32ba7a804d8ba53958f18c7a9a00db59d24f14df16a5501683deffce152e211c",
+  "lib/kana-stroke-timeline.ts": "40067ef48168fa1793da82135b5b9c75f0e8c078d0828e26e14e3d8d4bd52d05",
+  "app/language/page.tsx": "29f2a6742ceb6f9fbcf8a223bbcc7ad0ff453bbe77b311418895fc8454c1d723",
+  "components/TopNav.tsx": "e2e1505847a2c580d0c8274466d9059a0cca804063bfa293cf4b3eb0a227457c",
+  "app/language/kana/page.tsx": "0f72768e2401058468d2230dc29efc98dc57b9690025c41684beda2f213a9044",
+  "app/language/words/page.tsx": "a2dc2799532a8dcf82e4af8817d6957c56e92000f3e9c9eaf620341ed1e3b064",
+  "app/language/settings/page.tsx": "b6242717b70eff28322f6f64641ffae302f4525b129d5b0f7773140ded2e6b50",
+  "app/language/language.css": "277792ede06d2b5f2446ef5728b8ce60a81599c8685a78849cc9a1257cc94095",
+  "components/language/useDailyRoutineCompletion.ts": "e5c0c70aadb314d1f7ac08ead6ce3cd0ca2eac8ff4c400f970d61da4a2cd6402",
+  "components/language/DailyRoutineSaveNotice.tsx": "5713f95993ae4e798307726ab3dca279df2275c02dffa697311a40efb8dad000",
+  "utils/dailyRoutineProgress.ts": "0c606fa1ae5b7825622b510b94396a4f560537f0b51f4c8445831d2395c123f5",
+  "utils/routineCompletionQueue.ts": "58b99f22ff97025f038b42061f7d2a595e709bc8f4302625ab032495e7b337a3",
+  "app/data/languageStorageLock.ts": "0eb7851f997480a10a2e5c7093a73463f0760e73b9cae6577bc2f46c5683674d",
+  "components/language/KanaStrokeAnimation.tsx": "deb7074b9576262b719232ef9217e1a3dc92626594308d12954055176d726474",
+  "components/language/LanguageCompanion.tsx": "eefebd1a28f97fb5f2f01f207f11a1ce6fa480c3f91feacf841d7a90c7dcf38d",
+  "lib/yeoni/common-host-policy.ts": "11e1adecee9511078bac970b50b6376c0f5f272e0417f2b4cd04b557a57e4a30",
+  "data/words.ts": "ab984077f4b670e46c924cd79b465887df5190e1dff28cb5c331984140b7466b",
+  "utils/wordQuiz.ts": "4875491cadd0966f5322c862ec54a521eaf0ded4b855ebdce137cf603049bb20",
+  "tests/e2e/fixture.ts": "38c7ce2ce86dc009380336665a7afcde98271f8e45f93bc6d0cdfcdd02f448ec",
+  "tests/e2e/japanese-settings-state.ts": "005613b394514b151d8b134325c19fe637f37c31fd86b605fb5b5277dc697878",
+  "tests/e2e/japanese-level-flow-state.ts": "042da540d19db5b7f7df5d499545c1dfe9318353eb9267a0ddf31f8448847eb3",
+  "app/language/layout.tsx": "237104dcc80d6763454d69fd2a8b1e0e12dae9bebac1b91e6bc5424cf80666df",
+  "components/language/LanguageShell.tsx": "1eb4f2d273344225cacfef0bb9449fbdc61177c70a2d0a5c1de0f47f97c8aed3",
+  "app/components/AuthGate.tsx": "d69c6d0cdf4fe093194a52fe7e9e6dd02df602673259119010bd809d29b5dbc2",
+  "components/LanguageCloudSync.tsx": "530ad50e9ade9673ab565a0b8a67f5b0ebe4577480bc24a236cd7a0a2b8ad6db",
+  "app/data/languageCloudSync.ts": "d42082e3ead11e14059a325bc3cef12b9ad74e51e03320824734e6d309f1f48b",
+  "app/data/cloudSync.ts": "d77f30187dfb65d4738164758a97aaf5daa8f47ee123cbf879967106c389cddd",
+  "utils/japaneseLevelJourney.ts": "18601b6e775a3a5adb3069be7493aa376f7e56fb4359d90bbe806a9d3967973d",
+  "utils/dateKey.ts": "ae6a9d079c0d7fc8f288080c5bd3f45018843bca988487fcc55541a98b63e634",
+  "components/language/useLearningAudio.ts": "b06dd5e6a66410f5d5b6f755da4654b03524b61abd1b9f7a63b92e8413229067",
+  "utils/speakJapanese.ts": "2840f5790e2732e08b340500bdffb7043a672526ddab6adff44144280d9a3b0d",
+  "utils/japaneseTts.ts": "b657c14ff7e715c9cb253b2e5bc08c1ef45f08e71016b70215e6d0f861242ec8",
+  "lib/free-mode.ts": "ee34f97f5a5b4e45c3378c06e795ab12d54c0af2f575a0ada1b021c68da8195f",
+  "data/learningDataExpansion.ts": "c026bcf412c235bb43ef6ce46c6bdb89f2dce1e4e3941c8484b3dc448fb43fea",
+  "data/recommendedDataExpansion.ts": "415ea40da82cbf5f930e416a22f41fb02e206127c86bed7c2358cd125b7e58c3",
+  "data/japaneseLearningQuality.ts": "f63ae35d76f8b4ba97fa525d92bdd78bad1bff973fa99e3b85f4914a0234949a",
+  "components/yeoni/CommonCharacterHost.tsx": "6b4d0c125c033d37d45835801a56b02157eb26367ef0248458df31543142477a",
+  "components/AppCompanion.tsx": "d1c667c4c06fa5a2684f67ba4ad945f04e28cf3c397873860a334e6945f4e1b6",
+  "tests/e2e/reporter.ts": "21a52f1e73ca9e116284cd578bf0ea5a3a67900d5ba0b5ec3c1dd3e7be7faeef",
+  "tests/e2e/japanese-reference-routine-state.ts": "a246c11b04511ff598e532c1e9f6ee0bc1463ae37d3dc24e9f20ae30028a504a",
+  "tests/e2e/japanese-reference-routine.spec.ts": "ef05bf85996cffcc55e68226c3cbb6d59958fbff8242d5cc4bae6e04e178b5fe"
+};
+  for (const [file, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(file)).digest('hex'), hash, file);
+  const spec = await readFile('tests/e2e/japanese-reference-routine.spec.ts', 'utf8');
+  const helper = await readFile('tests/e2e/japanese-reference-routine-state.ts', 'utf8');
+const checks = [
+ ['reference-case-declaration', s => s.split('\n')[2].startsWith("test('kana and word ordinary quizzes")],
+ ['reference-four-real-answers', s => s.includes('count <= 4') && s.includes('correctChoice(page, id, kana)).click()')],
+ ['reference-failure-stats', s => s.includes('{ hits: 1, dailyWrites: 0, otherJournals: 0 }')],
+ ['reference-restore-finally', s => s.includes('finally { await restoreJournal(page); }')],
+ ['reference-retry-ui', s => s.includes('await retryButton(page).click()')],
+ ['reference-independent-delta', s => s.includes('saved = assertDailyDelta(saved, current, id, day, started, observed)')],
+ ['reference-real-ack', s => s.includes('await confirmed(page, qa, saved, fitness, since)')],
+ ['reference-invalidation', s => s.includes("window.dispatchEvent(new Event('ai-yeoni-record-reset'))") && s.includes('await unchanged(page, qa, saved, fitness, snapshot, writes)')],
+ ['reference-relogin', s => s.includes("await login(page, qa.account, '/language/words'); await restored()")],
+ ['reference-speech-cleanup', s => s.includes('finally { await silence.restore(); }')],
+];
+for (const [stage, check] of checks) assert(check(spec), stage);
+let negatives = 0;
+for (const [stage, token] of [
+ ['reference-failure-stats', '{ hits: 1, dailyWrites: 0, otherJournals: 0 }'],
+ ['reference-restore-finally', 'finally { await restoreJournal(page); }'],
+ ['reference-retry-ui', 'await retryButton(page).click()'],
+ ['reference-independent-delta', 'saved = assertDailyDelta(saved, current, id, day, started, observed)'],
+ ['reference-real-ack', 'await confirmed(page, qa, saved, fitness, since)'],
+ ['reference-speech-cleanup', 'finally { await silence.restore(); }'],
+]) {
+ const altered = spec.replace(token, 'REMOVED_FOR_PRIVATE_NEGATIVE_CONTROL');
+ const failed = checks.filter(([, check]) => !check(altered)).map(([name]) => name);
+ assert.deepEqual(failed, [stage]); negatives++;
+}
+assert(helper.includes("'http://127.0.0.1:3000/api/**'"), 'reference-api-block');
+assert(helper.includes("throw new Error('Reference case forbids native speech')"), 'reference-native-speech-block');
+assert(helper.includes('hasSettingsAcknowledgement(qa.traffic.entries.slice(since), state)'), 'reference-non-stale-real-ack');
+assert(helper.includes("await expect(alerts).toHaveCount(1)"), 'reference-framework-only-alert');
+assert(helper.includes('assertBoards(geometry, selectedGlyph)'), 'reference-visible-selection-anchor');
+assert(!/page\.(?:route|request)|\.fulfill\(|setTimeout\(|waitForTimeout\(|\.skip\(|\.only\(/.test(spec + helper), 'reference-no-success-mock-or-sleep');
+assert.equal((spec.match(/^test\('/gm) || []).length, 1);
+
+  assert.equal(negatives, 6);
+});
+
+test('reference exact helper controls retain seven positives and seventeen intended failures without browser services', async () => {
+  const ts = (await import('typescript')).default;
+  const { expect } = await import('@playwright/test');
+  const vm = await import('node:vm');
+const canonical = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+class SyntheticStorage {
+  #entries = new Map();
+  getItem(key) { return this.#entries.has(key) ? this.#entries.get(key) : null; }
+  setItem(key, value) { this.#entries.set(String(key), String(value)); }
+  removeItem(key) { this.#entries.delete(key); }
+}
+const localStorage = new SyntheticStorage();
+const realm = { exports: {}, window: {}, Storage: SyntheticStorage, localStorage, console: { log() { throw Error('Unexpected console'); } }, require(name) {
+  if (name === './fixture') return { expect, canonical };
+  if (name === '../../app/data/languageStorageLock') return { LANGUAGE_DATA_KEYS: [] };
+  if (name === '../../data/words') return { WORDS: [] };
+  if (name === './japanese-settings-state') return {};
+  if (name === './japanese-level-flow-state') return {};
+  throw Error('Unexpected helper import: ' + name);
+} };
+vm.createContext(realm);
+const source = await readFile('tests/e2e/japanese-reference-routine-state.ts', 'utf8');
+const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, strict: true } });
+vm.runInContext(compiled.outputText, realm, { filename: 'private-reference-helper.js', timeout: 2000 });
+const helper = realm.exports;
+let positives = 0, negatives = 0;
+function rejected(stage, action, matcher) {
+  let error; try { action(); } catch (caught) { error = caught; }
+  assert(error, 'Expected intended failure: ' + stage);
+  assert(String(error.message).startsWith(stage), 'Wrong failure stage: ' + String(error.message));
+  if (matcher) {
+    assert.equal(error.matcherResult?.name, matcher.name, 'Wrong matcher: ' + stage);
+    for (const field of ['actual', 'expected']) if (Object.hasOwn(matcher, field)) assert.equal(canonical(error.matcherResult[field]), canonical(matcher[field]), 'Wrong ' + field + ': ' + stage);
+  } else assert.equal(error.message, stage, 'Wrong explicit refusal');
+  negatives++;
+}
+const day = '2026-11-12', now = Date.parse('2026-11-12T05:00:00.000Z');
+const special = JSON.parse('{"__proto__":{"keep":["own",7]},"constructor":{"keep":true}}');
+const before = { learningSettings: JSON.stringify({ dailyGoalCount: 5, ...special }),
+  dailyRoutineProgress: JSON.stringify({ date: '2001-01-02', completedIds: ['review'], ...special }),
+  dailyLearningHistory: JSON.stringify({ '2001-01-02': { completedIds: ['review'], completedCount: 1, totalCount: 5 }, ...special }) };
+const progress = JSON.parse(before.dailyRoutineProgress), history = JSON.parse(before.dailyLearningHistory);
+const saved = { ...before, dailyRoutineProgress: JSON.stringify({ ...progress, date: day, completedIds: ['kana'] }),
+  dailyLearningHistory: JSON.stringify({ ...history, [day]: { completedIds: ['kana'], completedCount: 1, totalCount: 5, updatedAt: new Date(now).toISOString() } }) };
+helper.assertDailyDelta(before, saved, 'kana', day, now - 1, now + 1); positives++;
+const clone = x => JSON.parse(JSON.stringify(x));
+for (const mutate of [
+  s => { const v = JSON.parse(s.dailyRoutineProgress); v.completedIds.push('kana'); s.dailyRoutineProgress = JSON.stringify(v); },
+  s => { const v = JSON.parse(s.dailyLearningHistory); delete v.__proto__; s.dailyLearningHistory = JSON.stringify(v); },
+  s => { const v = JSON.parse(s.dailyRoutineProgress); delete v.constructor; s.dailyRoutineProgress = JSON.stringify(v); },
+  s => { const v = JSON.parse(s.dailyLearningHistory); v[day].completedCount = 2; s.dailyLearningHistory = JSON.stringify(v); },
+  s => { s.learningSettings = '{}'; },
+  s => { s.wrongWords = '[]'; },
+]) { const bad = clone(saved); mutate(bad); rejected('reference-exact-daily-delta', () => helper.assertDailyDelta(before, bad, 'kana', day, now - 1, now + 1), { name: 'toBe', actual: canonical(bad), expected: canonical(saved) }); }
+const badTime = clone(saved), badHistory = JSON.parse(badTime.dailyLearningHistory); badHistory[day].updatedAt = new Date(now + 1000).toISOString(); badTime.dailyLearningHistory = JSON.stringify(badHistory);
+rejected('reference-completion-timestamp', () => helper.assertDailyDelta(before, badTime, 'kana', day, now - 1, now + 1), { name: 'toBe', actual: false, expected: true });
+const secondHistory = JSON.parse(saved.dailyLearningHistory), secondProgress = JSON.parse(saved.dailyRoutineProgress);
+const both = { ...saved, dailyRoutineProgress: JSON.stringify({ ...secondProgress, completedIds: ['kana', 'words'] }),
+  dailyLearningHistory: JSON.stringify({ ...secondHistory, [day]: { ...secondHistory[day], completedIds: ['kana', 'words'], completedCount: 2, updatedAt: new Date(now + 10).toISOString() } }) };
+helper.assertDailyDelta(saved, both, 'words', day, now + 9, now + 11); positives++;
+const board = { x: 25, y: 200, width: 240, height: 240, background: 'rgb(255, 255, 255)', image: 'linear-gradient(to right, white, gray)',
+  guide: { x: 1, y: 1, width: 238, height: 238 }, glyph: 'あ', paths: 3 };
+helper.assertBoards([board, { ...board, y: 500 }], 'あ'); positives++;
+for (const [stage, mutate] of [
+  ['reference-identical-board-background-glyph', b => { b.background = 'rgb(0, 0, 0)'; }],
+  ['reference-guide-alignment', b => { b.guide.x = 8; }],
+  ['reference-stacked-board-alignment', b => { b.x = 30; }],
+  ['reference-loaded-glyph', b => { b.paths = 0; }],
+]) { const bad = clone(board); mutate(bad); rejected(stage, () => helper.assertBoards([board, bad], 'あ'), stage === 'reference-loaded-glyph' ? { name: 'toBe', actual: false, expected: true } : stage === 'reference-identical-board-background-glyph' ? { name: 'toEqual', actual: [bad.background, bad.image, bad.glyph], expected: [board.background, board.image, board.glyph] } : { name: 'toBe', actual: false, expected: true }); }
+for (const [glyphs, selected, stage, actual, expected] of [
+  [[undefined, undefined], 'あ', 'reference-nonempty-board-glyph', false, true],
+  [['', 'あ'], 'あ', 'reference-nonempty-board-glyph', false, true],
+  [['あ', 'い'], 'あ', 'reference-board-matches-selected-glyph', 'い', 'あ'],
+  [['あ', 'あ'], 'い', 'reference-board-matches-selected-glyph', 'あ', 'い'],
+  [['あ', 'あ'], '', 'reference-selected-writing-glyph', false, true],
+]) {
+  const items = glyphs.map((glyph, i) => ({ ...clone(board), y: 200 + i * 300, glyph }));
+  rejected(stage, () => helper.assertBoards(items, selected), { name: 'toBe', actual, expected });
+}
+const P = 'dailyRoutineProgress', H = 'dailyLearningHistory', J = 'language-storage-transaction-v1';
+const expected = { [P]: before[P], [H]: before[H] };
+for (const [key, value] of Object.entries(expected)) localStorage.setItem(key, value);
+const native = Object.getOwnPropertyDescriptor(SyntheticStorage.prototype, 'setItem');
+helper.installJournalHarness({ expected, fail: true });
+try {
+  const control = realm.window.__qaReferenceJournal;
+  // Wrong journal key sets, stale raw values and another Storage realm pass
+  // through untouched and cannot consume the single intended failure.
+  for (const raw of [JSON.stringify({ [P]: before[P] }), JSON.stringify({ ...expected, wrongWords: null }), JSON.stringify({ ...expected, [P]: 'stale' }), 'not-json']) {
+    localStorage.setItem(J, raw); assert.equal(localStorage.getItem(J), raw); localStorage.removeItem(J);
+  }
+  const other = new SyntheticStorage(); other.setItem(J, JSON.stringify(expected));
+  assert.equal(control.stats.hits, 0); assert.equal(control.stats.otherJournals, 4); positives++;
+  rejected('CI synthetic daily journal pre-write failure', () => localStorage.setItem(J, JSON.stringify(expected)));
+  assert.equal(localStorage.getItem(J), null); assert.equal(localStorage.getItem(P), before[P]); assert.equal(localStorage.getItem(H), before[H]);
+  assert.deepEqual(JSON.parse(JSON.stringify(control.stats)), { hits: 1, dailyWrites: 0, otherJournals: 4 }); positives++;
+  localStorage.setItem(J, JSON.stringify(expected)); assert.equal(localStorage.getItem(J), JSON.stringify(expected));
+  assert.equal(control.stats.hits, 1); positives++;
+} finally {
+  assert.equal(realm.window.__qaReferenceJournal.restore(), true);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(SyntheticStorage.prototype, 'setItem'), native);
+  assert.equal(Object.hasOwn(realm.window, '__qaReferenceJournal'), false);
+}
+// A thrown assertion after injection must still restore the native descriptor.
+try { helper.installJournalHarness({ expected, fail: true }); throw Error('private-exit-control'); }
+catch (error) { assert.equal(error.message, 'private-exit-control'); }
+finally { assert.equal(realm.window.__qaReferenceJournal.restore(), true); assert.deepEqual(Object.getOwnPropertyDescriptor(SyntheticStorage.prototype, 'setItem'), native); positives++; }
+assert.equal(positives, 7); assert.equal(negatives, 17);
+
+});
+
+// Six distinct source positions, NOT a claim of six real-browser phases.
+// The actual kana/words loop repeats its first three literals: nine runtime phases.
+test('reference six literal phases retain source 57 numeric native attribution without fixtures', async () => {
+  const repository = process.cwd(), root = await mkdtemp(join(tmpdir(), 'reference-native-phases-'));
+  const file = 'tests/e2e/japanese-reference-routine.spec.ts';
+  const expectedCoordinates = [
+    { source: 57, line: 12, column: 7 },
+    { source: 57, line: 32, column: 7 },
+    { source: 57, line: 64, column: 7 },
+    { source: 57, line: 82, column: 26 },
+    { source: 57, line: 87, column: 5 },
+    { source: 57, line: 98, column: 5 },
+  ];
+  try {
+    assert.equal(sources[56], file); assert.equal(sources.length, 57);
+    const source = await readFile(file, 'utf8'), lines = source.split('\n');
+    const positions = lines.flatMap((line, index) => line.includes('await test.step(')
+      ? [{ source: 57, line: index + 1, column: line.indexOf('await test.step(') + 1 }] : []);
+    assert.deepEqual(positions, expectedCoordinates);
+    const synthetic = Array(lines.length).fill('');
+    // Keep every original prefix (including the line82 if/await columns).
+    // `id` only supplies the literal labels and the kana-only branch. None of
+    // the real case body/helper/fixture, page/context/qa or services is imported.
+    synthetic[0] = `import { test } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))}; import { fail } from './offline-reference-helper'; const id = 'kana'; for (let phase = 0; phase < 6; phase++) {`;
+    synthetic[2] = "test('synthetic reference phase ' + phase, async () => {";
+    for (const [index, position] of positions.entries()) {
+      const prefix = lines[position.line - 1].split('async () => {')[0];
+      assert.equal(prefix.indexOf('await test.step(') + 1, position.column);
+      synthetic[position.line - 1] = `${prefix}async () => { await fail(phase, ${index}); });`;
+    }
+    synthetic[positions.at(-1).line] = '}); }';
+    await mkdir(join(root, 'tests/e2e'), { recursive: true });
+    await writeFile(join(root, file), synthetic.join('\n'));
+    await writeFile(join(root, 'tests/e2e/offline-reference-helper.ts'), `import { expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};\nexport async function fail(selected, current) { if (selected === current) expect(${JSON.stringify(canary)}).toBe('PRIVATE_EXPECTED'); }\n`);
+    await writeFile(join(root, 'offline.config.mjs'), `export default ${JSON.stringify({ testDir: './tests/e2e', workers: 1, retries: 0, projects: [{ name: 'chromium-app-smoke' }], reporter: [[join(repository, 'tests/e2e/reporter.ts')]] })};\n`);
+    const journalPath = join(root, 'journal.jsonl'); await writeFile(journalPath, '', { mode: 0o600 });
+    const child = spawnSync(process.execPath, [join(repository, 'node_modules/@playwright/test/cli.js'), 'test', '--config', 'offline.config.mjs'], {
+      cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: 'true', NODE_OPTIONS: '--max-old-space-size=192 --max-semi-space-size=4',
+        QA_PRIVATE_DIAGNOSTIC_FILE: journalPath, QA_PRIVATE_DIAGNOSTIC_TOKEN: token },
+    });
+    // Safe boolean actuals cannot serialize a raw spawn Error or stream.
+    assert.equal(child.error === undefined, true, 'reference-native-child-error');
+    assert.equal(child.signal === null, true, 'reference-native-child-signal');
+    assert.equal(child.status === 1, true, 'reference-native-six-intended-failures');
+    const output = [];
+    // One diagnostic-only invocation containing six intentional failures.
+    // It is unrelated to the actual sixteen-case application lane inventory.
+    const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
+    assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
+    const invocation = report.invocations[0];
+    assert.deepEqual(invocation.counts, { passed: 0, failed: 6, timedOut: 0, skipped: 0, interrupted: 0, unknown: 0 });
+    assert.equal(invocation.status, 'failed'); assert.deepEqual(invocation.active, []); assert.equal(invocation.omitted, 0);
+    assert.equal(invocation.runnerErrors, 0); assert.equal(invocation.details.length, 6);
+    assert.deepEqual(invocation.details.map(detail => detail.test), [1, 2, 3, 4, 5, 6]);
+    const actual = [];
+    for (const [index, detail] of invocation.details.entries()) {
+      assert.equal(detail.source, 57); assert.equal(detail.line, 3); assert.equal(detail.column, 5); assert.equal(detail.project, 5);
+      assert.equal(detail.failure.category, 1); assert.deepEqual(detail.failure.errors, []); assert.deepEqual(detail.failure.failedOperations, []);
+      assert.deepEqual(detail.failure.failedSteps, [expectedCoordinates[index]]);
+      assert.equal(detail.failure.stepScanTruncated, 0); actual.push(detail.failure.failedSteps[0]);
+    }
+    assert.equal(new Set(actual.map(item => `${item.line}:${item.column}`)).size, 6);
+    assert.deepEqual(actual, expectedCoordinates); privateOutput(output);
+    const text = output.join('\n'), bytes = await readFile(journalPath, 'utf8');
+    for (const secret of [canary, 'PRIVATE_EXPECTED', file, 'offline-reference-helper', root, 'synthetic reference phase', ...positions.map(item => lines[item.line - 1])]) {
+      assert.ok(!text.includes(secret)); assert.ok(!bytes.includes(secret));
+      assert.ok(!child.stdout.includes(secret)); assert.ok(!child.stderr.includes(secret));
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
