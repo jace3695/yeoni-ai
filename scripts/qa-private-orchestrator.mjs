@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { isSafetyStage, emitSafetyJournal, safetySucceeded } from './qa-private-safety-diagnostics.mjs';
 import { runPrivateStage, lifecycleLine } from './qa-private-lifecycle.mjs';
 import { randomBytes } from 'node:crypto';
 import { diagnosticInvocations, emitDiagnosticJournal } from './qa-private-diagnostics.mjs';
@@ -47,6 +48,19 @@ export async function runStages(stages, { cwd, runnerTemp, env = process.env, em
         const childEnv = { ...inherited };
         delete childEnv.QA_PRIVATE_DIAGNOSTIC_FILE;
         delete childEnv.QA_PRIVATE_DIAGNOSTIC_TOKEN;
+        delete childEnv.QA_PRIVATE_SAFETY_FILE;
+        delete childEnv.QA_PRIVATE_SAFETY_TOKEN;
+        const safety = isSafetyStage(stage);
+        const safetyPath = join(local, 'safety.jsonl');
+        const safetyToken = randomBytes(32).toString('hex');
+        let safetyIdentity;
+        if (safety) {
+          const handle = await open(safetyPath, 'wx', 0o600);
+          try { safetyIdentity = await handle.stat(); } finally { await handle.close(); }
+          control.check();
+          childEnv.QA_PRIVATE_SAFETY_FILE = safetyPath;
+          childEnv.QA_PRIVATE_SAFETY_TOKEN = safetyToken;
+        }
         const expected = diagnosticInvocations(stage.command);
         // An exact inventory must never fall back to exit-code-only acceptance.
         if (stage.diagnosticInventory !== undefined && expected !== 1) throw new Error('Invalid diagnostic invocation');
@@ -90,6 +104,11 @@ export async function runStages(stages, { cwd, runnerTemp, env = process.env, em
             stage: stage.id, termination: control.termination, emit: line => { if (!control.finished) emit(line); }, inventory: stage.diagnosticInventory });
           // Diagnostic uncertainty cannot upgrade an exit failure or certify success.
           if (report.report !== 'complete' || report.invocations.some(item => item.status !== 'passed')) code = 1;
+        }
+        if (safety) {
+          const report = await emitSafetyJournal({ path: safetyPath, token: safetyToken, identity: safetyIdentity,
+            termination: control.termination, emit: line => { if (!control.finished) emit(line); } });
+          if (!safetySucceeded(report, code, control.termination)) code = 1;
         }
         return { code, additions };
       } finally {

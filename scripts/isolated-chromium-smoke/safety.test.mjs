@@ -80,7 +80,7 @@ test('exact command, fixed project/source inventory, readiness and ceilings stay
   assert.deepEqual(inventory, [{ source: 19, line: 3, column: 5, project: 5 }, { source: 38, line: 3, column: 5, project: 5 },
     { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }, { source: 51, line: 3, column: 5, project: 5 }, { source: 52, line: 3, column: 5, project: 5 }, { source: 53, line: 3, column: 5, project: 5 }, { source: 54, line: 3, column: 5, project: 5 }, { source: 55, line: 3, column: 5, project: 5 }, { source: 56, line: 3, column: 5, project: 5 }, { source: 57, line: 3, column: 5, project: 5 }]);
   assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts', 'tests/e2e/japanese-settings-recovery.spec.ts', 'tests/e2e/japanese-grammar-chunk.spec.ts', 'tests/e2e/japanese-reference-routine.spec.ts']);
-  assert.equal(stages[0].command, 'node --test scripts/isolated-chromium-smoke/safety.test.mjs');
+  assert.equal(stages[0].command, 'node --test --test-reporter=./scripts/qa-private-safety-reporter.mjs scripts/isolated-chromium-smoke/safety.test.mjs');
   assert.equal(stages[1].command, 'pinned-bundled-chromium-readiness');
   assert.equal(stages[1].lifecycleDiagnostics, true);
   assert.equal(stages[0].lifecycleDiagnostics, true);
@@ -1815,3 +1815,6 @@ test('reference six literal phases retain source 57 numeric native attribution w
     }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+// Append-only import preserves original declaration coordinates. ESM registers these after prior imports, before this module's controls.
+import '../qa-private-safety-diagnostics.test.mjs';
