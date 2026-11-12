@@ -849,7 +849,7 @@ test('active settings coverage pins its reviewed product overlay and narrowly sc
   "app/language/settings/page.tsx": "b6242717b70eff28322f6f64641ffae302f4525b129d5b0f7773140ded2e6b50",
   "utils/languageSettingsPage.ts": "6093eecb8f0857251c5b97034fd9033d0b0a3e948ef1b4ef1830add5c2635b5a",
   "tests/japanese-preview-session-options.test.ts": "ca017c35715ee180e704dc59d7ccbebef17df7b1ed73f8f87e68f1d0b8d57877",
-  "tests/e2e/japanese-settings-recovery.spec.ts": "3b315176ad0a7f40e471753140cb70fc2abe5dfc34a5ddab453a8e5097123052",
+  "tests/e2e/japanese-settings-recovery.spec.ts": "c4c6de9ae6cc2eba1fa416c0f2eef951d1ef7a3273194ce3c2f5da88deea8d95",
   "tests/e2e/japanese-settings-state.ts": "005613b394514b151d8b134325c19fe637f37c31fd86b605fb5b5277dc697878"
 };
   for (const [path, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash, path);
@@ -857,7 +857,7 @@ test('active settings coverage pins its reviewed product overlay and narrowly sc
   const helper = await readFile('tests/e2e/japanese-settings-state.ts', 'utf8');
   // Nested select options are part of Playwright's exact label text, not its accessible name.
   // Keep exact role/name matching; do not broaden to substring labels or hide ambiguity.
-  for (const [name, count] of Object.entries({ '하루 학습 시간': 8, '글자·문제 도움': 2, '우선 학습 과정': 2, '기본 음성 속도': 2 })) {
+  for (const [name, count] of Object.entries({ '하루 학습 시간': 9, '글자·문제 도움': 2, '우선 학습 과정': 2, '기본 음성 속도': 2 })) {
     assert.equal(source.split(`getByRole('combobox', { name: '${name}', exact: true })`).length - 1, count);
     assert.ok(!source.includes(`getByLabel('${name}'`));
   }
@@ -865,14 +865,14 @@ test('active settings coverage pins its reviewed product overlay and narrowly sc
   for (const text of [source, helper]) for (const forbidden of ['page.route', 'route.fulfill', 'addInitScript', 'waitForTimeout',
     'test.setTimeout', 'test.skip', 'test.fixme', 'audio.play', 'speakJapanese', 'qa.createAccount(', 'process.env.', 'saveLanguageSettingsPage(', 'readLanguageSettingsPage(', 'createRoot(']) assert.ok(!text.includes(forbidden), forbidden);
   for (const required of ["await login(page, qa.account, '/language')", 'peer = await context.newPage()', "peer.goto('/language/settings')",
-    'await confirmedSettings(page, qa, saved, fitness)', 'await confirmedSettings(peer, qa, saved, fitness)', 'await noSuccess(page)',
+    'await confirmedSettings(page, qa, saved, fitness)', 'await confirmedSettings(peer!, qa, saved, fitness)', 'await noSuccess(page)',
     "await settingsError(page, 'stale')", "await settingsError(page, 'write')", "await settingsError(page, 'confirmation')",
     "await settingsError(page, 'invalid')", 'await rereadSettings(page, false)', 'await rereadSettings(page, true)',
     "'japaneseAppSettings', 'before-write'", "'learningSettings', 'before-write'", "'integratedLearningSettingsV1', 'before-write'",
     "'integratedLearningSettingsV1', 'readback'", 'await localSettings(page, partial)', 'await localSettings(page, uncertain)',
     'await page.reload()', 'await page.goBack()', 'await page.goForward()', 'await restoredEditor()', 'width: 320', 'expect(size.scroll).toBeLessThanOrEqual(size.width)',
     "holdNext('PATCH', 'response', 'language_user_state')", 'finally { hold.release(); }', 'await qa.traffic.drain()',
-    'qa.traffic.releaseAll()', 'await restoreSettingsFault(page)', 'await peer.close()', "context.off('request', onRequest)",
+    'qa.traffic.releaseAll()', 'await restoreSettingsFault(page)', 'await closeSettingsPeer(peerContext, peer, qa.traffic, onRequest)', "context.off('request', onRequest)",
     'await replaceSyntheticSettings(page, key, saved[key] as string)', 'expect(ttsRequests', 'planned accounts']) {
     assert.ok(source.toLowerCase().includes(required.toLowerCase()), required);
   }
@@ -886,6 +886,18 @@ test('active settings coverage pins its reviewed product overlay and narrowly sc
   assert.equal(helper.match(/client\.from\('language_user_state'\)\.update/g)?.length, 1);
   assert.equal(helper.match(/localStorage\.setItem/g)?.length, 1);
   assert.ok(!source.includes('localStorage.setItem'));
+  for (const required of ['browser.newContext(', "await qa.traffic.install(peerContext)", "peerContext.on('request', onRequest)",
+    "await login(peer, qa.account, '/language/settings')", "name: '기록을 안전하게 열고 있어요', exact: true",
+    "await page.evaluate(() => window.dispatchEvent(new Event('focus')))",
+    'await expect.poll(async () => canonical(await settingsState(page))).toBe(canonical(saved))',
+    'await synced(page); await qa.traffic.drain()', 'await page.bringToFront(); await qa.traffic.drain(); await synced(page)', "await expect(selectedGoal(page, 4)).toHaveAttribute('aria-pressed', 'true')",
+    "if (peerContext) await peerContext.unrouteAll({ behavior: 'wait' })", "if (peerContext) await peerContext.close()", "peerContext?.off('request', onRequest)", "viewport: page.viewportSize()", "await navigator.locks.query()", "toEqual({ held: 1, pending: 1 })"])
+    assert.ok(source.includes(required), required);
+  assert.ok(source.indexOf('await qa.traffic.install(peerContext)') < source.indexOf('peer = await peerContext.newPage()'));
+  assert.ok(source.indexOf('await expect.poll(async () => canonical(await settingsState(page)))') < source.indexOf("const observe = await installSettingsFault"));
+  assert.equal(source.match(/window\.dispatchEvent/g)?.length, 1);
+  for (const forbidden of ['setOffline(', 'storageState:', 'newCDPSession', 'setFocusEmulationEnabled', 'navigator.locks.request', 'localStorage.removeItem']) assert.ok(!source.includes(forbidden), forbidden);
+
 });
 
 test('actual settings fault helper preserves unrelated storage and restores original descriptors in every mode', async () => {
@@ -954,11 +966,26 @@ test('settings acknowledgement rejects undelivered synthetic stale and mismatche
 test('settings eight literal phases retain unique native test identities in one private fixtureless invocation', async () => {
   const repository = process.cwd(), root = await mkdtemp(join(tmpdir(), 'settings-native-phases-'));
   const file = 'tests/e2e/japanese-settings-recovery.spec.ts';
-  const expectedLines = [29, 38, 67, 85, 108, 123, 146, 158];
+  const expectedLines = [29, 38, 67, 119, 142, 157, 180, 192];
+  const checkpointLines = [68, 79, 87, 92, 103, 111];
   try {
     const source = await readFile(file, 'utf8'), lines = source.split('\n');
-    const positions = lines.flatMap((line, index) => line.includes('await test.step(') ? [index + 1] : []);
+    const positions = lines.flatMap((line, index) => line.startsWith('    await test.step(') ? [index + 1] : []);
     assert.deepEqual(positions, expectedLines);
+    const nested = lines.flatMap((line, index) => /^      await test.step\('0[1-6]',/.test(line) ? [index + 1] : []);
+    assert.deepEqual(nested, checkpointLines);
+    const { failureDiagnostics } = await import('../../tests/e2e/failure-diagnostics.ts');
+    for (const [index, line] of nested.entries()) {
+      assert.ok(lines[line - 1].startsWith(`      await test.step('0${index + 1}', async () => {`));
+      const location = { file, line: 3, column: 5 }, at = { file, line, column: 7 };
+      const details = failureDiagnostics(location, { status: 'failed', errors: [], steps: [
+        { category: 'test.step', error: {}, location: { file, line: 67, column: 5 }, steps: [
+          { category: 'test.step', error: {}, location: at, steps: [] },
+        ] },
+      ] }, repository, new Set([file]));
+      assert.deepEqual(details.failedSteps, [{ file, line: 67, column: 5 }, at]);
+      assert.equal(details.stepScanTruncated, undefined);
+    }
     const synthetic = Array(lines.length).fill('');
     // Eight unique native test identities share the actual definition at 3:5.
     // Only CLI/config startup is shared; native failures may restart workers.
@@ -967,7 +994,14 @@ test('settings eight literal phases retain unique native test identities in one 
     for (const [index, line] of positions.entries()) {
       const prefix = lines[line - 1].split('async () => {')[0];
       assert.ok(prefix.includes('await test.step('));
-      synthetic[line - 1] = `${prefix}async () => { await fail(phase, ${index}); });`;
+      if (index === 2) {
+        // The existing peer failure also proves a real nested coordinate without
+        // adding a native test, CLI startup or worker restart to the safety lane.
+        synthetic[line - 1] = `${prefix}async () => {`;
+        const nestedLine = checkpointLines[4], nestedPrefix = lines[nestedLine - 1].split('async () => {')[0];
+        synthetic[nestedLine - 1] = `${nestedPrefix}async () => { await fail(phase, ${index}); });`;
+        synthetic[nestedLine] = '    });';
+      } else synthetic[line - 1] = `${prefix}async () => { await fail(phase, ${index}); });`;
     }
     synthetic[positions.at(-1)] = '}); }';
     await mkdir(join(root, 'tests/e2e'), { recursive: true });
@@ -990,15 +1024,16 @@ test('settings eight literal phases retain unique native test identities in one 
     assert.equal(invocation.runnerErrors, 0); assert.equal(invocation.details.length, 8);
     assert.deepEqual(invocation.details.map(detail => detail.test), [1, 2, 3, 4, 5, 6, 7, 8]);
     const actualLines = [];
-    for (const detail of invocation.details) {
+    for (const [index, detail] of invocation.details.entries()) {
       assert.equal(detail.source, 55); assert.equal(detail.line, 3); assert.equal(detail.column, 5); assert.equal(detail.project, 5);
       assert.equal(detail.failure.category, 1); assert.deepEqual(detail.failure.errors, []); assert.deepEqual(detail.failure.failedOperations, []);
-      assert.equal(detail.failure.failedSteps.length, 1); assert.equal(detail.failure.failedSteps[0].source, 55);
+      assert.equal(detail.failure.failedSteps.length, index === 2 ? 2 : 1); assert.equal(detail.failure.failedSteps[0].source, 55);
+      if (index === 2) assert.deepEqual(detail.failure.failedSteps[1], { source: 55, line: checkpointLines[4], column: 7 });
       assert.equal(detail.failure.stepScanTruncated, 0); actualLines.push(detail.failure.failedSteps[0].line);
     }
     assert.equal(new Set(actualLines).size, 8); assert.deepEqual(actualLines, expectedLines); privateOutput(output);
     const text = output.join('\n'), bytes = await readFile(journalPath, 'utf8');
-    for (const secret of [canary, 'PRIVATE_EXPECTED', file, 'offline-settings-helper', root, 'synthetic settings phase', ...positions.map(line => lines[line - 1])]) {
+    for (const secret of [canary, 'PRIVATE_EXPECTED', file, 'offline-settings-helper', root, 'synthetic settings phase', ...[...positions, ...checkpointLines].map(line => lines[line - 1])]) {
       assert.ok(!text.includes(secret)); assert.ok(!bytes.includes(secret));
     }
   } finally { await rm(root, { recursive: true, force: true }); }

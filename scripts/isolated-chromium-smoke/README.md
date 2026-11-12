@@ -300,19 +300,31 @@ The separately reviewed active settings three-file overlay is pinned exactly.
 No browser execution or same-commit CI success is claimed by this preparation.
 
 `japanese-settings-recovery.spec.ts:3` (source 55, project 5) uses one newly generated
-synthetic account and one temporary same-context page. The lane therefore plans
+synthetic account, a temporary same-context page that must remain behind the
+unchanged exclusive-storage gate after a read-only native lock query observes
+one held owner and one pending peer request, and an independently authenticated virtual
+device in a fresh BrowserContext for that same account. The lane therefore plans
 16 accounts, not a claim that 16 accounts have been created or cleaned. Its eight
 literal phases cover initial raw preservation; automatic detail plus explicit
-learning/integrated edits with nested future fields; a real second-screen stale
-snapshot; detail and first-key failure/retry; second-key partial save/no rollback;
+learning/integrated edits with nested future fields; a real independent-device
+save followed by cloud adoption and stale original-screen refusal; detail and first-key failure/retry; second-key partial save/no rollback;
 write-success/readback-failure and reread cancel/confirm; 320px reload, Back/Forward
 and actual navigation reentry; three synthetic malformed/invalid settings mounts.
 
 Storage fault injection is restricted to this page's local Storage realm and the
 three settings keys. It neither mocks React nor replaces a successful network
 response. The one-shot fault is removed in finally; actual native set/get
-methods and descriptors are restored. Reread dialog listeners, temporary page,
-request observer and response hold also have finally cleanup. The unchanged qa
+methods and descriptors are restored. Reread dialog listeners, both temporary pages, the independent context, both
+request observers and response hold also have finally cleanup. Traffic is installed
+before navigation in each context. After bringToFront, existing traffic drains
+and the original page must be synced before the single focus stimulus, so an
+older in-flight cycle cannot swallow that stimulus and leave only the 30-second
+periodic poll. Then one plain synthetic focus
+event invokes the unchanged collector listener because pinned Playwright enables
+focus emulation. This does not prove native foreground/visibility delivery; all
+following authenticated GET, apply, local and server observations remain real. The original snapshot must remain visibly stale
+after complete local cloud adoption and server-confirmed status, before the
+unchanged zero-write refusal and explicit cancel/confirm reread assertions. The unchanged qa
 fixture still owns route drain/context close/Auth deletion/storage and row cleanup;
 interrupted teardown is not a successful cleanup result.
 
@@ -333,13 +345,13 @@ stage and 775-second supervisor; actual timing fit is unverified. No timeout,
 retry, worker count, host validation, dependency installation, exact worker marker,
 network gate or private diagnostic guard is relaxed. The local safety suite adds
 source pins, exact 14-item rejection cases, nine synthetic fault-controller checks,
-acknowledgement sensitivity controls and eight native fixtureless failure phases in one CLI invocation with eight unique native tests. Existing reading/source51–54 loops are unchanged; worker restarts after failures remain native.
+acknowledgement sensitivity controls and eight native fixtureless failure phases in one CLI invocation with eight unique native tests. The peer-phase native case also verifies its same-spec numeric nested coordinate. Six fixed numeric peer checkpoints separate blocked-gate, independent-device readiness, peer save confirmation, original-page adoption, stale refusal and reread; lightweight reporter checks cover their full inventory without extra CLI startup or worker restarts. Existing reading/source51–54 loops are unchanged; worker restarts after failures remain native.
 Those are not actual app, Auth, DB, browser or cleanup evidence. The unit test-file
 inventory remains exactly 345.
 
 Deferred actual-browser boundaries: all value/extension permutations, owner/epoch
 and reset/journal changes during this editor, OS quota/storage implementation failures,
-no-op and throw-after-write setter variants, alternate-context/server concurrency,
+no-op and throw-after-write setter variants, overlapping alternate-context/server writes,
 logout/relogin specifically after recovery, killed-profile recovery, every layout,
 WebKit and physical devices. Existing normal relogin/reset tests are retained but
 are not relabeled as the new settings-error recovery evidence. The exact candidate

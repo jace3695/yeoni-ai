@@ -1,8 +1,8 @@
 import { test, expect, login, canonical, type State } from './fixture';
-import { seedSettings, changed, selectedGoal, saveLearning, noSuccess, settingsError, localSettings, confirmedSettings, rereadSettings, installSettingsFault, restoreSettingsFault, replaceSyntheticSettings, successText, type SettingsKey } from './japanese-settings-state';
-test('active settings preserve extensions and reject stale partial or uncertain saves through explicit recovery and reentry', async ({ page, context, qa }) => {
+import { seedSettings, changed, selectedGoal, saveLearning, noSuccess, settingsError, localSettings, settingsState, confirmedSettings, rereadSettings, installSettingsFault, restoreSettingsFault, replaceSyntheticSettings, successText, type SettingsKey } from './japanese-settings-state';
+test('active settings preserve extensions and reject stale partial or uncertain saves through explicit recovery and reentry', async ({ page, context, browser, qa }) => {
   const { synced } = await import('./japanese-level-flow-state');
-  let saved: State, fitness: State, peer: import('@playwright/test').Page | undefined;
+  let saved: State, fitness: State, peer: import('@playwright/test').Page | undefined, peerContext: import('@playwright/test').BrowserContext | undefined;
   let ttsRequests = 0;
   const onRequest = (request: import('@playwright/test').Request) => {
     const url = new URL(request.url());
@@ -65,22 +65,56 @@ test('active settings preserve extensions and reject stale partial or uncertain 
       saved = expected; await confirmedSettings(page, qa, saved, fitness);
     });
     await test.step('two actual open settings screens reject stale writes and preserve cancel before explicit reread', async () => {
-      peer = await context.newPage(); await peer.goto('/language/settings'); await synced(peer);
-      await expect(selectedGoal(peer, 4)).toHaveAttribute('aria-pressed', 'true'); await localSettings(peer, saved);
-      await selectedGoal(peer, 3).click(); await peer.getByRole('combobox', { name: '하루 학습 시간', exact: true }).selectOption('5'); await saveLearning(peer);
-      saved = changed(changed(saved, 'learningSettings', { dailyGoalCount: 3 }), 'integratedLearningSettingsV1', { dailyMinutes: 5 });
-      await confirmedSettings(peer, qa, saved, fitness);
-      await page.bringToFront(); await goal(2); await minutes(10);
-      const observe = await installSettingsFault(page, 'learningSettings', 'observe');
-      try {
-        await saveLearning(page); await settingsError(page, 'stale'); await noSuccess(page); await localSettings(page, saved);
-        expect((await observe.stats()).writes).toEqual(noWrites);
-      } finally { await observe.restore(); }
-      await rereadSettings(page, false); await expect(selectedGoal(page, 2)).toHaveAttribute('aria-pressed', 'true');
-      await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('10'); await localSettings(page, saved);
-      await rereadSettings(page, true); await expect(selectedGoal(page, 3)).toHaveAttribute('aria-pressed', 'true');
-      await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('5'); await localSettings(page, saved); await noSuccess(page);
-      await qa.traffic.drain(); await peer.close(); peer = undefined;
+      await test.step('01', async () => {
+        // The root gate deliberately permits one document per local storage realm.
+        peer = await context.newPage(); await peer.goto('/language/settings');
+        await expect.poll(() => peer!.evaluate(async () => {
+          const locks = await navigator.locks.query(), name = 'yeoni-app-storage-owner-v1';
+          return { held: locks.held?.filter(lock => lock.name === name).length, pending: locks.pending?.filter(lock => lock.name === name).length };
+        })).toEqual({ held: 1, pending: 1 });
+        await expect(peer.getByRole('heading', { name: '기록을 안전하게 열고 있어요', exact: true })).toBeVisible();
+        await expect(peer.getByRole('button', { name: '설정 저장', exact: true })).toHaveCount(0);
+        await localSettings(page, saved); await peer.close(); peer = undefined;
+      });
+      await test.step('02', async () => {
+        // A second device has independent storage/locks, but the same real owner.
+        peerContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', viewport: page.viewportSize(),
+          timezoneId: 'Asia/Seoul', locale: 'ko-KR', serviceWorkers: 'block' });
+        await qa.traffic.install(peerContext); peerContext.on('request', onRequest);
+        peer = await peerContext.newPage(); await login(peer, qa.account, '/language/settings'); await synced(peer); await peer.bringToFront();
+        await expect(selectedGoal(peer, 4)).toHaveAttribute('aria-pressed', 'true'); await localSettings(peer, saved);
+      });
+      await test.step('03', async () => {
+        await selectedGoal(peer!, 3).click(); await peer!.getByRole('combobox', { name: '하루 학습 시간', exact: true }).selectOption('5'); await saveLearning(peer!);
+        saved = changed(changed(saved, 'learningSettings', { dailyGoalCount: 3 }), 'integratedLearningSettingsV1', { dailyMinutes: 5 });
+        await confirmedSettings(peer!, qa, saved, fitness);
+      });
+      await test.step('04', async () => {
+        await page.bringToFront(); await qa.traffic.drain(); await synced(page);
+        // Explicit synthetic focus stimulus: Playwright emulates focus already.
+        // The unchanged listener performs genuine authenticated GET/apply work.
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+        // Complete cloud adoption before counting writes from the stale UI save.
+        await expect.poll(async () => canonical(await settingsState(page))).toBe(canonical(saved));
+        await synced(page); await qa.traffic.drain();
+        await expect(selectedGoal(page, 4)).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('20');
+      });
+      await test.step('05', async () => {
+        await goal(2); await minutes(10);
+        const observe = await installSettingsFault(page, 'learningSettings', 'observe');
+        try {
+          await saveLearning(page); await settingsError(page, 'stale'); await noSuccess(page); await localSettings(page, saved);
+          expect((await observe.stats()).writes).toEqual(noWrites);
+        } finally { await observe.restore(); }
+      });
+      await test.step('06', async () => {
+        await rereadSettings(page, false); await expect(selectedGoal(page, 2)).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('10'); await localSettings(page, saved);
+        await rereadSettings(page, true); await expect(selectedGoal(page, 3)).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toHaveValue('5'); await localSettings(page, saved); await noSuccess(page);
+      });
+      await closeSettingsPeer(peerContext, peer, qa.traffic, onRequest); peer = undefined; peerContext = undefined;
     });
     await test.step('targeted automatic and first-key write failures retain selections and allow unchanged-choice retries', async () => {
       const detailFault = await installSettingsFault(page, 'japaneseAppSettings', 'before-write');
@@ -181,11 +215,29 @@ test('active settings preserve extensions and reject stale partial or uncertain 
     qa.traffic.releaseAll();
     try { await restoreSettingsFault(page); }
     finally {
-      try { await qa.traffic.drain(); }
-      finally { if (peer && !peer.isClosed()) await peer.close(); context.off('request', onRequest); }
+      try { await closeSettingsPeer(peerContext, peer, qa.traffic, onRequest); }
+      finally { context.off('request', onRequest); }
     }
     expect(ttsRequests, 'No TTS requests during settings verification').toBe(0);
     // The unchanged qa fixture owns context close, account removal and exact
     // zero-row/storage cleanup evidence. Planned accounts are not cleanup proof.
   }
 });
+
+// Mirror the fixture's drain/unroute/close order. Every resource still gets a
+// cleanup attempt if an earlier cleanup rejects; errors remain visible.
+async function closeSettingsPeer(peerContext: import('@playwright/test').BrowserContext | undefined,
+  peer: import('@playwright/test').Page | undefined, traffic: import('./fixture').Traffic,
+  onRequest: (request: import('@playwright/test').Request) => void) {
+  try { await traffic.drain(); }
+  finally {
+    try { if (peerContext) await peerContext.unrouteAll({ behavior: 'wait' }); }
+    finally {
+      try { if (peerContext) await peerContext.close(); }
+      finally {
+        try { if (peer && !peer.isClosed()) await peer.close(); }
+        finally { peerContext?.off('request', onRequest); }
+      }
+    }
+  }
+}
