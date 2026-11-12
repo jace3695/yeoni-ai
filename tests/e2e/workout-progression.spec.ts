@@ -1,6 +1,6 @@
 import { buildCurrentWorkoutSettings, CURRENT_WEEKLY_METHODS } from '../../app/data/currentWorkoutDirection';
 import { expect, login, original, synced, test, today, type State } from './fixture';
-
+import { canonical, localState } from './fixture'; import { plannedReview, expectedApplied, same, silentGuard, noOverflow } from './workout-core-state';
 const MAIN_EXERCISES = ['덤벨 고블릿 스쿼트', '밴드 로우', '덤벨 플로어프레스', '루프밴드 사이드워크', '버드독'];
 
 function dateMinus(date: string, days: number) {
@@ -34,7 +34,7 @@ function completedStrengthSession() {
   };
 }
 
-test('authenticated workout review requires confirmation before applying one load step', async ({ page, qa }) => {
+test('authenticated workout review requires confirmation before applying one load step', async ({ page, context, qa }) => {
   await page.setViewportSize({ width: 320, height: 844 });
   const date = today();
   const settings = buildCurrentWorkoutSettings({ weeklyGroups: {}, weeklyMethods: {}, weeklyEdits: {}, exerciseTargets: {}, dateOverrides: {} });
@@ -55,26 +55,54 @@ test('authenticated workout review requires confirmation before applying one loa
   const update = await qa.account.client.from('user_app_state').update({ state: seeded }).eq('user_id', qa.account.id);
   expect(update.error).toBeNull();
 
-  await login(page, qa.account);
-  await synced(page);
-  await page.goto('/fitness');
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), {
-    message: 'the 320px workout view has no horizontal page overflow',
-  }).toBe(true);
-  await expect(page.getByText('근력일 한 운동의 중량 0.5kg 증가 검토', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '변경 내용 확인', exact: true }).click();
-
-  const apply = page.getByRole('button', { name: '확인한 변경 적용', exact: true });
-  await expect(apply).toBeDisabled();
-  await page.getByLabel(/5\.5kg 덤벨을 안전하게 준비/).check();
-  await expect(apply).toBeEnabled();
-  await apply.click();
-  await expect(page.getByText(/확인한 변경을 적용했습니다/)).toBeVisible();
-
-  await expect.poll(async () => {
-    const state = await qa.read();
-    const saved = state['ai-fitness-user-workout-settings'] as typeof settings | undefined;
-    return ['mon', 'wed', 'fri'].map((day) => saved?.weeklyExerciseTargets?.[day as 'mon' | 'wed' | 'fri']?.[MAIN_EXERCISES[0]]?.weightKg).filter(Boolean);
-  }, { message: 'the confirmed 5.5kg target reached the actual database' }).toEqual([5.5]);
-  await synced(page);
+  // Primary history above is explicit synthetic fixture input, not UI-created training.
+  const language = await qa.readLanguage();
+  const silence = await silentGuard(page, context);
+  try {
+    await login(page, qa.account, '/fitness'); await synced(page);
+    await expect.poll(async () => canonical(await qa.read())).toBe(canonical(seeded));
+    same(await localState(page), seeded, 'workout-initial-local-exact');
+    const before = await qa.read(), localBefore = await localState(page);
+    const review = plannedReview(before, date, MAIN_EXERCISES[0]);
+    const card = page.getByRole('region', { name: '기록에 따른 운동 조정', exact: true });
+    const preserved = async () => {
+      same(await qa.read(), before, 'workout-preview-db-unchanged');
+      same(await localState(page), localBefore, 'workout-preview-local-unchanged');
+      same(await qa.readLanguage(), language, 'workout-language-unchanged');
+    };
+    await expect(card.getByText('근력일 한 운동의 중량 0.5kg 증가 검토', { exact: true })).toBeVisible();
+    await noOverflow(page); await silence.check();
+    await card.getByRole('button', { name: '변경 내용 확인', exact: true }).click();
+    const apply = card.getByRole('button', { name: '확인한 변경 적용', exact: true });
+    await expect(apply).toBeDisabled(); await preserved();
+    // The UI offers collapse, not a no-write "keep plan" decision. Collapse is cancellation here.
+    await card.getByRole('button', { name: '변경 내용 접기', exact: true }).click();
+    await expect(apply).toHaveCount(0); await preserved();
+    await card.getByRole('button', { name: '변경 내용 확인', exact: true }).click();
+    await expect(apply).toBeDisabled();
+    await expect(card.getByText(review.change!.before, { exact: true })).toBeVisible();
+    await expect(card.getByText(review.change!.after, { exact: true })).toBeVisible();
+    await card.getByLabel(/5\.5kg 덤벨을 안전하게 준비/).check();
+    await expect(apply).toBeEnabled(); await preserved();
+    const started = Date.now();
+    await apply.click(); await expect(card.getByText(/확인한 변경을 적용했습니다/)).toBeVisible();
+    await synced(page);
+    await expect.poll(async () => ((await qa.read())['ai-fitness-user-workout-settings'] as typeof settings).adaptiveReviewDecisions?.length).toBe(1);
+    const saved = await qa.read();
+    const next = expectedApplied(before, saved, review, date, MAIN_EXERCISES[0], started, Date.now());
+    same(saved, next, 'workout-exact-db-change');
+    same(await localState(page), next, 'workout-exact-local-change');
+    qa.traffic.assertConfirmed(next);
+    same(await qa.readLanguage(), language, 'workout-language-preserved-after-save');
+    await noOverflow(page); await silence.check();
+    await page.reload(); await synced(page);
+    same(await qa.read(), next, 'workout-reload-exact-db');
+    same(await localState(page), next, 'workout-reload-exact-local');
+    same(await qa.readLanguage(), language, 'workout-reload-language-preserved');
+    await card.getByText('내가 확인한 조정 이력', { exact: true }).click();
+    await expect(card.getByText(`${review.change!.before} → ${review.change!.after}`, { exact: true })).toBeVisible();
+    expect(today(), 'workout-no-midnight-crossing').toBe(date);
+    expect(qa.traffic.blockedOrigins.size, 'workout-no-external-origin').toBe(0);
+    await noOverflow(page); await silence.check();
+  } finally { await silence.restore(); }
 });

@@ -40,7 +40,7 @@ test('safety observation is enabled only by the explicit exact stage command and
   assert.equal(stages[0].command, safetyCommand); assert.equal(isSafetyStage(stages[0]), true);
   for (const stage of [{ ...stages[0], id: 'stage-02' }, ...['', ' --list', ' --test-name-pattern=x', '\n', ' '].slice(1).map(suffix => ({ ...stages[0], command: safetyCommand + suffix })),
     { ...stages[0], command: 'node --test scripts/isolated-chromium-smoke/safety.test.mjs' }, { ...stages[0], command: 'exit 0' }]) assert.equal(isSafetyStage(stage), false);
-  assert.deepEqual(stages.map(item => item.timeoutMs), [60000, 240000, 465000]); assert.equal(totalTimeoutMs, 775000); assert.equal(inventory.length, 16);
+  assert.deepEqual(stages.map(item => item.timeoutMs), [60000, 240000, 465000]); assert.equal(totalTimeoutMs, 775000); assert.equal(inventory.length, 18);
 });
 
 test('fixed original declaration multiplicities retain all 274 prior controls and separate source identities', () => {

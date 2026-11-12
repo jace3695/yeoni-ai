@@ -58,4 +58,5 @@ export const sources = Object.freeze([
   'tests/e2e/japanese-settings-recovery.spec.ts', // 55
   'tests/e2e/japanese-grammar-chunk.spec.ts', // 56
   'tests/e2e/japanese-reference-routine.spec.ts', // 57
+  'tests/e2e/budget-first-manual.spec.ts', // 58
 ]);

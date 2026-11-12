@@ -77,7 +77,7 @@ jobs:
       - name: Verify disposable Auth and API persistence privately
         if: matrix.compiler == 'default'
         run: node scripts/isolated-auth-api/supervisor.mjs
-      - name: Verify sixteen authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately
+      - name: Verify eighteen authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately
         if: matrix.compiler == 'default'
         run: node scripts/isolated-chromium-smoke/supervisor.mjs
       - name: Remove disposable fixture

@@ -80,7 +80,7 @@ traversal: 18 questions and three lessons per unchanged 90-second test, with no
 omitted question or raised timeout. Actual fit in the unchanged overall lane
 remains unverified until a bounded run and fixture cleanup finish.
 
-The receipt test uses two generated owners. These sixteen tests plan eighteen disposable accounts in total; actual creation and cleanup require execution. The existing fixture handles
+The receipt test uses two generated owners. These eighteen tests plan twenty-one disposable accounts in total; actual creation and cleanup require execution. The existing fixture handles
 account creation, route draining, browser closure, deletion and scoped zero-row
 checks. Passing requires completion of all test teardown assertions. Interrupted
 or failed teardown is not certified. The existing unconditional disposable stack
@@ -158,7 +158,7 @@ this private API dependency explicit; an upstream change fails closed and needs
 review. The installer may write a validation marker, but this route never reads
 it as proof. ffmpeg's pinned installation identity is checked; its no-op native
 validator is not represented as shared-library readiness. Video remains disabled.
-This readiness stage does not launch a browser or prove the sixteen app flows.
+This readiness stage does not launch a browser or prove the eighteen app flows.
 Real launch, runtime dependencies/resources and all flow assertions remain stage
 03 evidence. Missing host requirements stop rather than trigger installation,
 system-Chrome fallback, security changes or a validation bypass.
@@ -215,7 +215,7 @@ rows, URLs, credentials, errors or DOM is forwarded to public output.
 
 The private diagnostic channel has a fresh random token, bounded reads, no-follow
 file access and an exact schema. Acceptance requires one completed invocation,
-the sixteen exact source coordinates with project ID 5, sixteen passed tests and zero
+the eighteen exact source coordinates with project ID 5, eighteen passed tests and zero
 skips, failures, unknown outcomes, active tests or runner errors. Missing, stale,
 partial, duplicate, malformed or oversized reports fail closed, even with exit 0.
 Existing project IDs are unchanged. Public output contains fixed labels and
@@ -490,3 +490,13 @@ That evidence is preserved separately and cannot certify this union. A private
 validation uses the earlier curated environment and explicit TAP reporter to
 check all274 completion records and zero fail/cancel/skip/omissions under60s.
 The official stage01 command and every existing CI resource ceiling stay intact.
+
+## Budget first-manual integration preparation (source58)
+The seventeenth case budget-first-manual.spec.ts:3 is appended, without renumbering sources1–57 or replacing any of the sixteen existing cases. Its exact reviewed R2 source creates the primary profile and expense through ordinary UI, verifies genuine RPC and authenticated readback, reload, owner isolation and preservation; only its second-owner synthetic sentinel is seeded. Receipt cleanup now includes budget_save_batches while existing user/account cleanup checks remain. SQL, grants, Auth, application code, paid/external-call guards are unchanged.
+
+Source preparation is not a first17-case success: no browser/native/DB execution occurred. Case90s, stage465s, total775s, worker1/retry0 and privacy20 cap remain. Runtime fit is an unmeasured assumption requiring actual isolated CI. Existing historical integration notes describe their earlier stage; the current strict inventory is17 and planned disposable accounts20. This package is independent of the common20 reference diagnostics and kana/generic candidates, which require explicit conflict reconciliation before integration.
+
+## All18 local preparation, workout source41
+The eighteenth case reuses source41 at its actual declaration37; no registry entry is added or renumbered (still58). The workout test/helper remain provisional pending independent source review. Existing17 and common20 diagnostics remain. Primary three-day workout history is synthetic direct seed, not UI-recorded exercise; real UI collapse/consent/apply/readback/reload checks are prepared, not executed. Full-state checks include the one load step, required historical override and decision record.
+
+Current strict inventory18, planned21 disposable accounts. Case90s/stage465s/total775s/worker1/retry0/privacy20 unchanged. Safety292 unchanged: no new native subprocess or large control. Runtime fit and actual18 success unverified. Remote publication remains blocked; this local packet is not a deployment or workaround. Historical17 notes above describe the previous stage.
