@@ -1,3 +1,4 @@
+import * as workoutCompletion from "./workoutCompletion.ts";
 import { isValidInbodyRecord } from './recordStorage.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,6 +22,7 @@ function cloudWithFetch(send: typeof fetch): typeof import('./cloudSync.ts') {
   }).outputText;
   const exports = {};
   const requireFixture = (path: string) => {
+    if (path === './workoutCompletion.ts') return workoutCompletion;
     if (path === './recordStorage.ts') return { isValidInbodyRecord };
     if (path === '../lib/supabase.ts') return { supabase };
     if (path === './appRecordReset.ts') return resets;

@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getLocalDateKey } from '../data/dietPlans';
-import { getWorkoutRecord, readWorkoutCompletionStore, WORKOUT_COMPLETED_DAYS_KEY } from '../data/workoutCompletion';
+import { getWorkoutRecord, readWorkoutCompletionStore, writeWorkoutCompletionStore } from '../data/workoutCompletion';
 import { createDefaultPullupProgress, getPullupVideoUrl, normalizePullupProgress, PULLUP_PROGRESS_KEY, PULLUP_STAGES, PullupProgress } from '../data/pullupTraining';
+
+const PULLUP_RECORD_ERROR = '철봉 기록 확인·저장을 완료하지 못했습니다. 추가 저장을 중단했습니다. 기록을 확인한 뒤 다시 열어 주세요.';
 
 const safetyRules = ['통증을 참고 진행하지 않기', '팔 저림, 어깨 통증, 목 통증이 있으면 즉시 중단', '허리가 꺾이거나 반동이 커지면 난이도를 낮추기', '밴드와 철봉 고정 상태를 매번 확인', '문틀 철봉의 허용 하중과 설치 상태를 확인'];
 
@@ -13,8 +15,12 @@ export default function PullupTrainingView() {
   const [pullupPain, setPullupPain] = useState(false);
   const [pullupMemo, setPullupMemo] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [recordError, setRecordError] = useState('');
+  const recordBlocked = useRef(false);
 
   useEffect(() => {
+    setSaveMessage('');
+    try {
     const todayRecord = getWorkoutRecord(readWorkoutCompletionStore()[getLocalDateKey()]);
     setPullupPain(Boolean(todayRecord.pullupPain));
     setPullupMemo(todayRecord.pullupMemo || '');
@@ -33,11 +39,16 @@ export default function PullupTrainingView() {
         window.localStorage.setItem(PULLUP_PROGRESS_KEY, JSON.stringify(createDefaultPullupProgress()));
       }
     }
+    } catch {
+      recordBlocked.current = true;
+      setSaveMessage('');
+      setRecordError(PULLUP_RECORD_ERROR);
+    }
   }, []);
 
   const save = (next: PullupProgress) => {
-    setProgress(next);
     window.localStorage.setItem(PULLUP_PROGRESS_KEY, JSON.stringify(next));
+    setProgress(next);
   };
 
   const stage = PULLUP_STAGES.find((item) => item.id === selectedStage) ?? PULLUP_STAGES[0];
@@ -54,7 +65,7 @@ export default function PullupTrainingView() {
     const dateKey = getLocalDateKey();
     const store = readWorkoutCompletionStore();
     const current = getWorkoutRecord(store[dateKey]);
-    window.localStorage.setItem(WORKOUT_COMPLETED_DAYS_KEY, JSON.stringify({
+    writeWorkoutCompletionStore({
       ...store,
       [dateKey]: {
         ...current,
@@ -64,39 +75,54 @@ export default function PullupTrainingView() {
         pullupPain: done ? pain : undefined,
         pullupMemo: done ? memo.trim() || undefined : undefined,
       },
-    }));
+    });
   };
 
-  const completeToday = () => {
+  const runRecordAction = (action: () => void) => {
+    setSaveMessage('');
+    if (recordBlocked.current) return;
+    try {
+      readWorkoutCompletionStore();
+      action();
+    } catch {
+      recordBlocked.current = true;
+      setSaveMessage('');
+      setRecordError(PULLUP_RECORD_ERROR);
+    }
+  };
+
+  const completeToday = () => runRecordAction(() => {
     const pullupDone = !check.todayCompleted;
     const nextCheck = { ...check, todayCompleted: pullupDone, completedCount: check.todayCompleted ? Math.max(0, check.completedCount - 1) : check.completedCount + 1, painFree: pullupDone ? !pullupPain : check.painFree };
-    save({ ...progress, updatedAt: getLocalDateKey(), stageChecks: { ...progress.stageChecks, [`stage${stage.id}`]: nextCheck } });
     writeTodayPullupRecord(pullupPain, pullupMemo, pullupDone);
+    save({ ...progress, updatedAt: getLocalDateKey(), stageChecks: { ...progress.stageChecks, [`stage${stage.id}`]: nextCheck } });
     setSaveMessage(pullupDone ? '오늘 철봉 완료 기록을 저장했습니다.' : '오늘 철봉 완료 기록을 해제했습니다.');
-  };
+  });
 
-  const saveTodayPullupRecord = () => {
+  const saveTodayPullupRecord = () => runRecordAction(() => {
     const nextCheck = { ...check, todayCompleted: true, completedCount: check.todayCompleted ? check.completedCount : check.completedCount + 1, painFree: !pullupPain };
-    save({ ...progress, updatedAt: getLocalDateKey(), stageChecks: { ...progress.stageChecks, [`stage${stage.id}`]: nextCheck } });
     writeTodayPullupRecord(pullupPain, pullupMemo, true);
-    setSaveMessage('오늘 철봉 완료 기록을 저장했습니다.');
-  };
-
-
-  const cancelTodayPullupRecord = () => {
-    const nextCheck = { ...check, todayCompleted: false, completedCount: check.todayCompleted ? Math.max(0, check.completedCount - 1) : check.completedCount };
     save({ ...progress, updatedAt: getLocalDateKey(), stageChecks: { ...progress.stageChecks, [`stage${stage.id}`]: nextCheck } });
+    setSaveMessage('오늘 철봉 완료 기록을 저장했습니다.');
+  });
+
+
+  const cancelTodayPullupRecord = () => runRecordAction(() => {
+    const nextCheck = { ...check, todayCompleted: false, completedCount: check.todayCompleted ? Math.max(0, check.completedCount - 1) : check.completedCount };
     writeTodayPullupRecord(false, '', false);
+    save({ ...progress, updatedAt: getLocalDateKey(), stageChecks: { ...progress.stageChecks, [`stage${stage.id}`]: nextCheck } });
     setPullupPain(false);
     setPullupMemo('');
     setSaveMessage('철봉 기록을 취소했습니다.');
-  };
+  });
 
   const moveNext = () => {
     const nextStage = Math.min(PULLUP_STAGES.length, stage.id + 1);
     save({ ...progress, currentStage: nextStage, updatedAt: getLocalDateKey() });
     setSelectedStage(nextStage);
   };
+
+  if (recordError) return <section role="alert" className="rounded-xl border p-4"><p>{recordError}</p></section>;
 
   return <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
     <div className="rounded-2xl bg-[#111827] p-4 text-white sm:p-5 lg:col-span-2">

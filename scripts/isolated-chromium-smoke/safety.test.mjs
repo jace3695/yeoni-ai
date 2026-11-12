@@ -43,7 +43,7 @@ const fresh = async () => {
 };
 
 // These hashes freeze the reused test bodies and guards without copying fixture values.
-const preserved = { 'tests/e2e/workout-core-state.ts': 'caeb59d96e3e4dbaf7aaa675ca05ee4ecdf43e34c788667b7157269b40676b43', 'tests/e2e/workout-progression.spec.ts': 'dea72a136083645442600a249abea26bb7e8d6a45a7bfba96e921206d4b95c11', 'tests/e2e/budget-first-manual-state.ts': '5d3a50d56dbdca79b422a46ef6c75e7f509603c8b2c8251d9747acd8122afaf8', 'tests/e2e/budget-first-manual.spec.ts': 'cc4a677ae7f3cbc79d39c110140ff0d75a924e8714a204312483ff50bf478152',
+const preserved = { 'tests/e2e/workout-core-state.ts': 'caeb59d96e3e4dbaf7aaa675ca05ee4ecdf43e34c788667b7157269b40676b43', 'tests/e2e/workout-progression.spec.ts': '360709a14c2e3920b12ab710162781e41e476bee0779d602991d9c8ff2778f96', 'tests/e2e/budget-first-manual-state.ts': '5d3a50d56dbdca79b422a46ef6c75e7f509603c8b2c8251d9747acd8122afaf8', 'tests/e2e/budget-first-manual.spec.ts': 'cc4a677ae7f3cbc79d39c110140ff0d75a924e8714a204312483ff50bf478152',
   "playwright.config.ts": "3ce090d0a97f0632ded5aa75e8b041d7ca0c46b803a82281cb1271d4e9997e0f",
   "scripts/qa-playwright.mjs": "38e8cc6623aaaa343e9f15e9e69930c17ed7ebb20199acf9aed8067c41be4d6c",
   "tests/e2e/fixture.ts": "3fa0ffcbd57a35dfa12c5d26d71b3c608561d34da48d4bdb14e0f8b358dd2595",
@@ -54,8 +54,8 @@ const preserved = { 'tests/e2e/workout-core-state.ts': 'caeb59d96e3e4dbaf7aaa675
   "tests/e2e/language-sync.spec.ts": "102ed75da283dcbd0b054b08ec14a11745b2b18eb5adeb83c565662b681e46eb",
   "tests/e2e/language-reset.spec.ts": "5e3727a730de4b44a84f80415b06a910f2bed81d152abd79b158983815fb2d4c",
   "tests/e2e/schema.sql": "4842f96fa1d606441538121152ddea3961fe7c01cabb09f20bcb7f59d064f632",
-  "package.json": "6a107a1c2ef48d4914b508eb6cf7c0d884be0c5f7d7d412e659e818da8d6e459",
-  "package-lock.json": "3de000f2da9993ce5dc5c1fb717afc0b5af8241ac96851c3da4d330e6f4786a6",
+  "package.json": "502cc1e358c43ded2b7b4d815809f1e233d64099c7878be009e0a3b2c1a3355f",
+  "package-lock.json": "3bc89c20e99857839872981b4cb45070ad24fef68b2d0545a80da91b3fa5a338",
   "scripts/qa-private-source-ids.mjs": "3bcbdfc3380502191879a5fe46a462fb8f4b75ec62fa4d53c85fdf3285b9485f",
   "scripts/e2e-stack.mjs": "d7fc44ec6775a1924bdeada67f50faeaff50a67d5968da8c2719e6abd95b8966",
   "scripts/isolated-auth-api/boundary.mjs": "6a364bf60162b0ca81890d6cd631315d955008dc7ccc5dca48a9d2a68e178763"
@@ -167,12 +167,12 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const walk = async directory => (await Promise.all((await readdir(directory, { withFileTypes: true }))
     .map(async item => item.isDirectory() ? walk(join(directory, item.name)) : [join(directory, item.name)]))).flat();
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
-  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 345);
+  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 349);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
   const addition = "      - name: Verify eighteen authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
-  assert.equal(workflow.split('len(tests) == 345').length, 2);
-  assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 345', 'len(tests) == 343')).digest('hex'), workflowHash);
+  assert.equal(workflow.split('len(tests) == 349').length, 2);
+  assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 349', 'len(tests) == 343')).digest('hex'), workflowHash);
   assert.ok(workflow.indexOf('node scripts/isolated-auth-api/supervisor.mjs') < workflow.indexOf(addition));
   assert.ok(workflow.indexOf(addition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
 });
@@ -1128,7 +1128,7 @@ test('settings reentry permits only the actual accessible Next announcer and rej
   const next = await readFile(nextPath, 'utf8');
   const router = await readFile('node_modules/next/dist/client/components/app-router.js', 'utf8');
   assert.ok(router.includes('_approuterannouncer.AppRouterAnnouncer'));
-  assert.equal(JSON.parse(await readFile('node_modules/next/package.json', 'utf8')).version, '16.3.2');
+  assert.equal(JSON.parse(await readFile('node_modules/next/package.json', 'utf8')).version, '16.4.6');
   assert.equal(JSON.parse(await readFile('node_modules/playwright-core/package.json', 'utf8')).version, '1.63.0');
   assert.ok(next.includes("mode: 'open'")); assert.ok(next.includes("announcer.role = 'alert'"));
   assert.ok(next.includes("announcer.ariaLive = 'assertive'"));
@@ -1577,7 +1577,7 @@ test('reference source 57 pins the finite route graph and six exact source mutat
   "app/components/AuthGate.tsx": "d69c6d0cdf4fe093194a52fe7e9e6dd02df602673259119010bd809d29b5dbc2",
   "components/LanguageCloudSync.tsx": "530ad50e9ade9673ab565a0b8a67f5b0ebe4577480bc24a236cd7a0a2b8ad6db",
   "app/data/languageCloudSync.ts": "d42082e3ead11e14059a325bc3cef12b9ad74e51e03320824734e6d309f1f48b",
-  "app/data/cloudSync.ts": "d77f30187dfb65d4738164758a97aaf5daa8f47ee123cbf879967106c389cddd",
+  "app/data/cloudSync.ts": "2914761cdb48f0a0cd1bf8e082bb0711c3ed764833c5141029e0122022e5ff95",
   "utils/japaneseLevelJourney.ts": "18601b6e775a3a5adb3069be7493aa376f7e56fb4359d90bbe806a9d3967973d",
   "utils/dateKey.ts": "ae6a9d079c0d7fc8f288080c5bd3f45018843bca988487fcc55541a98b63e634",
   "components/language/useLearningAudio.ts": "b06dd5e6a66410f5d5b6f755da4654b03524b61abd1b9f7a63b92e8413229067",

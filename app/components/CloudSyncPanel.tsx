@@ -234,12 +234,22 @@ export default function CloudSyncPanel({ hideSignedOut = false }: { hideSignedOu
       void sync();
     };
     const onRecordsChanged = () => {
-      if (!isCurrentCloudSession(userId, epoch)) { stop(); return; }
-      if (syncing || !active) return;
-      if (stableState(readLocalCloudState()) === lastSynced.current) return;
-      setStatus("pending");
-      window.clearTimeout(followUpTimer);
-      followUpTimer = window.setTimeout(() => void sync(), 500);
+      if (!active) return;
+      try {
+        if (!isCurrentCloudSession(userId, epoch)) { stop(); return; }
+        if (syncing) return;
+        if (stableState(readLocalCloudState()) === lastSynced.current) return;
+        setStatus("pending");
+        window.clearTimeout(followUpTimer);
+        followUpTimer = window.setTimeout(() => void sync(), 500);
+      } catch {
+        // Native storage/record events have no React error boundary. Cancel this
+        // owner effect and pending work instead of emitting a page error or
+        // allowing a fallback/empty snapshot to reach a later write.
+        stop();
+        setStatus("error");
+        setMessage("기기 기록을 확인하지 못해 동기화를 중단했습니다. 기록을 확인한 뒤 다시 동기화해 주세요.");
+      }
     };
     window.addEventListener(RECORDS_CHANGED_EVENT, onRecordsChanged);
     window.addEventListener(CLOUD_RECORDS_REFRESH_EVENT, onRemoteRecordsChanged);

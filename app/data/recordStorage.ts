@@ -1,7 +1,7 @@
 import { fastingStartForDay } from '../../lib/diet-time.ts';
 import { DIET_COMPLETED_DAYS_KEY, DIET_GOAL_CHECK_ITEMS, DIET_SAFETY_CHECK_ITEMS, DINNER_CARB_CHOICE_KEY, DINNER_COMPLETED_TIME_KEY, LUNCH_CARB_CHOICE_KEY, LUNCH_PROTEIN_CHOICE_KEY, FASTING_START_TIME_KEY, WATER_INTAKE_KEY, getLocalDateKey, normalizeDinnerCarbStore, normalizeLunchCarbStore, normalizeLunchProteinStore } from './dietPlans.ts';
 import type { DinnerCarbRecord, LunchCarbRecord, LunchProteinRecord } from './dietPlans.ts';
-import { WORKOUT_COMPLETED_DAYS_KEY } from './workoutCompletion.ts';
+import { WORKOUT_COMPLETED_DAYS_KEY, readWorkoutCompletionStore, writeWorkoutCompletionStore } from './workoutCompletion.ts';
 import type { WorkoutCompletionStore } from './workoutCompletion.ts';
 import type { DailyConditionRecord } from './recoveryMode.ts';
 import { notifyRecordsChanged, recoverStorageTransaction } from './storageTransaction.ts';
@@ -127,6 +127,7 @@ export interface RecordStores {
 export function readJson<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
   recoverStorageTransaction(window.localStorage);
+  if (key === WORKOUT_COMPLETED_DAYS_KEY) return readWorkoutCompletionStore() as T;
   const raw = window.localStorage.getItem(key);
   if (!raw) return fallback;
   try { return JSON.parse(raw) as T; } catch { return fallback; }
@@ -135,7 +136,8 @@ export function readJson<T>(key: string, fallback: T): T {
 export function writeJson<T>(key: string, value: T) {
   if (typeof window === 'undefined') return;
   assertStorageOwnership();
-  window.localStorage.setItem(key, JSON.stringify(value));
+  if (key === WORKOUT_COMPLETED_DAYS_KEY) writeWorkoutCompletionStore(value as WorkoutCompletionStore);
+  else window.localStorage.setItem(key, JSON.stringify(value));
   notifyRecordsChanged();
 }
 

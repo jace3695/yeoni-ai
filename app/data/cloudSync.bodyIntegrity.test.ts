@@ -1,3 +1,4 @@
+import * as workoutCompletion from "./workoutCompletion.ts";
 import { isValidInbodyRecord } from './recordStorage.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -55,6 +56,7 @@ function fixture() {
   });
   const exports = {};
   const requireFixture = (path: string) => {
+    if (path === './workoutCompletion.ts') return workoutCompletion;
     if (path === './recordStorage.ts') return { isValidInbodyRecord };
     if (path === '../lib/supabase.ts') return { supabase };
     if (path === './appRecordReset.ts') return resets;
@@ -188,3 +190,35 @@ test('body validation never changes unrelated opaque storage serialization', () 
   assert.deepEqual(f.snapshot(), before);
   assert.deepEqual(f.mutations, []);
 });
+
+for (const value of [null, [], 'broken', { '2026-11-12': null }, { '2026-11-12': { workoutDone: 'yes' } }]) {
+  test(`workout invalid shape ${JSON.stringify(value)} blocks sync without rewriting`, async () => {
+    const f = fixture();
+    const key = workoutCompletion.WORKOUT_COMPLETED_DAYS_KEY;
+    f.values.set(key, JSON.stringify(value));
+    const before = f.snapshot();
+    assert.throws(() => f.cloud.readLocalCloudState(), /운동 기록/);
+    const invalid = { ...healthy, [key]: value };
+    assert.throws(() => f.cloud.mergeCloudState(healthy, invalid), /운동 기록/);
+    assert.throws(() => f.cloud.mergeCloudStateFromBase(invalid, healthy, healthy), /운동 기록/);
+    assert.throws(() => f.cloud.applyCloudState(invalid), /운동 기록/);
+    await assert.rejects(f.cloud.saveRemoteState('synthetic-owner', invalid), /운동 기록/);
+    await assert.rejects(f.cloud.saveRemoteStateIfUnchanged('synthetic-owner', invalid, '1'), /운동 기록/);
+    assert.deepEqual(f.methods, []);
+    assert.deepEqual(f.snapshot(), before);
+    assert.deepEqual(f.mutations, []);
+  });
+}
+
+test('workout legacy booleans and rich fields survive cloud merge and save', async () => {
+  const f = fixture();
+  const state = { ...healthy, [workoutCompletion.WORKOUT_COMPLETED_DAYS_KEY]: {
+    mon: true, '2026-11-12': { cardioDone: true, cardioMinutes: 12, futureField: { preserve: true } },
+  } };
+  const merged = f.cloud.mergeCloudStateFromBase({}, state, state);
+  assert.deepEqual(plain(merged), state);
+  await f.cloud.saveRemoteState('synthetic-owner', merged);
+  assert.deepEqual(f.remote(), state);
+});
+
+for (const date of ['2026-99-99', '9999-99-99']) test('cloud invalid date is fixed safe failure '+date,async()=>{const f=fixture();const invalid={...healthy,[workoutCompletion.WORKOUT_COMPLETED_DAYS_KEY]:{[date]:true}};assert.throws(()=>f.cloud.mergeCloudState({},invalid),{message:workoutCompletion.WORKOUT_STORAGE_ERROR});await assert.rejects(f.cloud.saveRemoteState('synthetic-owner',invalid),{message:workoutCompletion.WORKOUT_STORAGE_ERROR});assert.deepEqual(f.methods,[]);});

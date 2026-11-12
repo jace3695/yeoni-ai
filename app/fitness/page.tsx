@@ -23,7 +23,8 @@ import {
   getWorkoutDayForDate,
   getWorkoutRecord,
   readWorkoutCompletionStore,
-  WORKOUT_COMPLETED_DAYS_KEY,
+  writeWorkoutCompletionStore,
+  WORKOUT_STORAGE_ERROR,
   WorkoutCompletionStore,
   WorkoutDayRecord,
   ExerciseRecord,
@@ -174,7 +175,19 @@ function FitnessApp() {
   const [conditionRecords, setConditionRecords] = useState<DailyConditionStore>({});
   const [directionUpdateNotice, setDirectionUpdateNotice] = useState("");
 
+  const [completionError, setCompletionError] = useState("");
+  const commitCompletedStore = (update: (previous: WorkoutCompletionStore) => WorkoutCompletionStore): boolean => {
+    try {
+      const current = readWorkoutCompletionStore();
+      const next = update(current);
+      setCompletedStore(next);
+      setCompletionError("");
+      return true;
+    } catch { setCompletionError(WORKOUT_STORAGE_ERROR); return false; }
+  };
+
   const refreshWorkoutReview = useCallback(() => {
+    try {
     const stores = readRecordStores();
     setCompletedStore(stores.workouts);
     setWeightRecords(stores.weights);
@@ -182,6 +195,8 @@ function FitnessApp() {
     setConditionToday(stores.conditions[getLocalDateKey()]);
     setUserWorkoutSettings(readUserWorkoutSettings());
     setSelectedWeeklyWorkoutPlanId(window.localStorage.getItem(SELECTED_WEEKLY_WORKOUT_PLAN_KEY) || DEFAULT_WEEKLY_WORKOUT_PLAN_ID);
+    setCompletionError("");
+    } catch { setCompletionError(WORKOUT_STORAGE_ERROR); }
   }, []);
 
   useEffect(() => {
@@ -207,6 +222,8 @@ function FitnessApp() {
       return;
     }
 
+    try {
+    const initialCompletions = readWorkoutCompletionStore();
     const savedWeeklyPlan =
       window.localStorage.getItem(SELECTED_WEEKLY_WORKOUT_PLAN_KEY) ||
       window.localStorage.getItem(LEGACY_SELECTED_WEEKLY_WORKOUT_PLAN_KEY) ||
@@ -237,7 +254,7 @@ function FitnessApp() {
     );
     window.localStorage.removeItem(LEGACY_SELECTED_WEEKLY_WORKOUT_PLAN_KEY);
 
-    setCompletedStore(readWorkoutCompletionStore());
+    setCompletedStore(initialCompletions);
     setUserWorkoutSettings(settings);
     const recordStores = readRecordStores();
     setWeightRecords(recordStores.weights);
@@ -251,6 +268,7 @@ function FitnessApp() {
           : null,
       ),
     );
+    } catch { setCompletionError(WORKOUT_STORAGE_ERROR); }
   }, [activeTab]);
 
   const handleWeeklyWorkoutPlanChange = (planId: string) => {
@@ -317,7 +335,7 @@ function FitnessApp() {
     const backStatus = feedback?.backStatus ?? (pain ? "pain" : undefined);
     const neurologicalSymptoms = feedback?.neurologicalSymptoms ?? [];
     const hasSafetyPain = pain || backStatus === "pain" || backStatus === "worse" || neurologicalSymptoms.length > 0;
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const hasWarmupSlidingBoard = exerciseNames.includes("운동 전 슬라이딩보드");
       const hasPostWorkoutCardio =
@@ -356,12 +374,9 @@ function FitnessApp() {
           cardioMinutes: selectedOptionalCardio?.id === 'rest' ? undefined : selectedOptionalCardio ? (selectedCardioMinutes || current.cardioMinutes) : current.cardioMinutes,
         },
       };
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(next),
-      );
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
     const saved = saveRecoveryRecord(dateKey, {
       recoveryMode: false,
       completedAsRecovery: false,
@@ -374,7 +389,7 @@ function FitnessApp() {
 
   const cancelDayWorkout = (dayId: WorkoutDayId) => {
     const dateKey = getDateForWorkoutDay(dayId);
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -405,17 +420,14 @@ function FitnessApp() {
           postWorkoutCardioMinutes: undefined,
         },
       };
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(next),
-      );
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
   };
 
   const saveDayCardio = (type: string, minutes: number, memo: string) => {
     const dateKey = getLocalDateKey();
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -427,17 +439,14 @@ function FitnessApp() {
           cardioMemo: memo.trim() || undefined,
         },
       };
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(next),
-      );
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
   };
 
   const cancelDayCardio = () => {
     const dateKey = getLocalDateKey();
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -449,18 +458,15 @@ function FitnessApp() {
           cardioMemo: undefined,
         },
       };
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(next),
-      );
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
   };
 
 
   const saveFoamRoller = (record: Pick<WorkoutDayRecord, "foamRollerTiming" | "foamRollerAreas" | "foamRollerPain" | "foamRollerMemo">) => {
     const dateKey = getLocalDateKey();
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -473,14 +479,14 @@ function FitnessApp() {
           foamRollerMemo: record.foamRollerMemo?.trim() || undefined,
         },
       };
-      window.localStorage.setItem(WORKOUT_COMPLETED_DAYS_KEY, JSON.stringify(next));
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
   };
 
   const cancelFoamRoller = () => {
     const dateKey = getLocalDateKey();
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -493,9 +499,9 @@ function FitnessApp() {
           foamRollerMemo: undefined,
         },
       };
-      window.localStorage.setItem(WORKOUT_COMPLETED_DAYS_KEY, JSON.stringify(next));
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
   };
 
   const handleTabChange = (id: string) => {
@@ -516,7 +522,7 @@ function FitnessApp() {
       )
     )
       return;
-    setCompletedStore((prev) => {
+    if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
       const next = {
         ...prev,
@@ -541,12 +547,9 @@ function FitnessApp() {
           postWorkoutCardioMinutes: undefined,
         },
       };
-      window.localStorage.setItem(
-        WORKOUT_COMPLETED_DAYS_KEY,
-        JSON.stringify(next),
-      );
+      writeWorkoutCompletionStore(next);
       return next;
-    });
+    })) return;
     const saved = saveRecoveryRecord(dateKey, {
       recoveryMode: true,
       completedAsRecovery: true,
@@ -712,6 +715,8 @@ function FitnessApp() {
     handleTabChange(dayId);
     setShowDailyEditor(true);
   };
+
+  if (completionError) return <section role="alert" className="p-6"><p>{completionError}</p><p>페이지를 다시 열기 전에 보존된 기록을 확인해 주세요. 초기화는 하지 않았습니다.</p></section>;
 
   return (
     <>

@@ -104,5 +104,33 @@ test('authenticated workout review requires confirmation before applying one loa
     await test.step('workout phase 056', async () => { expect(today(), 'workout-no-midnight-crossing').toBe(date); });
     await test.step('workout phase 057', async () => { expect(qa.traffic.blockedOrigins.size, 'workout-no-external-origin').toBe(0); });
     await test.step('workout phase 058', async () => { await noOverflow(page); }); await test.step('workout phase 059', async () => { await silence.check(); });
+    // Additional synthetic corruption coverage; the original happy path above is unchanged.
+    const corruptionKey = 'ai-fitness-workout-completed-days';
+    const corruptionRaw = '{synthetic-workout-corruption';
+    const rawFitness = await test.step('workout phase 061', async () => page.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith('ai-fitness-')).sort().map(key => [key, localStorage.getItem(key)]))));
+    const rawLanguage = await test.step('workout phase 062', async () => page.evaluate(keys => Object.fromEntries(keys.sort().map(key => [key, localStorage.getItem(key)])), Object.keys(language)));
+    const writesBeforeCorruption = await test.step('workout phase 063', async () => qa.traffic.entries.filter(entry => entry.method !== 'GET').length);
+    const corruptionAlert = page.getByRole('alert').filter({ hasText: '운동 기록을 안전하게 읽거나 저장하지 못했습니다. 원본은 보존했으며 기록 저장을 중단했습니다.' });
+    try {
+      await test.step('workout phase 064', async () => { await page.evaluate(({ key, raw }) => { const oldValue = localStorage.getItem(key); localStorage.setItem(key, raw); window.dispatchEvent(new StorageEvent('storage', { key, oldValue, newValue: raw, storageArea: localStorage })); }, { key: corruptionKey, raw: corruptionRaw }); });
+      await test.step('workout phase 065', async () => { await expect(corruptionAlert).toBeVisible(); });
+      await test.step('workout phase 066', async () => { await silence.check(); });
+      await test.step('workout phase 067', async () => { await page.reload(); });
+      await test.step('workout phase 068', async () => { await expect(corruptionAlert).toBeVisible(); });
+      await test.step('workout phase 069', async () => { await expect(page.getByRole('button', { name: '다시 시도', exact: true })).toBeVisible(); });
+      await test.step('workout phase 080', async () => { await page.evaluate(() => window.dispatchEvent(new Event('yeoni-records-changed'))); });
+      await test.step('workout phase 081', async () => { await expect(corruptionAlert).toBeVisible(); await silence.check(); });
+      await test.step('workout phase 070', async () => { await expect(corruptionAlert.getByRole('button')).toHaveCount(0); await expect(card).toHaveCount(0); });
+      await test.step('workout phase 071', async () => { same(await page.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith('ai-fitness-')).sort().map(key => [key, localStorage.getItem(key)]))), { ...rawFitness, [corruptionKey]: corruptionRaw }, 'workout-corruption-local-raw-preserved'); });
+      await test.step('workout phase 072', async () => { same(await qa.read(), next, 'workout-corruption-database-preserved'); same(await qa.readLanguage(), language, 'workout-corruption-language-database-preserved'); });
+      await test.step('workout phase 073', async () => { same(await page.evaluate(keys => Object.fromEntries(keys.sort().map(key => [key, localStorage.getItem(key)])), Object.keys(language)), rawLanguage, 'workout-corruption-language-local-preserved'); });
+      await test.step('workout phase 074', async () => { expect(qa.traffic.entries.filter(entry => entry.method !== 'GET').length, 'workout-corruption-no-server-writes').toBe(writesBeforeCorruption); });
+      await test.step('workout phase 075', async () => { await noOverflow(page); await silence.check(); });
+    } finally {
+      await test.step('workout phase 076', async () => { await page.evaluate(({ key, raw }) => { if (raw === null) localStorage.removeItem(key); else localStorage.setItem(key, raw); }, { key: corruptionKey, raw: rawFitness[corruptionKey] }); });
+    }
+    await test.step('workout phase 077', async () => { await page.reload(); await synced(page); await expect(card).toBeVisible(); });
+    await test.step('workout phase 078', async () => { same(await localState(page), next, 'workout-reentry-local-exact'); same(await qa.read(), next, 'workout-reentry-database-exact'); same(await qa.readLanguage(), language, 'workout-reentry-language-exact'); });
+    await test.step('workout phase 079', async () => { expect(today(), 'workout-corruption-no-midnight-crossing').toBe(date); expect(qa.traffic.blockedOrigins.size, 'workout-corruption-no-external-origin').toBe(0); await noOverflow(page); await silence.check(); });
   } finally { await test.step('workout phase 060', async () => { await silence.restore(); }); }
 });

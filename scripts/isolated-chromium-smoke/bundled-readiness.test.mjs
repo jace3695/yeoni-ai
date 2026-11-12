@@ -461,13 +461,16 @@ process.exitCode = result.overflow ? 28 : result.timedOut || result.error || res
   }
 }
 
-test('actual native adapter finite descendant regressions share one fixed grace interval', { skip: process.platform !== 'linux', timeout: 16000 }, async () => {
-  // Only these finite synthetic subprocess cases overlap. This does not change
-  // the actual application/browser worker count or any production grace.
-  const outcomes = await Promise.allSettled(['inner-timeout', 'outer-timeout', 'cancelled', 'nonzero', 'overflow', 'zero-with-descendant']
-    .map(scenario => runFiniteNativeAdapterRegression(scenario)));
-  // Await every finally cleanup even when one case fails.
-  for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
+test('actual native adapter finite descendant regressions share one fixed grace interval', { skip: process.platform !== 'linux', timeout: 90000 }, async t => {
+  // Six independent synthetic cases run sequentially. Each original scenario,
+  // native deadline, single cleanup grace and finally assertion stays unchanged.
+  // Awaiting t.test includes its finally cleanup; a failed child is recorded by
+  // node:test without preventing subsequent independent cases from running.
+  for (const scenario of ['inner-timeout', 'outer-timeout', 'cancelled', 'nonzero', 'overflow', 'zero-with-descendant']) {
+    await t.test(scenario, { timeout: 12000 }, async () => {
+      await runFiniteNativeAdapterRegression(scenario);
+    });
+  }
 });
 
 // Unlike --list, this finite test actually forks a Playwright worker and reloads

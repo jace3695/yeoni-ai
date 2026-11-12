@@ -1,0 +1,16 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
+import {readJson,writeJson} from '../app/data/recordStorage.ts';
+import {grantSyntheticStorageOwnership} from './storageOwnershipFixture.ts';
+import {readWorkoutCompletionStore,writeWorkoutCompletionStore,WORKOUT_COMPLETED_DAYS_KEY as key,WORKOUT_STORAGE_ERROR} from '../app/data/workoutCompletion.ts';
+grantSyntheticStorageOwnership();
+function fixture(raw,fail=false){let v=raw;let writes=0;globalThis.window=Object.assign(new EventTarget(),{localStorage:{getItem:k=>k===key?v:null,setItem:(k,n)=>{if(fail)throw Error('synthetic');if(k===key){writes++;v=n}},removeItem:()=>{throw Error('unexpected deletion')}}});return {get value(){return v},get writes(){return writes}}}
+for(const raw of ['{broken','null','[]'])test('shared read/write helper rejects fallback for '+raw,()=>{const f=fixture(raw);assert.throws(()=>readJson(key,{}),/운동 기록/);assert.throws(()=>writeJson(key,{}),/운동 기록/);assert.equal(f.value,raw);assert.equal(f.writes,0)});
+const source=fs.readFileSync(new URL('../app/fitness/page.tsx',import.meta.url),'utf8');
+const ast=ts.createSourceFile('page.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let declaration;
+function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)==='commitCompletedStore')declaration=n;ts.forEachChild(n,visit)}visit(ast);assert.ok(declaration);
+const js=ts.transpileModule('const '+declaration.getText(ast)+';',{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
+function commit(){const states=[],errors=[];const context={readWorkoutCompletionStore,WORKOUT_STORAGE_ERROR,setCompletedStore:x=>states.push(x),setCompletionError:x=>errors.push(x)};const run=vm.runInNewContext(js+'\ncommitCompletedStore',context);return {run,states,errors}}
+test('actual page commit stops updater on unreadable source',()=>{const f=fixture('{broken');const c=commit();let called=false;assert.equal(c.run(()=>{called=true;return {}}),false);assert.equal(called,false);assert.equal(c.states.length,0);assert.equal(f.value,'{broken');assert.deepEqual(c.errors,[WORKOUT_STORAGE_ERROR])});
+test('actual page commit does not publish failed write',()=>{const raw='{"2026-11-12":true}';const f=fixture(raw,true);const c=commit();assert.equal(c.run(prev=>{writeWorkoutCompletionStore({...prev,'2026-11-11':true});return prev}),false);assert.equal(c.states.length,0);assert.equal(f.value,raw)});
+test('actual page commit uses latest storage before setter',()=>{const f=fixture('{"2026-11-12":true}');const c=commit();assert.equal(c.run(prev=>{const next={...prev,'2026-11-11':true};writeWorkoutCompletionStore(next);return next}),true);assert.equal(c.states.length,1);assert.equal(JSON.parse(f.value)['2026-11-12'],true)});
+test('all seven page completion mutations use early-return commit guard',()=>{assert.equal((source.match(/if \(!commitCompletedStore\(\(prev\) => \{/g)||[]).length,7);assert.equal((source.match(/\}\)\) return;/g)||[]).length,7);assert.equal(source.includes('WORKOUT_COMPLETED_DAYS_KEY'),false);assert.ok(source.indexOf('const initialCompletions = readWorkoutCompletionStore()')<source.indexOf('const savedWeeklyPlan ='));});

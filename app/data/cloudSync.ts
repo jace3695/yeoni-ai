@@ -1,3 +1,4 @@
+import { assertWorkoutCompletionStore, WORKOUT_COMPLETED_DAYS_KEY } from "./workoutCompletion.ts";
 import { isValidInbodyRecord } from './recordStorage.ts';
 import { supabase } from "../lib/supabase.ts";
 import { respectRecordResets } from "./appRecordReset.ts";
@@ -29,6 +30,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function validateBodyCloudState(state: CloudState): CloudState {
   const invalid = () => new Error("체중·인바디 기록 형식을 확인할 수 없어 동기화와 백업 적용을 멈췄습니다. 기존 원문은 보관됩니다.");
   if (!isPlainObject(state)) throw invalid();
+  if (Object.hasOwn(state, WORKOUT_COMPLETED_DAYS_KEY)) assertWorkoutCompletionStore(state[WORKOUT_COMPLETED_DAYS_KEY]);
   for (const [key, kind] of [["ai-fitness-weight-records", "weight"], ["ai-fitness-inbody-records", "inbody"]] as const) {
     if (!Object.prototype.hasOwnProperty.call(state, key)) continue;
     const value = state[key];
