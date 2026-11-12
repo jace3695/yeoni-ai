@@ -721,7 +721,7 @@ function FitnessApp() {
       <header className="app-module-header">
         <div className="app-module-header-inner">
           {/* Title Row */}
-          <AppIdentity kind="fitness" title="재민님의 운동" subtitle="허리를 지키며 꾸준히" />
+          <AppIdentity kind="fitness" title="나의 운동" subtitle="허리를 지키며 꾸준히" />
           <AppModuleNav items={PRIMARY_NAV.map((item) => ({ ...item, icon: item.emoji }))} activeId={activePrimaryNav} ariaLabel="운동 주요 메뉴" onSelect={(id) => handlePrimaryNavigation(id as (typeof PRIMARY_NAV)[number]["id"])} />
         </div>
       </header>

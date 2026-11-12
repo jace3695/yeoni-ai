@@ -324,7 +324,7 @@ export function decideAdaptiveWorkoutReview(input: AdaptiveReviewInput, reviewId
     if (change.targets) next.weeklyExerciseTargets = { ...settings.weeklyExerciseTargets, [change.dayId]: { ...settings.weeklyExerciseTargets?.[change.dayId], ...change.targets } };
   }
   const entry: AdaptiveReviewDecision = { id: review.id, action: review.action, decision, decidedAt: now, decidedFor: input.today, evidenceThrough: review.evidenceThrough,
-    summary: change ? `${change.before} → ${change.after}` : '재민님 확인 · 현재 계획 유지',
+    summary: change ? `${change.before} → ${change.after}` : '직접 확인 · 현재 계획 유지',
   };
   next = { ...next, adaptiveReviewDecisions: [entry, ...(settings.adaptiveReviewDecisions ?? [])].slice(0, 20) };
   return next;

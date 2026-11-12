@@ -12,7 +12,7 @@ function DietApp() {
   return (
     <main className="min-h-dvh bg-yeoni-bg">
       <header className="app-module-header">
-        <div className="app-module-header-inner"><AppIdentity kind="diet" title="재민님의 식단" subtitle="운동 기록과 연동되는 독립 식단 앱" /><Link href="/diet/settings" className="inline-flex min-h-11 shrink-0 items-center px-3 text-sm font-bold">설정</Link></div>
+        <div className="app-module-header-inner"><AppIdentity kind="diet" title="나의 식단" subtitle="운동 기록과 연동되는 독립 식단 앱" /><Link href="/diet/settings" className="inline-flex min-h-11 shrink-0 items-center px-3 text-sm font-bold">설정</Link></div>
       </header>
       <div className="yeoni-page-content"><CommonCharacterGuide><AppCompanion embedded home><LocalRecordGuidance app="diet" /></AppCompanion></CommonCharacterGuide><DietView /></div>
     </main>

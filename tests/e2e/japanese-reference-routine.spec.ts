@@ -1,5 +1,5 @@
 import { test, expect, login, today } from './fixture';
-import { dailyKeys, journalKey, saveFailure, scopeFailure, localSuccess, retryButton, nextButton, seedReferenceState, referenceSnapshot, equalRecords, languageWrites, unchanged, confirmed, assertDailyDelta, installJournalHarness, journalStats, restoreJournal, kanaAnswers, correctChoice, score, silentGuard, boardCheck, noOverflow, noApplicationAlerts, settingsState, synced } from './japanese-reference-routine-state';
+import { dailyKeys, journalKey, saveFailure, scopeFailure, localSuccess, retryButton, nextButton, seedReferenceState, referenceSnapshot, equalRecords, languageWrites, unchanged as rawUnchanged, confirmed as rawConfirmed, assertDailyDelta, installJournalHarness, journalStats, restoreJournal, kanaAnswers, correctChoice as rawCorrectChoice, score as rawScore, silentGuard, boardCheck, noOverflow as rawNoOverflow, noApplicationAlerts as rawNoApplicationAlerts, settingsState, synced as rawSynced } from './japanese-reference-routine-state';
 test('kana and word ordinary quizzes retry exact daily completion once and preserve records through invalidation boards settings and relogin', async ({ page, context, qa }) => {
   const silence = await test.step('reference silent guard setup', () => silentGuard(page, context));
   try {
@@ -11,23 +11,23 @@ test('kana and word ordinary quizzes retry exact daily completion once and prese
     for (const id of ['kana', 'words'] as const) {
       await test.step(`${id}: four ordinary correct answers have no daily completion`, async () => {
         if (id === 'words') {
-          await silence.check();
+          await checkSilence(silence);
           await page.getByRole('navigation', { name: '언어 주요 메뉴', exact: true }).locator('a[href="/language"]').click();
           await expect(page.getByRole('heading', { name: '글자부터 문장까지', exact: true })).toBeVisible();
           await page.locator('a[href="/language/words"]').click();
           await synced(page);
         }
         await expect(page.getByRole('heading', { name: id === 'kana' ? '히라가나 / 가타카나 훈련' : '단어 학습', exact: true })).toBeVisible();
-        await test.step('reference ordinary initial quiz score', async () => { await page.getByRole('button', { name: '퀴즈 모드', exact: true }).click(); await score(page, id, 0); });
+        await page.getByRole('button', { name: '퀴즈 모드', exact: true }).click(); await score(page, id, 0);
         const snapshot = await referenceSnapshot(page), writes = languageWrites(qa);
         for (let count = 1; count <= 4; count++) {
-          await test.step('reference ordinary answer and score', async () => { await (await correctChoice(page, id, kana)).click(); await score(page, id, count); });
-          await test.step('reference ordinary unchanged records', async () => { await unchanged(page, qa, saved, fitness, snapshot, writes); });
+          await (await correctChoice(page, id, kana)).click(); await score(page, id, count);
+          await unchanged(page, qa, saved, fitness, snapshot, writes);
           await expect(page.getByText(localSuccess, { exact: true })).toHaveCount(0);
           await expect(retryButton(page)).toHaveCount(0);
           await nextButton(page, id).click();
         }
-        await ordinarySilence(silence); await ordinaryAlerts(page); await ordinaryLayout(page);
+        await checkSilence(silence); await noApplicationAlerts(page); await noOverflow(page);
       });
       await test.step(`${id}: fifth score survives targeted pre-write failure and genuine UI retry`, async () => {
         const snapshot = await referenceSnapshot(page), writes = languageWrites(qa);
@@ -59,7 +59,7 @@ test('kana and word ordinary quizzes retry exact daily completion once and prese
         equalRecords(Object.fromEntries(Object.entries(after).filter(([key]) => !dailyKeys.includes(key as typeof dailyKeys[number]))),
           Object.fromEntries(Object.entries(snapshot).filter(([key]) => !dailyKeys.includes(key as typeof dailyKeys[number]))), 'reference-only-daily-local-delta');
         expect(after[journalKey], 'reference-no-leftover-journal').toBeNull();
-        await silence.check();
+        await checkSilence(silence);
       });
       await test.step(`${id}: injected mounted-page invalidation stops the next answer and reload recovers`, async () => {
         await nextButton(page, id).click(); const answer = await correctChoice(page, id, kana);
@@ -70,18 +70,18 @@ test('kana and word ordinary quizzes retry exact daily completion once and prese
         await expect(page.getByRole('status').filter({ hasText: scopeFailure })).toHaveText(scopeFailure);
         await expect(nextButton(page, id)).toHaveCount(0);
         await unchanged(page, qa, saved, fitness, snapshot, writes);
-        await silence.check(); await page.reload(); await synced(page);
+        await checkSilence(silence); await page.reload(); await synced(page);
         equalRecords(await settingsState(page), saved, 'reference-reloaded-records');
         await page.getByRole('button', { name: '퀴즈 모드', exact: true }).click(); await score(page, id, 0);
         const restored = await referenceSnapshot(page), restoredWrites = languageWrites(qa);
         await (await correctChoice(page, id, kana)).click(); await score(page, id, 1);
         await unchanged(page, qa, saved, fitness, restored, restoredWrites);
         await expect(page.getByText(scopeFailure, { exact: true })).toHaveCount(0);
-        await silence.check(); await noApplicationAlerts(page);
+        await checkSilence(silence); await noApplicationAlerts(page);
       });
       if (id === 'kana') await test.step('320px writing view and faint guide share backgrounds and support draw erase', async () => {
         const snapshot = await referenceSnapshot(page), writes = languageWrites(qa);
-        await boardCheck(page); await unchanged(page, qa, saved, fitness, snapshot, writes); await silence.check();
+        await boardCheck(page); await unchanged(page, qa, saved, fitness, snapshot, writes); await checkSilence(silence);
       });
     }
     await test.step('Settings has normal controls without a displayed guide or common character', async () => {
@@ -93,7 +93,7 @@ test('kana and word ordinary quizzes retry exact daily completion once and prese
       await expect(page.getByRole('combobox', { name: '하루 학습 시간', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: '설정 저장', exact: true })).toBeVisible();
       equalRecords(await settingsState(page), saved, 'reference-settings-records-preserved');
-      await noApplicationAlerts(page); await noOverflow(page); await silence.check();
+      await noApplicationAlerts(page); await noOverflow(page); await checkSilence(silence);
     });
     await test.step('both genuine daily completions survive reload logout and real relogin', async () => {
       const restored = async () => {
@@ -104,19 +104,25 @@ test('kana and word ordinary quizzes retry exact daily completion once and prese
         expect(progress.completedIds, 'reference-two-distinct-completions').toEqual(['kana', 'words']);
         expect(history[day].completedIds).toEqual(['kana', 'words']); expect(history[day].completedCount).toBe(2);
       };
-      await page.reload(); await restored(); await silence.check();
+      await page.reload(); await restored(); await checkSilence(silence);
       await page.getByRole('button', { name: '로그아웃', exact: true }).click();
       await expect(page.getByLabel('이메일', { exact: true })).toBeVisible();
       await expect.poll(() => page.evaluate(keys => keys.map(key => localStorage.getItem(key)), [...dailyKeys])).toEqual([null, null]);
-      await silence.check(); await login(page, qa.account, '/language/words'); await restored();
+      await checkSilence(silence); await login(page, qa.account, '/language/words'); await restored();
       expect(today(), 'reference-no-midnight-crossing').toBe(day);
       expect(qa.traffic.blockedOrigins.size, 'reference-no-external-origin-attempts').toBe(0);
-      await silence.check(); await noApplicationAlerts(page);
+      await checkSilence(silence); await noApplicationAlerts(page);
     });
   } finally { await test.step('reference silent guard restoration', () => silence.restore()); }
 });
 
-// Spec-owned helper phases retain numeric attribution without exposing helper sources.
-async function ordinarySilence(silence: Awaited<ReturnType<typeof silentGuard>>) { await test.step('reference ordinary silence', () => silence.check()); }
-async function ordinaryAlerts(page: Parameters<typeof noApplicationAlerts>[0]) { await test.step('reference ordinary application alerts', () => noApplicationAlerts(page)); }
-async function ordinaryLayout(page: Parameters<typeof noOverflow>[0]) { await test.step('reference ordinary layout', () => noOverflow(page)); }
+// Shared spec-owned operations keep fixed numeric attribution; labels contain no record data.
+async function score(...args: Parameters<typeof rawScore>) { return await test.step('reference score', () => rawScore(...args)); }
+async function correctChoice(...args: Parameters<typeof rawCorrectChoice>) { return await test.step('reference choice', () => rawCorrectChoice(...args)); }
+async function preservation<T>(operation: () => Promise<T>) { return await test.step('reference preservation', operation); }
+async function synced(...args: Parameters<typeof rawSynced>) { return await test.step('reference synced', () => rawSynced(...args)); }
+async function checkSilence(silence: Awaited<ReturnType<typeof silentGuard>>) { return await test.step('reference silence', () => silence.check()); }
+async function noApplicationAlerts(...args: Parameters<typeof rawNoApplicationAlerts>) { return await test.step('reference alerts', () => rawNoApplicationAlerts(...args)); }
+async function noOverflow(...args: Parameters<typeof rawNoOverflow>) { return await test.step('reference layout', () => rawNoOverflow(...args)); }
+async function unchanged(...args: Parameters<typeof rawUnchanged>) { return preservation(() => rawUnchanged(...args)); }
+async function confirmed(...args: Parameters<typeof rawConfirmed>) { return preservation(() => rawConfirmed(...args)); }

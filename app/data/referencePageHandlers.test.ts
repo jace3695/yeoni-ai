@@ -114,3 +114,44 @@ test("inline mode, filter, guide and comparison switches stop audio before state
   }
   assert.ok(checked >= 18, `Only ${checked} switch handlers checked`);
 });
+
+// Pure event-handler contracts only: no React scheduling or browser observation.
+test("kana quiz entry scopes the question atomically without rerolling the active quiz", () => {
+  const expression = namedHandler(kanaPath, "handleModeChange");
+  const javascript = ts.transpileModule(`globalThis.handler = ${expression};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  for (const scenario of ["entry", "same-mode", "nonquiz", "fallback"] as const) {
+    const item = { char: "あ", roman: "a" }, fallback = { char: "か", roman: "ka" };
+    const stale = { question: fallback, choices: ["ka"] };
+    let question = stale, selected: unknown = "old", score = 3, draws = 0, nextMode = "";
+    const calls: string[] = [];
+    const data = scenario === "fallback" ? [] : [item], allData = [fallback];
+    const lastQuizResetKeyRef = { current: "previous" }, prevModeRef = { current: "learn" };
+    const answeredRef = { current: true };
+    const sandbox = {
+      mode: scenario === "same-mode" ? "quiz" : "learn", tab: "hiragana", selectedGroupKey: "a",
+      data, allData, lastQuizResetKeyRef, prevModeRef, answeredRef,
+      stopAudio: () => calls.push("stop"), setMode: (value: string) => { nextMode = value; calls.push("mode"); },
+      setSelected: (value: unknown) => { selected = value; }, resetQuizScore: () => { score = 0; },
+      getQuizEligibleItems: (items: typeof data) => items,
+      getQuizQuestion: (items: typeof data) => { draws++; assert.equal(items, data.length ? data : allData); return { question: items[0], choices: [items[0].roman] }; },
+      setQuiz: (value: typeof stale) => { question = value; },
+    };
+    const context = vm.createContext(sandbox);
+    vm.runInContext(javascript, context);
+    const target = scenario === "nonquiz" ? "learn" : "quiz";
+    (context.handler as (mode: string) => void)(target);
+    assert.equal(calls[0], "stop"); assert.equal(nextMode, target);
+    if (scenario === "nonquiz") {
+      assert.equal(question, stale); assert.equal(draws, 0); assert.equal(selected, "old"); assert.equal(score, 3); assert.equal(answeredRef.current, true);
+    } else {
+      assert.equal(selected, null); assert.equal(score, 0); assert.equal(answeredRef.current, false);
+      if (scenario === "same-mode") { assert.equal(question, stale); assert.equal(draws, 0); }
+      else { assert.equal(question.question, scenario === "fallback" ? fallback : item); assert.equal(draws, 1); }
+    }
+    if (scenario === "entry" || scenario === "fallback") {
+      assert.equal(lastQuizResetKeyRef.current, "hiragana|a"); assert.equal(prevModeRef.current, "quiz");
+    } else { assert.equal(lastQuizResetKeyRef.current, "previous"); assert.equal(prevModeRef.current, "learn"); }
+  }
+});

@@ -53,7 +53,7 @@ export async function registerDeviceBiometric(userId: string, userLabel: string)
   const credential = await navigator.credentials.create({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: "재민님의 운동" },
+      rp: { name: "AI 연이" },
       user: {
         id: new TextEncoder().encode(userId),
         name: userLabel,

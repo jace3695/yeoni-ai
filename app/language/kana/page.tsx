@@ -1509,6 +1509,13 @@ export default function KanaPage() {
     if (newMode === "quiz") {
       answeredRef.current = false; setSelected(null);
       resetQuizScore();
+      if (mode !== "quiz") {
+        const source = getQuizEligibleItems(data);
+        const fallback = getQuizEligibleItems(allData);
+        setQuiz(getQuizQuestion(source.length > 0 ? source : fallback));
+        lastQuizResetKeyRef.current = `${tab}|${selectedGroupKey}`;
+        prevModeRef.current = newMode;
+      }
     }
     if (newMode === "confusing") {
       setConfusingView("cards");

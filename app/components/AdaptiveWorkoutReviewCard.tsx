@@ -43,11 +43,11 @@ export default function AdaptiveWorkoutReviewCard({ input, onApply, onRefresh }:
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-xs font-bold text-[#534AB7]">연이의 운동 조정 제안</p>
-          <h3 className="mt-1 text-lg font-extrabold text-gray-900">재민님 기록에 맞춰 다음 운동을</h3>
+          <h3 className="mt-1 text-lg font-extrabold text-gray-900">내 기록에 맞춰 다음 운동을</h3>
         </div>
         <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${review.action === 'hold' ? 'bg-red-50 text-red-800' : review.action === 'decrease' ? 'bg-amber-50 text-amber-900' : 'bg-[#EEEDFE] text-[#534AB7]'}`}>{ACTION_LABELS[review.action]}</span>
       </div>
-      <p className="mt-2 text-xs leading-5 text-gray-600">최근 28일의 수행능력·허리 상태·피로를 확인합니다. 재민님이 확인해서 적용할 때 계획이 바뀝니다.</p>
+      <p className="mt-2 text-xs leading-5 text-gray-600">최근 28일의 수행능력·허리 상태·피로를 확인합니다. 직접 확인해서 적용할 때 계획이 바뀝니다.</p>
       <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
         <div className="rounded-2xl bg-gray-50 p-3"><dt className="text-gray-500">비교할 기록</dt><dd className="mt-1 font-bold text-gray-900">{review.evidenceCount}회 <span className="block text-[11px] font-normal text-gray-500">근력 {review.strengthCount}회</span></dd></div>
         <div className="rounded-2xl bg-gray-50 p-3"><dt className="text-gray-500">최근 운동 후 허리</dt><dd className="mt-1 font-bold text-gray-900">{review.latestBack}</dd></div>
