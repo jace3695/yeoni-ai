@@ -76,10 +76,10 @@ const levelFlowHashes = {
 const workflowHash = 'c65190845968db7077198840dbdeb9d9a42ae4e57038f1dcfbcdcbc3bd0e5bf6';
 
 test('exact command, fixed project/source inventory, readiness and ceilings stay narrow', async () => {
-  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 tests/e2e/japanese-middle-reading.spec.ts:3 tests/e2e/japanese-upper-reading.spec.ts:3 tests/e2e/japanese-level-choice.spec.ts:3 tests/e2e/japanese-due-review.spec.ts:3 tests/e2e/curriculum-corruption.spec.ts:3 tests/e2e/curriculum-terminal.spec.ts:3 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
+  assert.equal(browserCommand, 'node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts:3 tests/e2e/sync.spec.ts:3 tests/e2e/language-sync.spec.ts:8 tests/e2e/language-reset.spec.ts:39 tests/e2e/japanese-answer-persistence.spec.ts:8 tests/e2e/daily-review-completion.spec.ts:3 tests/e2e/language-reset-receipts.spec.ts:9 tests/e2e/japanese-middle-reading.spec.ts:3 tests/e2e/japanese-upper-reading.spec.ts:3 tests/e2e/japanese-level-choice.spec.ts:3 tests/e2e/japanese-due-review.spec.ts:3 tests/e2e/curriculum-corruption.spec.ts:3 tests/e2e/curriculum-terminal.spec.ts:3 tests/e2e/japanese-settings-recovery.spec.ts:3 --config playwright.chromium-smoke.config.ts --project chromium-app-smoke');
   assert.deepEqual(inventory, [{ source: 19, line: 3, column: 5, project: 5 }, { source: 38, line: 3, column: 5, project: 5 },
-    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }, { source: 51, line: 3, column: 5, project: 5 }, { source: 52, line: 3, column: 5, project: 5 }, { source: 53, line: 3, column: 5, project: 5 }, { source: 54, line: 3, column: 5, project: 5 }]);
-  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts']);
+    { source: 33, line: 8, column: 5, project: 5 }, { source: 32, line: 39, column: 5, project: 5 }, { source: 46, line: 8, column: 5, project: 5 }, { source: 47, line: 3, column: 5, project: 5 }, { source: 48, line: 9, column: 5, project: 5 }, { source: 49, line: 3, column: 5, project: 5 }, { source: 50, line: 3, column: 5, project: 5 }, { source: 51, line: 3, column: 5, project: 5 }, { source: 52, line: 3, column: 5, project: 5 }, { source: 53, line: 3, column: 5, project: 5 }, { source: 54, line: 3, column: 5, project: 5 }, { source: 55, line: 3, column: 5, project: 5 }]);
+  assert.deepEqual(inventory.map(item => sources[item.source - 1]), ['tests/e2e/auth.spec.ts', 'tests/e2e/sync.spec.ts', 'tests/e2e/language-sync.spec.ts', 'tests/e2e/language-reset.spec.ts', 'tests/e2e/japanese-answer-persistence.spec.ts', 'tests/e2e/daily-review-completion.spec.ts', 'tests/e2e/language-reset-receipts.spec.ts', 'tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts', 'tests/e2e/japanese-settings-recovery.spec.ts']);
   assert.equal(stages[0].command, 'node --test scripts/isolated-chromium-smoke/safety.test.mjs');
   assert.equal(stages[1].command, 'pinned-bundled-chromium-readiness');
   assert.equal(stages[1].lifecycleDiagnostics, true);
@@ -92,7 +92,7 @@ test('exact command, fixed project/source inventory, readiness and ceilings stay
   assert.equal(lock.packages['node_modules/@playwright/test'].version, '1.63.0');
   assert.equal(lock.packages['node_modules/playwright'].version, '1.63.0');
   assert.equal(diagnosticInvocations(browserCommand), 1);
-  for (const changed of [browserCommand.replace('tests/e2e/curriculum-corruption.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/curriculum-terminal.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-level-choice.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-due-review.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-middle-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-upper-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
+  for (const changed of [browserCommand.replace('tests/e2e/japanese-settings-recovery.spec.ts:3 ', ''), browserCommand.replace('japanese-settings-recovery.spec.ts:3', 'japanese-settings-recovery.spec.ts:4'), browserCommand.replace('tests/e2e/curriculum-corruption.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/curriculum-terminal.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-level-choice.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-due-review.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-middle-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/japanese-upper-reading.spec.ts:3 ', ''), browserCommand.replace('tests/e2e/language-reset-receipts.spec.ts:9 ', ''), browserCommand.replace('tests/e2e/daily-review-completion.spec.ts:3 ', ''), browserCommand + ' --list', browserCommand + ' --grep .*', browserCommand.replace(':39', ':119'),
     browserCommand.replace('--project chromium-app-smoke', '--project chromium'), stages[1].command, 'echo ' + browserCommand]) {
     assert.equal(diagnosticInvocations(changed), 0);
   }
@@ -116,7 +116,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
     }
     if (path === 'scripts/qa-private-source-ids.mjs') {
       let text = bytes.toString('utf8');
-      for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n", "  'tests/e2e/language-reset-receipts.spec.ts', // 48\n", "  'tests/e2e/japanese-middle-reading.spec.ts', // 49\n", "  'tests/e2e/japanese-upper-reading.spec.ts', // 50\n", "  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", "  'tests/e2e/japanese-due-review.spec.ts', // 52\n", "  'tests/e2e/curriculum-corruption.spec.ts', // 53\n", "  'tests/e2e/curriculum-terminal.spec.ts', // 54\n"]) {
+      for (const addition of ["  'tests/e2e/japanese-answer-persistence.spec.ts', // 46\n", "  'tests/e2e/daily-review-completion.spec.ts', // 47\n", "  'tests/e2e/language-reset-receipts.spec.ts', // 48\n", "  'tests/e2e/japanese-middle-reading.spec.ts', // 49\n", "  'tests/e2e/japanese-upper-reading.spec.ts', // 50\n", "  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", "  'tests/e2e/japanese-due-review.spec.ts', // 52\n", "  'tests/e2e/curriculum-corruption.spec.ts', // 53\n", "  'tests/e2e/curriculum-terminal.spec.ts', // 54\n", "  'tests/e2e/japanese-settings-recovery.spec.ts', // 55\n"]) {
         assert.equal(text.split(addition).length, 2); text = text.replace(addition, '');
       }
       bytes = Buffer.from(text);
@@ -134,7 +134,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
   assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 345);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
-  const addition = "      - name: Verify thirteen authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
+  const addition = "      - name: Verify fourteen authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
   assert.equal(workflow.split('len(tests) == 345').length, 2);
   assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 345', 'len(tests) == 343')).digest('hex'), workflowHash);
@@ -167,7 +167,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
   });
   assert.equal(result.status, 0); const config = JSON.parse(result.stdout);
   assert.deepEqual(config.projects, [{ name: 'chromium-app-smoke' }]);
-  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts', 'curriculum-corruption.spec.ts', 'curriculum-terminal.spec.ts']);
+  assert.deepEqual(config.testMatch, ['auth.spec.ts', 'sync.spec.ts', 'language-sync.spec.ts', 'language-reset.spec.ts', 'japanese-answer-persistence.spec.ts', 'daily-review-completion.spec.ts', 'language-reset-receipts.spec.ts', 'japanese-middle-reading.spec.ts', 'japanese-upper-reading.spec.ts', 'japanese-level-choice.spec.ts', 'japanese-due-review.spec.ts', 'curriculum-corruption.spec.ts', 'curriculum-terminal.spec.ts', 'japanese-settings-recovery.spec.ts']);
   assert.equal(config.fullyParallel, false); assert.equal(config.workers, 1); assert.equal(config.retries, 0);
   assert.equal(config.forbidOnly, true); assert.equal(config.repeatEach, 1); assert.equal(config.timeout, 90000);
   assert.equal(config.expect.timeout, 15000); assert.equal(config.use.browserName, 'chromium'); assert.equal(config.use.headless, true);
@@ -185,7 +185,7 @@ test('config contains only Chromium, strict deadlines, private media settings an
     url: 'http://127.0.0.1:3000/diet/settings', reuseExistingServer: false, timeout: 120000 });
 });
 
-test('Playwright list-only collection resolves exactly thirteen titles and coordinates without fixtures', () => {
+test('Playwright list-only collection resolves exactly fourteen titles and coordinates without fixtures', () => {
   // --list does not start webServer, browsers, test bodies or fixture hooks.
   const args = browserCommand.split(' ').slice(1).concat(['--list', '--reporter=json']);
   const result = spawnSync(process.execPath, args, { env: environment(), encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
@@ -193,7 +193,7 @@ test('Playwright list-only collection resolves exactly thirteen titles and coord
   assert.deepEqual(report.errors, []);
   const specs = suite => [...(suite.specs ?? []), ...(suite.suites ?? []).flatMap(specs)];
   const selected = report.suites.flatMap(specs);
-  assert.equal(selected.length, 13);
+  assert.equal(selected.length, 14);
   const expected = new Map([
     ['auth.spec.ts:3', 'login, logout and same-account relogin preserve all 17 original keys without PATCH'],
     ['sync.spec.ts:3', 'first GET delivery delayed while a real form saves: originals and new input survive'],
@@ -208,6 +208,7 @@ test('Playwright list-only collection resolves exactly thirteen titles and coord
     ['japanese-due-review.spec.ts:3', 'synthetic overdue reading subset keeps its queue and saves helped repeats without completing the full unit'],
     ['curriculum-corruption.spec.ts:3', 'corrupt curriculum bytes survive attempted UI writes and reload until explicit synthetic fixture correction'],
     ['curriculum-terminal.spec.ts:3', 'terminal beginner f12 completes twice through silent meaning UI with real saves and manual intermediate choice'],
+    ['japanese-settings-recovery.spec.ts:3', 'active settings preserve extensions and reject stale partial or uncertain saves through explicit recovery and reentry'],
   ]);
   for (const spec of selected) {
     const key = `${spec.file}:${spec.line}`;
@@ -357,7 +358,7 @@ test('three-stage sequencing propagates safety/readiness/browser failures, cance
     assert.equal(code, failure < 0 ? 0 : 1); assert.equal(calls.length, failure < 0 ? 3 : failure + 1);
     privateOutput(options.output);
     assert.equal(options.output.at(-1).includes('realBrowser=true'), failure < 0);
-    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=13 browser=playwright-chromium-headless-shell realBrowser=true fixtureCleanup=passed');
+    if (failure < 0) assert.equal(options.output.at(-1), 'chromium-app-smoke passed tests=14 browser=playwright-chromium-headless-shell realBrowser=true fixtureCleanup=passed');
   }
   const options = await fresh(), controller = new AbortController(); controller.abort();
   assert.equal(await supervise({ ...options, signal: controller.signal, run: () => { throw new Error(canary); } }), 1);
@@ -409,10 +410,10 @@ test('sixth test requires the real notice fix and three distinct saved reviews w
 test('independently reviewed seventh receipt scenario is pinned while IDs 49–52 append reading, level choice and review coverage', async () => {
   assert.equal(createHash('sha256').update(await readFile('tests/e2e/language-reset-receipts.spec.ts')).digest('hex'), receiptTestHash);
   const sourceMap = await readFile('scripts/qa-private-source-ids.mjs', 'utf8');
-  const originalMap = sourceMap.replace("  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", '').replace("  'tests/e2e/japanese-due-review.spec.ts', // 52\n", '').replace("  'tests/e2e/curriculum-corruption.spec.ts', // 53\n", '').replace("  'tests/e2e/curriculum-terminal.spec.ts', // 54\n", '');
+  const originalMap = sourceMap.replace("  'tests/e2e/japanese-level-choice.spec.ts', // 51\n", '').replace("  'tests/e2e/japanese-due-review.spec.ts', // 52\n", '').replace("  'tests/e2e/curriculum-corruption.spec.ts', // 53\n", '').replace("  'tests/e2e/curriculum-terminal.spec.ts', // 54\n", '').replace("  'tests/e2e/japanese-settings-recovery.spec.ts', // 55\n", '');
   assert.equal(createHash('sha256').update(originalMap).digest('hex'), 'eadd83cc376147d355cf907670980a94166d57f16daf3365dda367e1a9d141c5');
-  assert.equal(sources.length, 54);
-  assert.deepEqual(sources.slice(48), ['tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts']);
+  assert.equal(sources.length, 55);
+  assert.deepEqual(sources.slice(48), ['tests/e2e/japanese-middle-reading.spec.ts', 'tests/e2e/japanese-upper-reading.spec.ts', 'tests/e2e/japanese-level-choice.spec.ts', 'tests/e2e/japanese-due-review.spec.ts', 'tests/e2e/curriculum-corruption.spec.ts', 'tests/e2e/curriculum-terminal.spec.ts', 'tests/e2e/japanese-settings-recovery.spec.ts']);
 });
 
 test('reading scenarios retain all 36 source-mapped questions, UI writes and exact local-before-DB confirmation', async () => {
@@ -764,4 +765,160 @@ test('terminal assertions reject prior-history loss and require independently bo
     ['both boundary days added', progress => { progress.activityDates = ['2001-01-02', '2026-11-12', '2026-11-13']; }, { start: midnight }],
     ['unexpected new attempt field', progress => { progress.lessonAttempts.f12.at(-1).syntheticExtra = true; }],
   ]) await assert.rejects(() => run(mutate, options), undefined, name);
+});
+
+// This source-only preparation adds one actual app scenario, not a mounted UI
+// double. These checks run only synthetic helpers/collection/fixtureless workers.
+test('active settings coverage pins its reviewed product overlay and narrowly scoped failure injection', async () => {
+  const hashes = {
+  "app/language/settings/page.tsx": "b6242717b70eff28322f6f64641ffae302f4525b129d5b0f7773140ded2e6b50",
+  "utils/languageSettingsPage.ts": "6093eecb8f0857251c5b97034fd9033d0b0a3e948ef1b4ef1830add5c2635b5a",
+  "tests/japanese-preview-session-options.test.ts": "ca017c35715ee180e704dc59d7ccbebef17df7b1ed73f8f87e68f1d0b8d57877",
+  "tests/e2e/japanese-settings-recovery.spec.ts": "dd87b33d0461bdc7798b0b1606e16b0aeb3a432ed723c0f6cc266ff840e32669",
+  "tests/e2e/japanese-settings-state.ts": "005613b394514b151d8b134325c19fe637f37c31fd86b605fb5b5277dc697878"
+};
+  for (const [path, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash, path);
+  const source = await readFile('tests/e2e/japanese-settings-recovery.spec.ts', 'utf8');
+  const helper = await readFile('tests/e2e/japanese-settings-state.ts', 'utf8');
+  assert.equal(source.match(/test\('/g)?.length, 1); assert.ok(source.split('\n')[2].startsWith('test('));
+  for (const text of [source, helper]) for (const forbidden of ['page.route', 'route.fulfill', 'addInitScript', 'waitForTimeout',
+    'test.setTimeout', 'test.skip', 'test.fixme', 'audio.play', 'speakJapanese', 'qa.createAccount(', 'process.env.', 'saveLanguageSettingsPage(', 'readLanguageSettingsPage(', 'createRoot(']) assert.ok(!text.includes(forbidden), forbidden);
+  for (const required of ["await login(page, qa.account, '/language')", 'peer = await context.newPage()', "peer.goto('/language/settings')",
+    'await confirmedSettings(page, qa, saved, fitness)', 'await confirmedSettings(peer, qa, saved, fitness)', 'await noSuccess(page)',
+    "await settingsError(page, 'stale')", "await settingsError(page, 'write')", "await settingsError(page, 'confirmation')",
+    "await settingsError(page, 'invalid')", 'await rereadSettings(page, false)', 'await rereadSettings(page, true)',
+    "'japaneseAppSettings', 'before-write'", "'learningSettings', 'before-write'", "'integratedLearningSettingsV1', 'before-write'",
+    "'integratedLearningSettingsV1', 'readback'", 'await localSettings(page, partial)', 'await localSettings(page, uncertain)',
+    'await page.reload()', 'await page.goBack()', 'await page.goForward()', 'await restoredEditor()', 'width: 320', 'expect(size.scroll).toBeLessThanOrEqual(size.width)',
+    "holdNext('PATCH', 'response', 'language_user_state')", 'finally { hold.release(); }', 'await qa.traffic.drain()',
+    'qa.traffic.releaseAll()', 'await restoreSettingsFault(page)', 'await peer.close()', "context.off('request', onRequest)",
+    'await replaceSyntheticSettings(page, key, saved[key] as string)', 'expect(ttsRequests', 'planned accounts']) {
+    assert.ok(source.toLowerCase().includes(required.toLowerCase()), required);
+  }
+  for (const required of ['hasSettingsAcknowledgement(qa.traffic.entries.slice(confirmedThrough.get(qa) ?? 0), expected)',
+    'confirmedThrough.set(qa, qa.traffic.entries.length)', 'qa.traffic.assertLanguageConfirmed(expected)',
+    'await localSettings(page, expected)', 'canonical(await qa.readLanguage())', 'expect(await qa.read()).toEqual(fitness)',
+    'futureRoot', 'futureSection', 'futureGoal', 'futureIntegrated', "Object.fromEntries([['__proto__'", '...ownFuture', 'Object.getOwnPropertyDescriptor(prototype,',
+    "this !== storage || name !== key || mode === 'observe' || stats.hits !== 0", 'set.call(this, name, value); armedRead = true;',
+    "Object.defineProperty(prototype, 'getItem', getDescriptor)", "Object.defineProperty(prototype, 'setItem', setDescriptor)",
+    'delete target.__qaSettingsFault', "page.off('dialog', handler)"]) assert.ok(helper.includes(required), required);
+  assert.equal(helper.match(/client\.from\('language_user_state'\)\.update/g)?.length, 1);
+  assert.equal(helper.match(/localStorage\.setItem/g)?.length, 1);
+  assert.ok(!source.includes('localStorage.setItem'));
+});
+
+test('actual settings fault helper preserves unrelated storage and restores original descriptors in every mode', async () => {
+  const ts = (await import('typescript')).default;
+  const source = await readFile('tests/e2e/japanese-settings-state.ts', 'utf8');
+  const begin = source.indexOf('export async function installSettingsFault');
+  const end = source.indexOf('// Explicit corruption/correction');
+  const js = ts.transpileModule(source.slice(begin, end).replaceAll('export ', ''), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  for (const key of ['japaneseAppSettings', 'learningSettings', 'integratedLearningSettingsV1']) {
+    for (const mode of ['observe', 'before-write', 'readback']) {
+      class SyntheticStorage {
+        values = new Map();
+        getItem(key) { return this.values.get(key) ?? null; }
+        setItem(key, value) { this.values.set(key, String(value)); }
+      }
+      const storage = new SyntheticStorage(), other = new SyntheticStorage(), window = { localStorage: storage };
+      storage.setItem(key, 'before');
+      const descriptors = Object.getOwnPropertyDescriptors(SyntheticStorage.prototype);
+      const install = new Function('window', 'Storage', 'DOMException', js + '; return installSettingsFault;')(window, SyntheticStorage, DOMException);
+      const page = { evaluate: async (callback, args) => callback(args), isClosed: () => false };
+      const fault = await install(page, key, mode);
+      try {
+        await assert.rejects(() => install(page, key, mode));
+        storage.setItem('language-cloud-sync-user', 'unrelated-owner'); other.setItem(key, 'other-storage');
+        assert.equal(storage.getItem('language-cloud-sync-user'), 'unrelated-owner'); assert.equal(other.getItem(key), 'other-storage');
+        if (mode === 'before-write') { assert.throws(() => storage.setItem(key, 'after')); assert.equal(storage.getItem(key), 'before'); }
+        else {
+          storage.setItem(key, 'after');
+          if (mode === 'readback') assert.throws(() => storage.getItem(key));
+          assert.equal(storage.getItem(key), 'after');
+        }
+        const stats = await fault.stats();
+        assert.equal(stats.hits, mode === 'observe' ? 0 : 1); assert.equal(stats.failedReads, mode === 'readback' ? 1 : 0);
+        assert.deepEqual(stats.writes, { japaneseAppSettings: 0, learningSettings: 0, integratedLearningSettingsV1: 0, [key]: 1 });
+        storage.setItem(key, 'retry'); assert.equal(storage.getItem(key), 'retry'); assert.equal(stats.hits, mode === 'observe' ? 0 : 1);
+      } finally { await fault.restore(); }
+      assert.deepEqual(Object.getOwnPropertyDescriptors(SyntheticStorage.prototype), descriptors);
+      assert.equal(window.__qaSettingsFault, undefined);
+      storage.setItem(key, 'restored'); assert.equal(storage.getItem(key), 'restored');
+    }
+  }
+});
+
+test('settings acknowledgement rejects undelivered synthetic stale and mismatched write or read evidence', async () => {
+  const ts = (await import('typescript')).default;
+  const source = await readFile('tests/e2e/japanese-settings-state.ts', 'utf8');
+  const js = ts.transpileModule(source.slice(source.indexOf('export function hasSettingsAcknowledgement'), source.indexOf('const confirmedThrough'))
+    .replaceAll('export ', ''), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  const canonical = value => JSON.stringify(value);
+  const check = new Function('canonical', js + '; return hasSettingsAcknowledgement;')(canonical);
+  const expected = { learningSettings: '{"dailyGoalCount":3,"future":{"keep":true}}' };
+  const patch = { table: 'language_user_state', method: 'PATCH', status: 200, matched: true, cas: true, delivered: true, sent: expected, received: 20 };
+  const get = { table: 'language_user_state', method: 'GET', status: 200, delivered: true, receivedState: expected, started: 21 };
+  assert.equal(check([patch, get], expected), true);
+  for (const entries of [[], [patch], [get], [{ ...patch, delivered: false }, get], [{ ...patch, synthetic: true }, get],
+    [{ ...patch, matched: false }, get], [{ ...patch, cas: false }, get], [{ ...patch, sent: {} }, get],
+    [{ ...patch, status: 503 }, get], [{ ...patch, table: 'user_app_state' }, get],
+    [patch, { ...get, delivered: false }], [patch, { ...get, synthetic: true }], [patch, { ...get, receivedState: {} }],
+    [patch, { ...get, status: 503 }], [patch, { ...get, started: 19 }], [patch, { ...get, table: 'user_app_state' }]]) {
+    assert.equal(check(entries, expected), false);
+  }
+});
+
+test('settings eight literal phases retain unique native test identities in one private fixtureless invocation', async () => {
+  const repository = process.cwd(), root = await mkdtemp(join(tmpdir(), 'settings-native-phases-'));
+  const file = 'tests/e2e/japanese-settings-recovery.spec.ts';
+  const expectedLines = [29, 38, 67, 85, 108, 123, 146, 158];
+  try {
+    const source = await readFile(file, 'utf8'), lines = source.split('\n');
+    const positions = lines.flatMap((line, index) => line.includes('await test.step(') ? [index + 1] : []);
+    assert.deepEqual(positions, expectedLines);
+    const synthetic = Array(lines.length).fill('');
+    // Eight unique native test identities share the actual definition at 3:5.
+    // Only CLI/config startup is shared; native failures may restart workers.
+    synthetic[0] = `import { test } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))}; import { fail } from './offline-settings-helper'; for (let phase = 0; phase < 8; phase++) {`;
+    synthetic[2] = "test('synthetic settings phase ' + phase, async () => {";
+    for (const [index, line] of positions.entries()) {
+      const prefix = lines[line - 1].split('async () => {')[0];
+      assert.ok(prefix.includes('await test.step('));
+      synthetic[line - 1] = `${prefix}async () => { await fail(phase, ${index}); });`;
+    }
+    synthetic[positions.at(-1)] = '}); }';
+    await mkdir(join(root, 'tests/e2e'), { recursive: true });
+    await writeFile(join(root, file), synthetic.join('\n'));
+    await writeFile(join(root, 'tests/e2e/offline-settings-helper.ts'), `import { expect } from ${JSON.stringify(join(repository, 'node_modules/@playwright/test/index.js'))};\nexport async function fail(selected, current) { if (selected === current) expect(${JSON.stringify(canary)}).toBe('PRIVATE_EXPECTED'); }\n`);
+    await writeFile(join(root, 'offline.config.mjs'), `export default ${JSON.stringify({ testDir: './tests/e2e', workers: 1, retries: 0, projects: [{ name: 'chromium-app-smoke' }], reporter: [[join(repository, 'tests/e2e/reporter.ts')]] })};\n`);
+    const journalPath = join(root, 'journal.jsonl'); await writeFile(journalPath, '', { mode: 0o600 });
+    const child = spawnSync(process.execPath, [join(repository, 'node_modules/@playwright/test/cli.js'), 'test', '--config', 'offline.config.mjs'], {
+      cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: 'true', QA_PRIVATE_DIAGNOSTIC_FILE: journalPath, QA_PRIVATE_DIAGNOSTIC_TOKEN: token },
+    });
+    assert.equal(child.error, undefined); assert.equal(child.status, 1);
+    const output = [];
+    // This diagnostic-only invocation is not the official 14-item app inventory.
+    const report = await emitDiagnosticJournal({ path: journalPath, token, expected: 1, stage: 'stage-03', termination: 'none', emit: value => output.push(value) });
+    assert.equal(report.report, 'complete'); assert.equal(report.invocations.length, 1);
+    const invocation = report.invocations[0];
+    assert.deepEqual(invocation.counts, { passed: 0, failed: 8, timedOut: 0, skipped: 0, interrupted: 0, unknown: 0 });
+    assert.equal(invocation.status, 'failed'); assert.deepEqual(invocation.active, []); assert.equal(invocation.omitted, 0);
+    assert.equal(invocation.runnerErrors, 0); assert.equal(invocation.details.length, 8);
+    assert.deepEqual(invocation.details.map(detail => detail.test), [1, 2, 3, 4, 5, 6, 7, 8]);
+    const actualLines = [];
+    for (const detail of invocation.details) {
+      assert.equal(detail.source, 55); assert.equal(detail.line, 3); assert.equal(detail.column, 5); assert.equal(detail.project, 5);
+      assert.equal(detail.failure.category, 1); assert.deepEqual(detail.failure.errors, []); assert.deepEqual(detail.failure.failedOperations, []);
+      assert.equal(detail.failure.failedSteps.length, 1); assert.equal(detail.failure.failedSteps[0].source, 55);
+      assert.equal(detail.failure.stepScanTruncated, 0); actualLines.push(detail.failure.failedSteps[0].line);
+    }
+    assert.equal(new Set(actualLines).size, 8); assert.deepEqual(actualLines, expectedLines); privateOutput(output);
+    const text = output.join('\n'), bytes = await readFile(journalPath, 'utf8');
+    for (const secret of [canary, 'PRIVATE_EXPECTED', file, 'offline-settings-helper', root, 'synthetic settings phase', ...positions.map(line => lines[line - 1])]) {
+      assert.ok(!text.includes(secret)); assert.ok(!bytes.includes(secret));
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

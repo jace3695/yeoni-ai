@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { PrivateDiagnostics, diagnosticInvocations, parseDiagnosticJournal, readDiagnosticJournal, emitDiagnosticJournal } from './qa-private-diagnostics.mjs';
 import { runStages } from './qa-private-orchestrator.mjs';
 import { sources } from './qa-private-source-ids.mjs';
+import { inventory, browserCommand } from './isolated-chromium-smoke/plan.mjs';
 
 const token = 'a'.repeat(64), staleToken = 'b'.repeat(64);
 const canary = 'PRIVATE_CANARY_eyJtoken.sb_secret_FAKE.https://private.invalid/session?secret=CANARY\r\n::error::PRIVATE';
@@ -353,8 +354,8 @@ test('journal revalidation rejects forged extra fields, categories, numeric boun
   }
 });
 
-test('appended level-choice and due-review IDs retain private same-spec failure coordinates', async () => {
-  for (const [file, source] of [['tests/e2e/japanese-level-choice.spec.ts', 51], ['tests/e2e/japanese-due-review.spec.ts', 52], ['tests/e2e/curriculum-corruption.spec.ts', 53], ['tests/e2e/curriculum-terminal.spec.ts', 54]]) {
+test('appended browser IDs retain private same-spec failure coordinates', async () => {
+  for (const [file, source] of [['tests/e2e/japanese-level-choice.spec.ts', 51], ['tests/e2e/japanese-due-review.spec.ts', 52], ['tests/e2e/curriculum-corruption.spec.ts', 53], ['tests/e2e/curriculum-terminal.spec.ts', 54], ['tests/e2e/japanese-settings-recovery.spec.ts', 55]]) {
     const fixture = await fresh(), reporter = new PrivateDiagnostics(fixture);
     const definition = { file, line: 3, column: 5 };
     const at = { file, line: 8, column: 11 };
@@ -373,5 +374,68 @@ test('appended level-choice and due-review IDs retain private same-spec failure 
     assert.ok(output.some(line => line.includes(`phase=1 source=${source} line=8 column=11`)));
     const bytes = await readFile(fixture.path, 'utf8');
     for (const secret of [file, canary, 'message', 'stack', 'attachments', 'https:']) assert.ok(!bytes.includes(secret));
+  }
+});
+
+test('smoke diagnostics require all fourteen exact identities and the sole appended command', () => {
+  const eventsFor = items => [start, ...items.flatMap((item, index) => [
+    { event: 'begin', test: index + 1, ...item },
+    { event: 'result', test: index + 1, status: 'passed' },
+  ]), end];
+  const events = eventsFor(inventory);
+  const report = parseDiagnosticJournal(journal(events), token, 1, inventory);
+  assert.equal(inventory.length, 14);
+  assert.deepEqual(inventory.at(-1), { source: 55, line: 3, column: 5, project: 5 });
+  assert.equal(report.report, 'complete');
+  assert.equal(report.invocations[0].counts.passed, 14);
+  for (const badInventory of [inventory.slice(0, 13), [...inventory, { source: 55, line: 4, column: 5, project: 5 }],
+    [...inventory.slice(0, 13), inventory[0]]]) {
+    assert.equal(parseDiagnosticJournal(journal(events), token, 1, badInventory).report, 'invalid');
+  }
+  const invalidEvents = [eventsFor(inventory.slice(0, 13)),
+    eventsFor([...inventory.slice(0, 13), inventory[0]]),
+    ...[{ source: 54 }, { line: 4 }, { column: 6 }, { project: 1 }].map(change =>
+      eventsFor([...inventory.slice(0, 13), { ...inventory.at(-1), ...change }])),
+    events.map(entry => entry.event === 'result' && entry.test === 14 ? { ...entry, status: 'skipped' } : entry),
+  ];
+  for (const badEvents of invalidEvents) {
+    assert.equal(parseDiagnosticJournal(journal(badEvents), token, 1, inventory).report, 'invalid');
+  }
+  assert.equal(diagnosticInvocations(browserCommand), 1);
+  for (const command of [browserCommand.replace(' tests/e2e/japanese-settings-recovery.spec.ts:3', ''),
+    browserCommand.replace('japanese-settings-recovery.spec.ts:3', 'japanese-settings-recovery.spec.ts:4'),
+    browserCommand + ' --list', browserCommand + ' --grep settings']) {
+    assert.equal(diagnosticInvocations(command), 0);
+  }
+});
+
+test('settings source 55 rejects cross-source evidence and never publishes private canaries', async () => {
+  const file = 'tests/e2e/japanese-settings-recovery.spec.ts';
+  const fixture = await fresh(), reporter = new PrivateDiagnostics(fixture);
+  const definition = { file, line: 3, column: 5 };
+  const same = { file, line: 8, column: 11 };
+  const other = { file: 'tests/e2e/curriculum-terminal.spec.ts', line: 8, column: 11 };
+  reporter.onTestEnd(specimen(definition, 'chromium-app-smoke'), { status: 'failed', errors: [{ message: canary }] }, {
+    category: 'test-error', testDefinition: definition, message: canary,
+    errors: [{ location: same, message: canary }, { location: other, message: canary }], omittedErrors: 0,
+    failedSteps: [same, other], failedOperations: [same, other].map(location =>
+      ({ location, category: 'expect', durationMs: 15, title: canary, params: canary })),
+  });
+  reporter.onEnd({ status: 'failed' });
+  const { report, output } = await emit(fixture);
+  assert.equal(report.report, 'complete');
+  const failure = report.invocations[0].details[0].failure;
+  assert.deepEqual(failure.errors, [{ source: 55, line: 8, column: 11 }]);
+  assert.deepEqual(failure.failedSteps, [{ source: 55, line: 8, column: 11 }]);
+  assert.deepEqual(failure.failedOperations, [{ source: 55, line: 8, column: 11, category: 1, durationMs: 15 }]);
+  const bytes = await readFile(fixture.path, 'utf8');
+  for (const secret of [file, other.file, canary, 'PRIVATE', 'message', 'stack', 'params', 'attachments', 'https:']) {
+    assert.ok(!bytes.includes(secret)); assert.ok(!output.join('\n').includes(secret));
+  }
+  for (const key of ['errors', 'failedSteps', 'failedOperations']) {
+    const forged = { ...failure, [key]: [{ ...failure[key][0], source: 54 }] };
+    const events = [start, { event: 'begin', test: 1, source: 55, line: 3, column: 5, project: 5 },
+      { event: 'result', test: 1, status: 'failed', failure: forged }, { event: 'end', status: 'failed' }];
+    assert.equal(parse(events).report, 'invalid');
   }
 });

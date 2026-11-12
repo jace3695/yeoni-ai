@@ -80,7 +80,7 @@ traversal: 18 questions and three lessons per unchanged 90-second test, with no
 omitted question or raised timeout. Actual fit in the unchanged overall lane
 remains unverified until a bounded run and fixture cleanup finish.
 
-The receipt test uses two generated owners. These thirteen tests use fifteen disposable accounts in total. The existing fixture handles
+The receipt test uses two generated owners. These fourteen tests plan sixteen disposable accounts in total; actual creation and cleanup require execution. The existing fixture handles
 account creation, route draining, browser closure, deletion and scoped zero-row
 checks. Passing requires completion of all test teardown assertions. Interrupted
 or failed teardown is not certified. The existing unconditional disposable stack
@@ -158,7 +158,7 @@ this private API dependency explicit; an upstream change fails closed and needs
 review. The installer may write a validation marker, but this route never reads
 it as proof. ffmpeg's pinned installation identity is checked; its no-op native
 validator is not represented as shared-library readiness. Video remains disabled.
-This readiness stage does not launch a browser or prove the thirteen app flows.
+This readiness stage does not launch a browser or prove the fourteen app flows.
 Real launch, runtime dependencies/resources and all flow assertions remain stage
 03 evidence. Missing host requirements stop rather than trigger installation,
 system-Chrome fallback, security changes or a validation bypass.
@@ -215,7 +215,7 @@ rows, URLs, credentials, errors or DOM is forwarded to public output.
 
 The private diagnostic channel has a fresh random token, bounded reads, no-follow
 file access and an exact schema. Acceptance requires one completed invocation,
-the thirteen exact source coordinates with project ID 5, thirteen passed tests and zero
+the fourteen exact source coordinates with project ID 5, fourteen passed tests and zero
 skips, failures, unknown outcomes, active tests or runner errors. Missing, stale,
 partial, duplicate, malformed or oversized reports fail closed, even with exit 0.
 Existing project IDs are unchanged. Public output contains fixed labels and
@@ -288,3 +288,60 @@ Both new tests use the unchanged fixture, real Auth/DB replies, cleanup and exte
 The complete safety commands are independently derived from both workflow supervisors: `node --test scripts/isolated-auth-api/safety.test.mjs` and `node --test scripts/isolated-chromium-smoke/safety.test.mjs`. The latter includes actual list-only collection and all native fixtureless phase checks. It does not run test bodies, a browser, app server, Auth, database, installer or network. Unit inventory remains 345; all test/time/resource ceilings stay unchanged. The prior system-Chrome route is replaced by the distinct fail-closed pinned-bundle installation and enforced host-validation route, with no OS dependency installation.
 
 This candidate does not add browser evidence for corrupt remote rows, key-specific storage read failure, all six reader entry points, stale Kana owner/epoch permutations, overflow extensions, or corrupt-local newer-reset recovery. Those remain synthetic-only repair coverage. Existing genuine reset/receipt scenarios remain byte-identical but do not cover corrupt-local reset recovery. Actual browser timing, execution, same-commit CI and cleanup remain unverified until an authorized bounded run. No audio, physical-device, whole-curriculum, hosted-data or deployment claim is made.
+
+
+## Active settings recovery preparation (source 55)
+
+This independent fourteenth scenario targets the real `/language/settings` route,
+entered from TopNav through unchanged AuthGate/LanguageCloudSync. It does not test
+or mount the unconnected LearningWelcome. All preceding thirteen spec bodies,
+shared E2E helpers, SQL/Auth fixtures and fixed coordinates remain byte-identical.
+The separately reviewed active settings three-file overlay is pinned exactly.
+No browser execution or same-commit CI success is claimed by this preparation.
+
+`japanese-settings-recovery.spec.ts:3` (source 55, project 5) uses one newly generated
+synthetic account and one temporary same-context page. The lane therefore plans
+16 accounts, not a claim that 16 accounts have been created or cleaned. Its eight
+literal phases cover initial raw preservation; automatic detail plus explicit
+learning/integrated edits with nested future fields; a real second-screen stale
+snapshot; detail and first-key failure/retry; second-key partial save/no rollback;
+write-success/readback-failure and reread cancel/confirm; 320px reload, Back/Forward
+and actual navigation reentry; three synthetic malformed/invalid settings mounts.
+
+Storage fault injection is restricted to this page's local Storage realm and the
+three settings keys. It neither mocks React nor replaces a successful network
+response. The one-shot fault is removed in finally; actual native set/get
+methods and descriptors are restored. Reread dialog listeners, temporary page,
+request observer and response hold also have finally cleanup. The unchanged qa
+fixture still owns route drain/context close/Auth deletion/storage and row cleanup;
+interrupted teardown is not a successful cleanup result.
+
+Expected complete local state is constructed independently of the product helper,
+including unknown fields, own __proto__ data at all three settings boundaries and nested Japanese layers, and unrelated synthetic language/fitness records.
+Successful writes require a new genuine conditional matched/delivered PATCH,
+a later delivered confirmation GET, and authenticated DB readback. An older matching
+reply is excluded by a per-test confirmation watermark. The held normal response
+separates local-save wording from the still-pending server badge. Partial writes
+can be uploaded by the unchanged cloud collector; no global zero-write or unchanged
+remote snapshot assertion is made for a local settings failure. Synthetic damaged
+raw settings are deliberately allowed to reach the disposable server and checked
+there, then explicitly corrected to the pre-fault bytes. That setup/correction is
+not counted as a successful user settings save. Never use it on real user data.
+
+All eight phases share the unchanged 90-second test budget, 465-second browser
+stage and 775-second supervisor; actual timing fit is unverified. No timeout,
+retry, worker count, host validation, dependency installation, exact worker marker,
+network gate or private diagnostic guard is relaxed. The local safety suite adds
+source pins, exact 14-item rejection cases, nine synthetic fault-controller checks,
+acknowledgement sensitivity controls and eight native fixtureless failure phases in one CLI invocation with eight unique native tests. Existing reading/source51–54 loops are unchanged; worker restarts after failures remain native.
+Those are not actual app, Auth, DB, browser or cleanup evidence. The unit test-file
+inventory remains exactly 345.
+
+Deferred actual-browser boundaries: all value/extension permutations, owner/epoch
+and reset/journal changes during this editor, OS quota/storage implementation failures,
+no-op and throw-after-write setter variants, alternate-context/server concurrency,
+logout/relogin specifically after recovery, killed-profile recovery, every layout,
+WebKit and physical devices. Existing normal relogin/reset tests are retained but
+are not relabeled as the new settings-error recovery evidence. The exact candidate
+still needs independent review, backup, source-matched build/CI and all fourteen
+real browser results, including measured timing and actual cleanup success.

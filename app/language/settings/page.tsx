@@ -1,41 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import YeoniPreferencesPanel from "@/components/YeoniPreferencesPanel";
 import RecordResetPanel from "@/app/components/RecordResetPanel";
-import {
-  DEFAULT_INTEGRATED_LEARNING_SETTINGS,
-  loadIntegratedLearningSettings,
-  saveIntegratedLearningSettings,
-  type IntegratedLearningSettings,
-} from "@/utils/integratedLearningSettings";
-
-type LearningSection = "kana" | "words" | "sentences" | "speaking" | "conversation";
-
-type CommonSectionSettings = {
-  ttsRate: number;
-  repeatCount: number;
-  repeatDelayMs: number;
-};
-
-type DetailedSectionSettings = CommonSectionSettings & {
-  showKoreanPronunciation: boolean;
-  showReading: boolean;
-};
-
-type JapaneseAppSettings = {
-  sections: {
-    kana: CommonSectionSettings;
-    words: DetailedSectionSettings;
-    sentences: DetailedSectionSettings;
-    speaking: DetailedSectionSettings;
-    conversation: DetailedSectionSettings;
-  };
-};
-
-const SETTINGS_STORAGE_KEY = "japaneseAppSettings";
-const LEARNING_SETTINGS_STORAGE_KEY = "learningSettings";
-const DAILY_GOAL_OPTIONS = [1, 2, 3, 4, 5] as const;
+import { LanguageRecordReadiness } from "@/components/yeoni/LocalRecordGuidance";
+import { useUnsavedChanges } from "@/components/useUnsavedChanges";
+import { isRecordResetRunning } from "@/app/data/appRecordReset";
+import { DEFAULT_INTEGRATED_LEARNING_SETTINGS, type IntegratedLearningSettings } from "@/utils/integratedLearningSettings";
+import { DEFAULT_SETTINGS, DAILY_GOAL_OPTIONS, isValidTtsRate, isValidRepeatCount, isValidRepeatDelayMs,
+  LanguageSettingsPageError, readLanguageSettingsPage, saveLanguageSettingsPage,
+  type LearningSection, type CommonSectionSettings, type DetailedSectionSettings, type JapaneseAppSettings,
+  type SettingsPageRead, type SettingsPageValues } from "@/utils/languageSettingsPage";
 
 const SECTION_LABELS: Record<LearningSection, string> = {
   kana: "가나",
@@ -43,28 +18,6 @@ const SECTION_LABELS: Record<LearningSection, string> = {
   sentences: "문장",
   speaking: "말하기",
   conversation: "AI 회화",
-};
-
-const DEFAULT_COMMON_SECTION: CommonSectionSettings = {
-  ttsRate: 1,
-  repeatCount: 1,
-  repeatDelayMs: 500,
-};
-
-const DEFAULT_DETAILED_SECTION: DetailedSectionSettings = {
-  ...DEFAULT_COMMON_SECTION,
-  showKoreanPronunciation: true,
-  showReading: true,
-};
-
-const DEFAULT_SETTINGS: JapaneseAppSettings = {
-  sections: {
-    kana: { ...DEFAULT_COMMON_SECTION },
-    words: { ...DEFAULT_DETAILED_SECTION },
-    sentences: { ...DEFAULT_DETAILED_SECTION },
-    speaking: { ...DEFAULT_DETAILED_SECTION },
-    conversation: { ...DEFAULT_DETAILED_SECTION },
-  },
 };
 
 const TTS_RATE_OPTIONS: Array<{ value: number; label: string }> = [
@@ -93,180 +46,124 @@ const REPEAT_DELAY_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 2000, label: "2초" },
 ];
 
-function isValidTtsRate(value: unknown): value is number {
-  return value === 0.5 || value === 0.6 || value === 0.7 || value === 0.8 || value === 0.9 || value === 1 || value === 1.1 || value === 1.2;
-}
-
-function isValidRepeatCount(value: unknown): value is number {
-  return value === 1 || value === 2 || value === 3;
-}
-
-function isValidRepeatDelayMs(value: unknown): value is number {
-  return value === 0 || value === 300 || value === 500 || value === 1000 || value === 1500 || value === 2000;
-}
-
-function sanitizeCommonSection(value: unknown, fallback: CommonSectionSettings): CommonSectionSettings {
-  const section = typeof value === "object" && value !== null ? (value as Partial<CommonSectionSettings>) : {};
-
-  return {
-    ttsRate: isValidTtsRate(section.ttsRate) ? section.ttsRate : fallback.ttsRate,
-    repeatCount: isValidRepeatCount(section.repeatCount) ? section.repeatCount : fallback.repeatCount,
-    repeatDelayMs: isValidRepeatDelayMs(section.repeatDelayMs) ? section.repeatDelayMs : fallback.repeatDelayMs,
-  };
-}
-
-function sanitizeDetailedSection(value: unknown, fallback: DetailedSectionSettings): DetailedSectionSettings {
-  const common = sanitizeCommonSection(value, fallback);
-  const section = typeof value === "object" && value !== null ? (value as Partial<DetailedSectionSettings>) : {};
-
-  return {
-    ...common,
-    showKoreanPronunciation:
-      typeof section.showKoreanPronunciation === "boolean"
-        ? section.showKoreanPronunciation
-        : fallback.showKoreanPronunciation,
-    showReading: typeof section.showReading === "boolean" ? section.showReading : fallback.showReading,
-  };
-}
-
-function parseSettings(raw: string | null): JapaneseAppSettings {
-  if (!raw) {
-    return DEFAULT_SETTINGS;
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) {
-      return DEFAULT_SETTINGS;
-    }
-
-    const parsedObj = parsed as {
-      sections?: Partial<JapaneseAppSettings["sections"]>;
-      ttsRate?: number;
-      repeatCount?: number;
-      repeatDelayMs?: number;
-      showKoreanPronunciation?: boolean;
-      showReading?: boolean;
-    };
-
-    const legacyBaseCommon: CommonSectionSettings = {
-      ttsRate: isValidTtsRate(parsedObj.ttsRate) ? parsedObj.ttsRate : DEFAULT_COMMON_SECTION.ttsRate,
-      repeatCount: isValidRepeatCount(parsedObj.repeatCount) ? parsedObj.repeatCount : DEFAULT_COMMON_SECTION.repeatCount,
-      repeatDelayMs: isValidRepeatDelayMs(parsedObj.repeatDelayMs)
-        ? parsedObj.repeatDelayMs
-        : DEFAULT_COMMON_SECTION.repeatDelayMs,
-    };
-
-    const legacyBaseDetailed: DetailedSectionSettings = {
-      ...legacyBaseCommon,
-      showKoreanPronunciation:
-        typeof parsedObj.showKoreanPronunciation === "boolean"
-          ? parsedObj.showKoreanPronunciation
-          : DEFAULT_DETAILED_SECTION.showKoreanPronunciation,
-      showReading: typeof parsedObj.showReading === "boolean" ? parsedObj.showReading : DEFAULT_DETAILED_SECTION.showReading,
-    };
-
-    const sections = parsedObj.sections;
-
-    return {
-      sections: {
-        kana: sanitizeCommonSection(sections?.kana, legacyBaseCommon),
-        words: sanitizeDetailedSection(sections?.words, legacyBaseDetailed),
-        sentences: sanitizeDetailedSection(sections?.sentences, legacyBaseDetailed),
-        speaking: sanitizeDetailedSection(sections?.speaking, legacyBaseDetailed),
-        conversation: sanitizeDetailedSection(sections?.conversation, legacyBaseDetailed),
-      },
-    };
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-}
-
 export default function SettingsPage() {
+  const readiness = useContext(LanguageRecordReadiness);
+  const ready = useRef(readiness); ready.current = readiness;
+  const mounted = useRef(false), sessionInvalid = useRef(false), attemptedRead = useRef(false);
+  const loaded = useRef<SettingsPageRead | null>(null);
+  const draft = useRef<SettingsPageValues | null>(null);
   const [settings, setSettings] = useState<JapaneseAppSettings>(DEFAULT_SETTINGS);
   const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
   const [dailyGoalCount, setDailyGoalCount] = useState<number>(5);
-  const [saveMessage, setSaveMessage] = useState("");
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [detailError, setDetailError] = useState('');
+  const [readError, setReadError] = useState('');
+  const [detailDirty, setDetailDirty] = useState(false);
+  const [learningDirty, setLearningDirty] = useState(false);
   const [integratedSettings, setIntegratedSettings] = useState<IntegratedLearningSettings>(DEFAULT_INTEGRATED_LEARNING_SETTINGS);
+  useUnsavedChanges(detailDirty || learningDirty);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-    const nextSettings = parseSettings(raw);
-    setSettings(nextSettings);
-    setIntegratedSettings(loadIntegratedLearningSettings());
-
-    const learningSettingsRaw = window.localStorage.getItem(LEARNING_SETTINGS_STORAGE_KEY);
-    if (learningSettingsRaw) {
-      try {
-        const parsed = JSON.parse(learningSettingsRaw) as unknown;
-        if (
-          typeof parsed === "object" &&
-          parsed !== null &&
-          "dailyGoalCount" in parsed &&
-          DAILY_GOAL_OPTIONS.includes((parsed as { dailyGoalCount?: unknown }).dailyGoalCount as (typeof DAILY_GOAL_OPTIONS)[number])
-        ) {
-          setDailyGoalCount((parsed as { dailyGoalCount: number }).dailyGoalCount);
-        }
-      } catch {
-        setDailyGoalCount(5);
-      }
-    }
-    setIsSettingsLoaded(true);
+  const checkReady = useCallback((allowPendingSync = false) => {
+    if (!mounted.current || sessionInvalid.current) throw new LanguageSettingsPageError('owner');
+    if ((!allowPendingSync && ready.current !== 'ready') || isRecordResetRunning()) throw new LanguageSettingsPageError('not-ready');
   }, []);
-
+  const message = (error: unknown) => error instanceof LanguageSettingsPageError ? error.message : '설정을 확인하지 못했어요. 현재 선택은 화면에 남아 있습니다. 다시 시도해 주세요.';
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!isSettingsLoaded) return;
-
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  }, [settings, isSettingsLoaded]);
-
-  const updateCommonSetting = (
-    section: LearningSection,
-    key: keyof CommonSectionSettings,
-    value: CommonSectionSettings[keyof CommonSectionSettings],
-  ) => {
-    setSettings((prev) => ({
-      ...prev,
-      sections: {
-        ...prev.sections,
-        [section]: {
-          ...prev.sections[section],
-          [key]: value,
-        },
-      },
-    }));
+    mounted.current = true;
+    const invalidate = () => {
+      sessionInvalid.current = true;
+      setReadError(new LanguageSettingsPageError('owner').message);
+      setSaveMessage('');
+    };
+    window.addEventListener('yeoni-cloud-session-changed', invalidate);
+    return () => { mounted.current = false; window.removeEventListener('yeoni-cloud-session-changed', invalidate); };
+  }, []);
+  const readSettings = useCallback(() => {
+    try {
+      checkReady();
+      const next = readLanguageSettingsPage(loaded.current?.snapshot);
+      loaded.current = next;
+      draft.current = { japanese: next.japanese, learning: next.learning, integrated: next.integrated };
+      setSettings(next.japanese); setDailyGoalCount(next.learning.dailyGoalCount); setIntegratedSettings(next.integrated);
+      setIsSettingsLoaded(true); setReadError(''); setSaveError(''); setDetailError(''); setSaveMessage('');
+      setDetailDirty(false); setLearningDirty(false);
+    } catch (error) { setReadError(error instanceof LanguageSettingsPageError ? error.message : '설정을 읽지 못했어요. 다시 시도해 주세요.'); }
+  }, [checkReady]);
+  useEffect(() => {
+    if (readiness !== 'ready' || attemptedRead.current) return;
+    attemptedRead.current = true; readSettings();
+  }, [readiness, readSettings]);
+  const reread = () => {
+    if ((detailDirty || learningDirty) && !window.confirm('화면의 저장하지 않은 선택을 버리고 기기에 저장된 설정을 다시 읽을까요? 일부 설정은 이미 반영됐을 수 있어요.')) return;
+    readSettings();
   };
-
-  const updateDetailedSetting = (
-    section: Exclude<LearningSection, "kana">,
-    key: keyof Pick<DetailedSectionSettings, "showKoreanPronunciation" | "showReading">,
-    value: boolean,
-  ) => {
-    setSettings((prev) => ({
-      ...prev,
-      sections: {
-        ...prev.sections,
-        [section]: {
-          ...prev.sections[section],
-          [key]: value,
-        },
-      },
-    }));
+  const saveDetails = () => {
+    try {
+      // An initialized editor may keep saving while the cloud PATCH is pending.
+      // The helper checks the captured owner, epochs, journals and current bytes.
+      checkReady(true);
+      if (!loaded.current || !draft.current) throw new LanguageSettingsPageError('read');
+      saveLanguageSettingsPage(loaded.current.snapshot, { japanese: draft.current.japanese });
+      loaded.current.japanese = draft.current.japanese;
+      setDetailDirty(false); setDetailError('');
+    } catch (error) { setDetailError(message(error)); }
   };
-
+  const changeDetails = (next: JapaneseAppSettings) => {
+    if (!draft.current) return;
+    draft.current = { ...draft.current, japanese: next };
+    setSettings(next); setDetailDirty(true);
+    saveDetails();
+  };
+  const updateCommonSetting = (section: LearningSection, key: keyof CommonSectionSettings, value: number) => {
+    const current = draft.current?.japanese; if (!current) return;
+    changeDetails({ ...current, sections: { ...current.sections, [section]: { ...current.sections[section], [key]: value } } });
+  };
+  const updateDetailedSetting = (section: Exclude<LearningSection, 'kana'>, key: 'showKoreanPronunciation' | 'showReading', value: boolean) => {
+    const current = draft.current?.japanese; if (!current) return;
+    changeDetails({ ...current, sections: { ...current.sections, [section]: { ...current.sections[section], [key]: value } } });
+  };
+  const changeGoal = (goal: number) => {
+    if (!draft.current || !DAILY_GOAL_OPTIONS.includes(goal as 1)) return;
+    draft.current = { ...draft.current, learning: { ...draft.current.learning, dailyGoalCount: goal } };
+    setDailyGoalCount(goal); setLearningDirty(true); setSaveMessage(''); setSaveError('');
+  };
+  const changeIntegrated = (patch: Partial<IntegratedLearningSettings>) => {
+    if (!draft.current) return;
+    const next = { ...draft.current.integrated, ...patch };
+    draft.current = { ...draft.current, integrated: next };
+    setIntegratedSettings(next); setLearningDirty(true); setSaveMessage(''); setSaveError('');
+  };
+  const handleSaveLearningSettings = () => {
+    setSaveMessage('');
+    try {
+      checkReady(true);
+      if (!loaded.current || !draft.current) throw new LanguageSettingsPageError('read');
+      saveLanguageSettingsPage(loaded.current.snapshot, { learning: draft.current.learning, integrated: draft.current.integrated });
+      loaded.current.learning = draft.current.learning; loaded.current.integrated = draft.current.integrated;
+      setLearningDirty(false); setSaveError(''); setSaveMessage('학습 목표와 통합 과정 설정이 저장됐어요.');
+    } catch (error) { setSaveError(message(error)); }
+  };
   const handleResetSettings = () => {
-    if (typeof window === "undefined") return;
-
-    const shouldReset = window.confirm("모든 설정을 기본값으로 되돌릴까요?");
-    if (!shouldReset) return;
-
-    setSettings(DEFAULT_SETTINGS);
-    setIntegratedSettings(DEFAULT_INTEGRATED_LEARNING_SETTINGS);
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(DEFAULT_SETTINGS));
-    saveIntegratedLearningSettings(DEFAULT_INTEGRATED_LEARNING_SETTINGS);
+    if (!window.confirm('학습 목표 개수는 유지하고 음성·표시·통합 과정 설정을 기본값으로 되돌릴까요?')) return;
+    setSaveMessage('');
+    try {
+      checkReady(true);
+      if (!loaded.current || !draft.current) throw new LanguageSettingsPageError('read');
+      const current = draft.current;
+      const japanese = { ...current.japanese, sections: { ...current.japanese.sections } };
+      for (const section of Object.keys(DEFAULT_SETTINGS.sections) as LearningSection[]) {
+        Object.defineProperty(japanese.sections, section, { value: { ...current.japanese.sections[section], ...DEFAULT_SETTINGS.sections[section] }, enumerable: true, configurable: true, writable: true });
+      }
+      const integrated = { ...current.integrated, ...DEFAULT_INTEGRATED_LEARNING_SETTINGS };
+      // Failed resets retain the requested defaults as a visible retryable draft.
+      draft.current = { ...current, japanese, integrated };
+      setSettings(japanese); setIntegratedSettings(integrated); setDetailDirty(true); setLearningDirty(true);
+      saveLanguageSettingsPage(loaded.current.snapshot, { japanese, integrated });
+      loaded.current.japanese = japanese; loaded.current.integrated = integrated;
+      setDetailDirty(false); setLearningDirty(JSON.stringify(current.learning) !== JSON.stringify(loaded.current.learning));
+      setSaveError(''); setDetailError(''); setSaveMessage('음성·표시·통합 과정 기본값을 기기에 저장했어요. 학습 목표 개수는 유지했어요.');
+    } catch (error) { setSaveError(message(error)); }
   };
 
   const renderSectionCard = (section: LearningSection) => {
@@ -381,19 +278,7 @@ export default function SettingsPage() {
     );
   };
 
-  const handleSaveLearningSettings = () => {
-    if (typeof window === "undefined") return;
-    try {
-    window.localStorage.setItem(
-      LEARNING_SETTINGS_STORAGE_KEY,
-      JSON.stringify({
-        dailyGoalCount,
-      }),
-    );
-    saveIntegratedLearningSettings(integratedSettings);
-    setSaveMessage("학습 목표와 통합 과정 설정이 저장됐어요.");
-    } catch { setSaveMessage("설정을 모두 저장하지 못했어요. 기기의 저장 공간을 확인한 뒤 다시 저장해 주세요."); }
-  };
+  if (!isSettingsLoaded) return <section><h1>학습 설정</h1><p role={readError ? "alert" : "status"}>{readError || "학습 설정을 읽을 준비를 하고 있어요."}</p>{readError && <button type="button" disabled={readiness !== "ready" || sessionInvalid.current} onClick={readSettings}>설정 다시 읽기</button>}</section>;
 
   return (
     <section>
@@ -405,6 +290,13 @@ export default function SettingsPage() {
       </div>
 
       <div style={{ marginBottom: 20 }}><YeoniPreferencesPanel app="language" /></div>
+
+      <p className="muted">하루 목표·통합 과정은 저장 버튼을 눌러 주세요. 아래 음성·표시 설정은 바꿀 때 기기에 저장합니다.</p>
+      <button type="button" className="btn" disabled={readiness !== "ready" || sessionInvalid.current} onClick={reread}>저장된 설정 다시 읽기</button>
+      {(readError || saveError || detailError) && <p role="alert">{readError || saveError || detailError}</p>}
+      {detailDirty && <button type="button" className="btn" disabled={sessionInvalid.current} onClick={saveDetails}>상세 설정 다시 저장</button>}
+      {saveMessage && <p className="muted">기기 저장 확인이며, 서버 반영 상태는 동기화 안내에서 확인해 주세요.</p>}
+      {(detailDirty || learningDirty) && <p role="status">아직 저장되지 않았거나 저장 확인이 필요한 선택이 있어요. 다른 화면으로 이동하기 전에 저장 결과를 확인해 주세요.</p>}
 
       <div className="card daily-goal-card" style={{ display: "grid", gap: "14px" }}>
         <div className="daily-goal-header">
@@ -424,8 +316,7 @@ export default function SettingsPage() {
                 type="button"
                 className={`daily-goal-option${isSelected ? " is-selected" : ""}`}
                 onClick={() => {
-                  setDailyGoalCount(goal);
-                  setSaveMessage("");
+                  changeGoal(goal);
                 }}
                 aria-pressed={isSelected}
               >
@@ -439,8 +330,7 @@ export default function SettingsPage() {
           id="daily-goal-count"
           value={dailyGoalCount}
           onChange={(event) => {
-            setDailyGoalCount(Number(event.target.value));
-            setSaveMessage("");
+            changeGoal(Number(event.target.value));
           }}
           className="sr-only-select"
           aria-hidden="true"
@@ -458,7 +348,7 @@ export default function SettingsPage() {
         <p className="muted" style={{ margin: 0 }}>
           목표는 홈의 진행률과 달력의 목표 달성률에 반영돼요.
         </p>
-        <button type="button" className="btn settings-save-btn" onClick={handleSaveLearningSettings}>
+        <button type="button" className="btn settings-save-btn" disabled={sessionInvalid.current} onClick={handleSaveLearningSettings}>
           설정 저장
         </button>
         {saveMessage && (
@@ -472,18 +362,18 @@ export default function SettingsPage() {
         <h2 style={{ marginTop: 0 }}>통합 과정 학습 설정</h2>
         <p className="muted">오늘의 수업과 왕초보·회사·여행 과정에 적용됩니다.</p>
         <div className="integrated-settings-grid">
-          <label>글자·문제 도움<select value={integratedSettings.learnerMode} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, learnerMode: event.target.value as IntegratedLearningSettings["learnerMode"], hasChosenStart: true }))}><option value="starter">처음 배워요 · 고르기부터</option><option value="reader">글자를 읽어요 · 20분 학습에 직접 입력 포함</option></select></label>
-          <label>하루 학습 시간<select value={integratedSettings.dailyMinutes} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, dailyMinutes: Number(event.target.value) as 5 | 10 | 20 }))}><option value={5}>5분</option><option value={10}>10분</option><option value={20}>20분</option></select></label>
-          <label>우선 학습 과정<select value={integratedSettings.preferredTrack} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, preferredTrack: event.target.value as IntegratedLearningSettings["preferredTrack"] }))}><option value="foundation">왕초보 기초</option><option value="work">회사 일본어</option><option value="travel">여행 일본어</option></select></label>
-          <label>기본 음성 속도<select value={integratedSettings.audioRate} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, audioRate: Number(event.target.value) as 0.8 | 0.9 | 1 }))}><option value={0.8}>느리게</option><option value={0.9}>조금 느리게</option><option value={1}>보통</option></select></label>
+          <label>글자·문제 도움<select value={integratedSettings.learnerMode} onChange={(event) => changeIntegrated({ learnerMode: event.target.value as IntegratedLearningSettings["learnerMode"], hasChosenStart: true })}><option value="starter">처음 배워요 · 고르기부터</option><option value="reader">글자를 읽어요 · 20분 학습에 직접 입력 포함</option></select></label>
+          <label>하루 학습 시간<select value={integratedSettings.dailyMinutes} onChange={(event) => changeIntegrated({ dailyMinutes: Number(event.target.value) as 5 | 10 | 20 })}><option value={5}>5분</option><option value={10}>10분</option><option value={20}>20분</option></select></label>
+          <label>우선 학습 과정<select value={integratedSettings.preferredTrack} onChange={(event) => changeIntegrated({ preferredTrack: event.target.value as IntegratedLearningSettings["preferredTrack"] })}><option value="foundation">왕초보 기초</option><option value="work">회사 일본어</option><option value="travel">여행 일본어</option></select></label>
+          <label>기본 음성 속도<select value={integratedSettings.audioRate} onChange={(event) => changeIntegrated({ audioRate: Number(event.target.value) as 0.8 | 0.9 | 1 })}><option value={0.8}>느리게</option><option value={0.9}>조금 느리게</option><option value={1}>보통</option></select></label>
         </div>
         <div className="integrated-settings-toggles">
-          <label><input type="checkbox" checked={integratedSettings.showKoreanHint} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, showKoreanHint: event.target.checked }))} /> 수업의 한글 발음 보조 표시</label>
-          <label><input type="checkbox" checked={integratedSettings.showReading} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, showReading: event.target.checked }))} /> 읽는 법 표시</label>
-          <label><input type="checkbox" checked={integratedSettings.showMeaning} onChange={(event) => setIntegratedSettings((prev) => ({ ...prev, showMeaning: event.target.checked }))} /> 한국어 뜻 표시</label>
+          <label><input type="checkbox" checked={integratedSettings.showKoreanHint} onChange={(event) => changeIntegrated({ showKoreanHint: event.target.checked })} /> 수업의 한글 발음 보조 표시</label>
+          <label><input type="checkbox" checked={integratedSettings.showReading} onChange={(event) => changeIntegrated({ showReading: event.target.checked })} /> 읽는 법 표시</label>
+          <label><input type="checkbox" checked={integratedSettings.showMeaning} onChange={(event) => changeIntegrated({ showMeaning: event.target.checked })} /> 한국어 뜻 표시</label>
         </div>
         <p className="muted">5분은 확인 3문제, 10분은 5문제, 20분은 8문제예요. 시간과 문제 방식은 새로 시작하는 수업에 적용되고, 이어하는 수업은 시작할 때의 분량을 유지해요.</p>
-        <button type="button" className="btn settings-save-btn" onClick={handleSaveLearningSettings}>학습 설정 저장</button>
+        <button type="button" className="btn settings-save-btn" disabled={sessionInvalid.current} onClick={handleSaveLearningSettings}>학습 설정 저장</button>
         {saveMessage && <p role="status" className="settings-save-message">{saveMessage}</p>}
       </div>
 
@@ -494,7 +384,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="card">
-        <button type="button" className="btn btn-danger" onClick={handleResetSettings} style={{ width: "100%" }}>
+        <button type="button" className="btn btn-danger" disabled={sessionInvalid.current} onClick={handleResetSettings} style={{ width: "100%" }}>
           학습 설정만 기본값으로
         </button>
       </div>

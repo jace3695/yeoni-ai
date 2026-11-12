@@ -55,4 +55,5 @@ export const sources = Object.freeze([
   'tests/e2e/japanese-due-review.spec.ts', // 52
   'tests/e2e/curriculum-corruption.spec.ts', // 53
   'tests/e2e/curriculum-terminal.spec.ts', // 54
+  'tests/e2e/japanese-settings-recovery.spec.ts', // 55
 ]);
