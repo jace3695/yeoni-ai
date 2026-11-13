@@ -2003,3 +2003,6 @@ button, input, textarea, select { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .budget-app-shell .living-finance-app button { transform: none !important; transition: none !important; }
 }
+
+/* Keep the selected month readable in the expanded cash-flow heading. */
+.budget-app-shell .home-flow-card .home-section-heading > span { flex-shrink: 0; white-space: nowrap; }

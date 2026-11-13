@@ -3485,13 +3485,13 @@ return (
             <p>
               {showConfirm
                 ? '날짜·금액·분류를 확인하고 필요한 내용을 수정한 뒤 저장하세요.'
-                : '직접 적기와 문장 입력 중 편한 방법을 골라요. 마지막 확인 전에는 저장하지 않습니다.'}
+                : '문장 입력 또는 직접 입력을 선택하세요. 내용을 확인한 뒤 저장합니다.'}
             </p>
           </header>
 
           {!showConfirm && <div className="budget-entry-switch" role="group" aria-label="기록 입력 방법">
-            <button type="button" aria-pressed={entryMode === 'manual'} disabled={aiLoading || listening || isSavingRecords || hasPendingSave} onClick={() => setEntryMode('manual')}>직접 적기</button>
             <button type="button" aria-pressed={entryMode === 'sentence'} disabled={aiLoading || listening || isSavingRecords || hasPendingSave} onClick={() => setEntryMode('sentence')}>문장으로 입력</button>
+            <button type="button" aria-pressed={entryMode === 'manual'} disabled={aiLoading || listening || isSavingRecords || hasPendingSave} onClick={() => setEntryMode('manual')}>직접 적기</button>
           </div>}
           {!showConfirm && <p className="budget-entry-preservation">입력 방법을 바꿔도 적던 내용은 유지돼요.</p>}
 
