@@ -10,7 +10,7 @@ export const titles = Object.freeze([
 export const sources = Object.freeze(Object.fromEntries(titles.map((title, index) => [title, index < 2 ? 'diet-protein-response.spec.ts' : index < 4 ? 'japanese-application-plan.spec.ts' : 'safety-ux-followup.spec.ts'])));
 export const project = 'chromium-diet-regression';
 export const command = 'node node_modules/@playwright/test/cli.js test --config playwright.diet-regression.config.ts --project chromium-diet-regression';
-export const stageLimits = Object.freeze([0,0,0,0,37,0,23]);
+export const stageLimits = Object.freeze([0,0,0,0,55,0,23]);
 // Closed numeric-only protocol. Never carry title, error, URL, page text or arbitrary strings.
 export function validReceipt(report, token) {
   return Boolean(report && Object.keys(report).sort().join(',') === 'cases,cleaned,passed,status,token,total'

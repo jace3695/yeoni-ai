@@ -54,7 +54,7 @@ test('application regression source is pinned without changing the original diet
 });
 
 test('safety UX regression source is pinned without changing previous four cases',()=>{
-  assert.equal(createHash('sha256').update(readFileSync(new URL('tests/e2e/safety-ux-followup.spec.ts',root))).digest('hex'),'898ac8cadd8bda13f6271d350fa233743110a3290434ad0de649380d565863da');
+  assert.equal(createHash('sha256').update(readFileSync(new URL('tests/e2e/safety-ux-followup.spec.ts',root))).digest('hex'),'e748d63661f04f85b25d8f1a67e631a4e7574d256a5960c0c0c47b92ba6ba7fc');
 });
 
 test('numeric diagnostics never expose arbitrary strings or upgrade failure',()=>{
@@ -71,7 +71,7 @@ test('numeric diagnostics never expose arbitrary strings or upgrade failure',()=
 // Remove only inert, closed numeric checkpoints: every original assertion/action must remain byte-identical.
 test('checkpoints preserve the complete reviewed seven-case source',()=>{
   const source=readFileSync(new URL('tests/e2e/safety-ux-followup.spec.ts',root),'utf8');
-  const original=source.replace(/^  await test\.step\('QA_STAGE_[0-9]{2}', async \(\) => \{\}\);\n/gm,'').replace("  preserved(saved);\n  qa.traffic.assertConfirmed(saved);", "  preserved(saved); qa.traffic.assertConfirmed(saved);").replace("async()=>{const raw=(await qa.readLanguage()).dailyLearningHistory;return raw===undefined?undefined:JSON.parse(raw as string)[day]?.completedIds;}","async()=>JSON.parse((await qa.readLanguage()).dailyLearningHistory as string)[day]?.completedIds").replace("expect(row(restored)).toEqual({...row(saved),foamRollerAreas:[]});","expect(row(restored)).toEqual(row(saved));");
+  const original=source.replace(/  \/\/ BEGIN fixed preservation diagnostics: additional assertions only\n[\s\S]*?  \/\/ END fixed preservation diagnostics\n/,'').replace(/^  await test\.step\('QA_STAGE_[0-9]{2}', async \(\) => \{\}\);\n/gm,'').replace("  preserved(saved);\n  qa.traffic.assertConfirmed(saved);", "  preserved(saved); qa.traffic.assertConfirmed(saved);").replace("async()=>{const raw=(await qa.readLanguage()).dailyLearningHistory;return raw===undefined?undefined:JSON.parse(raw as string)[day]?.completedIds;}","async()=>JSON.parse((await qa.readLanguage()).dailyLearningHistory as string)[day]?.completedIds").replace("expect(row(restored)).toEqual({...row(saved),foamRollerAreas:[]});","expect(row(restored)).toEqual(row(saved));");
   assert.equal(createHash('sha256').update(original).digest('hex'),'758e67f6bd1f36012bdbc7756df8ac1109eef1c8af0dac8eb299d8ebbd78d397');
 });
 test('step diagnostics accept only sequential bounded numeric checkpoints on the two selected cases',()=>{
@@ -85,7 +85,7 @@ test('step diagnostics accept only sequential bounded numeric checkpoints on the
 
 test('stage receipt rejects missing, out-of-range and nonnumeric stage data',()=>{
   const report={token:'x',status:'failed',total:7,passed:6,cleaned:7,cases:Array.from({length:7},(_,i)=>({index:i+1,status:i===4?2:1,cleanup:1,stage:0}))};
-  for(const stage of [-1,38,1.5,'PRIVATE_STRING',null,undefined]) {
+  for(const stage of [-1,56,1.5,'PRIVATE_STRING',null,undefined]) {
     const bad={...report,cases:report.cases.map((item,index)=>index===4?{...item,stage}:item)};
     assert.deepEqual(diagnosticLines(bad,'x'),['regression-cases receipt=unverified']);assert.equal(accepted(bad,'x'),false);
   }
