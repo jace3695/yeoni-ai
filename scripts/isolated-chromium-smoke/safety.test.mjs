@@ -160,19 +160,21 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
       const addition = "    appendFileSync(`${workdir}/supabase/seed.sql`, '\\n' + readFileSync('supabase/migrations/20261111000000_add_language_reset_replay_receipts.sql', 'utf8'));\n";
       const text = bytes.toString('utf8');
       assert.equal(text.split(addition).length, 2);
-      bytes = Buffer.from(text.replace(addition, ''));
+      const proteinAddition = "    appendFileSync(`${workdir}/supabase/seed.sql`, '\\n' + readFileSync('supabase/migrations/20261113055000_diet_protein_response_marker.sql', 'utf8'));\n";
+      assert.equal(text.split(proteinAddition).length, 2);
+      bytes = Buffer.from(text.replace(addition, '').replace(proteinAddition, ''));
     }
     assert.equal(createHash('sha256').update(bytes).digest('hex'), hash, `Preserved source changed: ${path}`);
   }
   const walk = async directory => (await Promise.all((await readdir(directory, { withFileTypes: true }))
     .map(async item => item.isDirectory() ? walk(join(directory, item.name)) : [join(directory, item.name)]))).flat();
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
-  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 349);
+  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 350);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
   const addition = "      - name: Verify twenty authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
-  assert.equal(workflow.split('len(tests) == 349').length, 2);
-  assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 349', 'len(tests) == 343')).digest('hex'), workflowHash);
+  assert.equal(workflow.split('len(tests) == 350').length, 2);
+  assert.equal(createHash('sha256').update(workflow.replace(addition, '').replace('len(tests) == 350', 'len(tests) == 343')).digest('hex'), workflowHash);
   assert.ok(workflow.indexOf('node scripts/isolated-auth-api/supervisor.mjs') < workflow.indexOf(addition));
   assert.ok(workflow.indexOf(addition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
 });
@@ -1825,3 +1827,4 @@ test('reference twenty literal phases retain source 57 numeric native attributio
 
 // Append-only import preserves original declaration coordinates. ESM registers these after prior imports, before this module's controls.
 import '../qa-private-safety-diagnostics.test.mjs';
+

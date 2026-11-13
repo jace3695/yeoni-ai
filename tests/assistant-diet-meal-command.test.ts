@@ -36,7 +36,7 @@ before(async () => {
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('app.test_user',true),'')::uuid $$;
     grant usage on schema auth,public to authenticated,anon; grant execute on function auth.uid() to authenticated,anon;`);
   await db.exec(read('./e2e/schema.sql'));
-  for (const name of ['20260901125340_add_fitness_ai_review_history', '20260906141943_add_app_record_resets', '20260915034857_assistant_task_command_history', '20260916104440_assistant_diet_commands', '20260916131029_assistant_diet_meal_commands', '20260916142043_assistant_diet_time_commands']) await db.exec(read(`../supabase/migrations/${name}.sql`));
+  for (const name of ['20260901125340_add_fitness_ai_review_history', '20260906141943_add_app_record_resets', '20260915034857_assistant_task_command_history', '20260916104440_assistant_diet_commands', '20260916131029_assistant_diet_meal_commands', '20260916142043_assistant_diet_time_commands', '20261113055000_diet_protein_response_marker']) await db.exec(read(`../supabase/migrations/${name}.sql`));
 });
 after(async () => db.close());
 beforeEach(async () => {
@@ -132,4 +132,27 @@ test('meal drafts preserve scope, owner and expiry; old diet snapshots remain un
   const raw=JSON.stringify({version:1,ownerId:owner,drafts:[{proposal,attempted:false}]});
   assert.equal(readCommandDrafts(raw,owner).length,1);
   assert.match(describeDietSnapshot(dietNextSnapshot(p.expected,p.change),p.change),/점심 식품 단백질 30g.*120g/);
+});
+
+
+import { summarizeFreeDiet } from '../app/data/freeDietTools.ts';
+test('explicit protein zero or 30g replaces unanswered marker and exact undo restores it', async () => {
+  for (const grams of [0, 30]) {
+    const baseline = { settings: 'keep', [keys.meal]: { [today()]: {} },
+      [recordKey]: { [today()]: { proteinTotal: 0, proteinRecorded: false, waterMl: 300,
+        meals: { breakfast: false, lunch: false, afternoon: false, dinner: false } } } };
+    await write(baseline);
+    const p = request(baseline, change('lunch', 'protein', grams));
+    const receipt = await apply(p);
+    assert.deepEqual(receipt.after_values, dietNextSnapshot(p.expected, p.change));
+    const saved = await state();
+    const day = (saved[recordKey] as Row)[today()] as Row;
+    assert.equal(day.proteinRecorded, true);
+    const summary = summarizeFreeDiet({ [today()]: day }, today());
+    assert.equal(summary.proteinDays, 1);
+    assert.equal(summary.averageProtein, grams);
+    assert.equal(summary.averageWater, 300);
+    await undo(p.id);
+    assert.deepEqual(await state(), baseline);
+  }
 });

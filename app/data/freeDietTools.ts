@@ -38,10 +38,26 @@ export function quickMealPreset(slot: QuickMeal['slot']): QuickMeal {
   };
 }
 
+// Defaults and unrelated water/memo edits are not protein responses.
+// A custom 0 is an explicit response and must remain in the denominator.
+export function hasProteinResponse(meal: DietMealLog, supplement: LunchProteinRecord): boolean {
+  return meal.breakfastShake || meal.lunchProteinChoice !== 'none' ||
+    meal.dinnerProteinChoice !== 'none' || meal.afternoonShake !== 'none' ||
+    meal.afterDinnerShake !== 'none' || supplement.type !== 'none';
+}
+
+function recordedProtein(record: Record<string, unknown>): number | null {
+  const value = nonnegative(record.proteinTotal);
+  if (record.proteinRecorded === false) return null;
+  // Legacy zero records cannot distinguish an explicit zero command from an
+  // untouched form. Preserve them rather than silently reclassifying history.
+  return value;
+}
+
 export function summarizeFreeDiet(store: Record<string, unknown>, today: string) {
   const end = validDate(today) ? Date.parse(today + 'T12:00:00Z') : NaN;
   const records = Object.entries(store).filter(([date]) => validDate(date) && date <= today && end - Date.parse(date + 'T12:00:00Z') < 7 * 86_400_000).map(([, value]) => row(value));
-  const proteins = records.map(record => nonnegative(record.proteinTotal)).filter((value): value is number => value !== null);
+  const proteins = records.map(recordedProtein).filter((value): value is number => value !== null);
   const waters = records.map(record => nonnegative(record.waterMl)).filter((value): value is number => value !== null);
   const digestion = records.map(record => normalizeDigestion(record.digestionStatus)).filter(value => value !== 'unrecorded');
   const lateSnack = records.map(record => normalizeMealCheck(record.lateSnack)).filter(value => value !== 'unrecorded');

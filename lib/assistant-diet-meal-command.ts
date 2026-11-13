@@ -66,6 +66,7 @@ export function dietMealNextSnapshot(before: DietMealSnapshot, change: DietMealC
     meal[`${change.slot}ProteinCustom`] = change.grams;
     const total = recordedProteinTotal({ ...before, meal });
     record.proteinTotal = total; record.proteinDone = total >= 100;
+    record.proteinRecorded = true;
     if (change.slot === 'lunch') record.lunchProtein = change.grams > 0 || supplementProtein(before.supplement) > 0;
     return { ...before, meal, record, proteinTotal: total };
   }
@@ -95,3 +96,4 @@ export function describeDietMeal(snapshot: DietMealSnapshot, change: DietMealCha
   const grams = object(raw) ? raw.amountType === 'custom' ? raw.grams : presets[String(raw.amountType)] : typeof raw === 'string' ? presets[raw] : raw;
   return `${slot} 조리된 밥 ${grams === undefined ? '무게 미기록' : `${grams}g`}`;
 }
+
