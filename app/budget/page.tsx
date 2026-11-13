@@ -1853,6 +1853,8 @@ function BudgetDashboard() {
     const selectedMonthLabel = `${currentYear}년 ${currentMonth + 1}월`
     const today = new Date()
     const now = today
+    const isFutureMonthSelected =
+      selectedMonthDate > new Date(today.getFullYear(), today.getMonth(), 1)
     const isCurrentMonthSelected =
       today.getFullYear() === currentYear && today.getMonth() === currentMonth
 
@@ -3934,11 +3936,11 @@ return (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
               <div>
                 <p style={{ color: '#4ECDC4', fontSize: 11, fontWeight: 700, margin: '0 0 6px', letterSpacing: 1 }}>월말 리포트</p>
-                <h4 id="month-end-report-title" style={{ color: '#FFFFFF', fontSize: 17, margin: '0 0 6px' }}>{selectedMonthLabel} 마감 요약</h4>
-                <p style={{ color: '#C7C7D3', fontSize: 12, lineHeight: 1.6, margin: 0 }}>{monthEndHeadline}</p>
+                <h4 id="month-end-report-title" style={{ color: '#FFFFFF', fontSize: 17, margin: '0 0 6px' }}>{selectedMonthLabel} {isFutureMonthSelected ? '예정 요약' : '마감 요약'}</h4>
+                <p style={{ color: '#C7C7D3', fontSize: 12, lineHeight: 1.6, margin: 0 }}>{isFutureMonthSelected ? '아직 시작되지 않은 달이에요. 입력된 예정 기록을 참고용으로 확인하세요.' : monthEndHeadline}</p>
               </div>
               <span style={{ flexShrink: 0, color: isCurrentMonthSelected ? '#FFD166' : '#BCEDE9', fontSize: 10, fontWeight: 700, background: isCurrentMonthSelected ? 'rgba(255,209,102,0.1)' : 'rgba(78,205,196,0.1)', border: `1px solid ${isCurrentMonthSelected ? 'rgba(255,209,102,0.35)' : 'rgba(78,205,196,0.35)'}`, borderRadius: 999, padding: '6px 9px' }}>
-                {isCurrentMonthSelected ? '진행 중' : '마감 완료'}
+                {isFutureMonthSelected ? '시작 전' : isCurrentMonthSelected ? '진행 중' : '마감 완료'}
               </span>
             </div>
 

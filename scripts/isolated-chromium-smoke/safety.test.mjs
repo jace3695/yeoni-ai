@@ -169,7 +169,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const walk = async directory => (await Promise.all((await readdir(directory, { withFileTypes: true }))
     .map(async item => item.isDirectory() ? walk(join(directory, item.name)) : [join(directory, item.name)]))).flat();
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
-  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 351);
+  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 353);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
   const addition = "      - name: Verify twenty authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
@@ -177,8 +177,8 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   assert.equal(workflow.split(dietAddition).length, 2);
   assert.ok(workflow.indexOf('run: node scripts/isolated-chromium-smoke/supervisor.mjs') < workflow.indexOf(dietAddition));
   assert.ok(workflow.indexOf(dietAddition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
-  assert.equal(workflow.split('len(tests) == 351').length, 2);
-  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace('len(tests) == 351', 'len(tests) == 343')).digest('hex'), workflowHash);
+  assert.equal(workflow.split('len(tests) == 353').length, 2);
+  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace('len(tests) == 353', 'len(tests) == 343')).digest('hex'), workflowHash);
   assert.ok(workflow.indexOf('node scripts/isolated-auth-api/supervisor.mjs') < workflow.indexOf(addition));
   assert.ok(workflow.indexOf(addition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
 });
@@ -878,7 +878,18 @@ test('active settings coverage pins its reviewed product overlay and narrowly sc
   "tests/e2e/japanese-settings-recovery.spec.ts": "c31ef5d36e208378ccacd23d58f47547fcf687a5780c1d6934180a788394b1ba",
   "tests/e2e/japanese-settings-state.ts": "005613b394514b151d8b134325c19fe637f37c31fd86b605fb5b5277dc697878"
 };
-  for (const [path, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash, path);
+  for (const [path, hash] of Object.entries(hashes)) {
+    let bytes = await readFile(path);
+    if (path === 'app/language/settings/page.tsx') {
+      const before = "<option value=\"reader\">글자를 읽어요 · 20분 학습에 직접 입력 포함</option>";
+      const after = "<option value=\"reader\">글자를 읽어요 · 선택형으로 연습</option>";
+      const text = bytes.toString('utf8');
+      assert.equal(text.split(after).length, 2);
+      assert.equal(text.split(before).length, 1);
+      bytes = Buffer.from(text.replace(after, before));
+    }
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), hash, path);
+  }
   const source = await readFile('tests/e2e/japanese-settings-recovery.spec.ts', 'utf8');
   const helper = await readFile('tests/e2e/japanese-settings-state.ts', 'utf8');
   // Nested select options are part of Playwright's exact label text, not its accessible name.
@@ -1617,7 +1628,18 @@ test('reference source 57 pins the finite route graph and six exact source mutat
   "tests/e2e/japanese-reference-routine-state.ts": "a76d81adee68e628e9f5ff4aecd458662ea8ac0b603d6bfaac9d9fc293f00786", "scripts/isolated-chromium-smoke/reference-pin-status-controls.mjs": "67279b42d96db44ce5514f3e5573841c778fcbea64ed717088f11f902d10f8a7",
   "tests/e2e/japanese-reference-routine.spec.ts": "ccb82681f55264bfd61fff496150a393ca717ea5b7e1a6e3712a46512c4897cc"
 };
-  for (const [file, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(file)).digest('hex'), hash, file);
+  for (const [file, hash] of Object.entries(hashes)) {
+    let bytes = await readFile(file);
+    if (file === 'app/language/settings/page.tsx') {
+      const before = "<option value=\"reader\">글자를 읽어요 · 20분 학습에 직접 입력 포함</option>";
+      const after = "<option value=\"reader\">글자를 읽어요 · 선택형으로 연습</option>";
+      const text = bytes.toString('utf8');
+      assert.equal(text.split(after).length, 2);
+      assert.equal(text.split(before).length, 1);
+      bytes = Buffer.from(text.replace(after, before));
+    }
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), hash, file);
+  }
   const spec = await readFile('tests/e2e/japanese-reference-routine.spec.ts', 'utf8');
   const helper = await readFile('tests/e2e/japanese-reference-routine-state.ts', 'utf8');
 const checks = [

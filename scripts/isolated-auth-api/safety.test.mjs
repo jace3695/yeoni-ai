@@ -254,8 +254,8 @@ test('workflow differs only by two default-only private steps and dependency pin
   assert.equal(workflow.split(browserAddition).length, 2);
   assert.ok(workflow.indexOf(addition) < workflow.indexOf(browserAddition));
   assert.ok(workflow.indexOf(browserAddition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
-  assert.equal(workflow.split('len(tests) == 351').length, 2);
-  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace(browserAddition, '').replace('len(tests) == 351', 'len(tests) == 343')).digest('hex'), '241904839f93becc07d89ce3be920659f26f22be1840be4ac81abb2bbb914970');
+  assert.equal(workflow.split('len(tests) == 353').length, 2);
+  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace(browserAddition, '').replace('len(tests) == 353', 'len(tests) == 343')).digest('hex'), '241904839f93becc07d89ce3be920659f26f22be1840be4ac81abb2bbb914970');
   assert.ok(workflow.indexOf('node scripts/japanese-preview/http-check.mjs') < workflow.indexOf(addition));
   assert.ok(workflow.indexOf(addition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
   const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
