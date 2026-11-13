@@ -36,8 +36,9 @@ test('foam unanswered timing and pain remain absent through save reload and cale
     expect(Object.fromEntries(Object.entries(s).filter(([key])=>key!==workouts))).toEqual(Object.fromEntries(Object.entries(before).filter(([key])=>key!==workouts)));
     for(const [date,value] of Object.entries(before[workouts] as State)) expect((s[workouts] as State)[date]).toEqual(value);
   };
+  preserved(saved);
   await test.step('QA_STAGE_15', async () => {});
-  preserved(saved); qa.traffic.assertConfirmed(saved);
+  qa.traffic.assertConfirmed(saved);
   await test.step('QA_STAGE_16', async () => {});
   await page.reload(); await synced(page); expect(await qa.read()).toEqual(saved);
   await test.step('QA_STAGE_17', async () => {});
