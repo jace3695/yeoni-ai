@@ -1,8 +1,8 @@
 import { writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { titles, sources, project } from './manifest.mjs';
+import { titles, sources, project, stageLimits } from './manifest.mjs';
 export default class Reporter {
-  invalid = false; seen = new Set(); cleaned = new Set(); buffers = new Map(); total = 0; outcomes = Array(7).fill(0);
+  invalid = false; seen = new Set(); cleaned = new Set(); buffers = new Map(); total = 0; outcomes = Array(7).fill(0); stages = Array(7).fill(0);
   onBegin(config, suite) {
     const all = suite.allTests(); this.total = all.length;
     this.invalid ||= all.length !== 7 || config.workers !== 1 || config.forbidOnly !== true;
@@ -29,6 +29,15 @@ export default class Reporter {
       } catch { this.invalid = true; }
     }
   }
+  onStepEnd(test, result, step) {
+    const index=titles.indexOf(test.title);
+    if(index<0 || stageLimits[index]===0 || step.category!=='test.step')return;
+    const match=/^QA_STAGE_([0-9]{2})$/.exec(step.title);
+    if(!match)return;
+    const stage=Number(match[1]);
+    if(step.error || stage!==this.stages[index]+1 || stage>stageLimits[index]) {this.invalid=true;return;}
+    this.stages[index]=stage;
+  }
   onTestEnd(test, result) {
     const index=titles.indexOf(test.title);
     if(index>=0)this.outcomes[index]=({passed:1,failed:2,timedOut:3,skipped:4,interrupted:5})[result.status] ?? 6;
@@ -42,7 +51,7 @@ export default class Reporter {
     try {
       const token = process.env.YEONI_DIET_RECEIPT_TOKEN;
       if (!/^[a-f0-9]{64}$/.test(token || '') || !process.env.YEONI_DIET_RECEIPT_FILE) throw new Error('missing receipt');
-      writeFileSync(process.env.YEONI_DIET_RECEIPT_FILE, JSON.stringify({ token, status, total:this.total, passed:this.outcomes.filter(code=>code===1).length, cleaned:this.cleaned.size, cases:titles.map((title,index)=>({index:index+1,status:this.outcomes[index],cleanup:this.cleaned.has(title)?1:0})) }), { mode:0o600, flag:'wx' });
+      writeFileSync(process.env.YEONI_DIET_RECEIPT_FILE, JSON.stringify({ token, status, total:this.total, passed:this.outcomes.filter(code=>code===1).length, cleaned:this.cleaned.size, cases:titles.map((title,index)=>({index:index+1,status:this.outcomes[index],stage:this.stages[index],cleanup:this.cleaned.has(title)?1:0})) }), { mode:0o600, flag:'wx' });
     } catch { return { status:'failed' }; }
     return { status };
   }
