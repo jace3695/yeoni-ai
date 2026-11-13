@@ -35,7 +35,8 @@ const normalizeSentencePattern = (sentence: SentenceItem): string => {
   if (text.includes("ください") || text.includes("お願いします")) return "request";
   if (text.includes("いくら") || text.includes("会計") || text.includes("レシート") || text.includes("サイズ")) return "shopping";
   if (text.includes("ですか") || text.includes("ますか") || text.includes("？") || text.includes("?")) return "question";
-  if (text.includes("で")) return "particle-de";
+  // です is the polite copula, not the location/instrument particle で.
+  if (text.replace(/です/g, "").includes("で")) return "particle-de";
   if (text.includes("に")) return "particle-ni";
   if (text.includes("を")) return "particle-wo";
   if (text.includes("は")) return "particle-wa";
@@ -317,3 +318,4 @@ export const SENTENCES: SentenceItem[] = [...BASE_SENTENCES, ...EXPANDED_SENTENC
   pattern: normalizeSentencePattern(sentence),
   relatedWords: inferRelatedWords(sentence),
 }));
+

@@ -50,6 +50,7 @@ export function useDailyRoutineCompletion(routineId: RoutineId) {
     queue.current?.complete(date ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
   }, []);
   const retry = useCallback(() => queue.current?.retry(), []);
+  const isDateSaved = useCallback((date: string) => current.current() && (queue.current?.isSaved(date) ?? false), []);
   const isCurrent = useCallback(() => current.current(), []);
   // Event handlers only: render and state updaters must use the pure predicate.
   const ensureCurrent = useCallback(() => {
@@ -61,5 +62,6 @@ export function useDailyRoutineCompletion(routineId: RoutineId) {
     setStatus({ pending: false, saved: false, error: ACTION_SCOPE_ERROR });
     return false;
   }, []);
-  return { ...status, complete, retry, isCurrent, ensureCurrent };
+  return { ...status, complete, retry, isDateSaved, isCurrent, ensureCurrent };
 }
+

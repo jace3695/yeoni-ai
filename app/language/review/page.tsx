@@ -418,7 +418,7 @@ export default function ReviewPage() {
     <section>
       <DailyRoutineSaveNotice {...routine} />
       {reviewSaveError && <p role="alert">{reviewSaveError}</p>}
-      {reviewedItemIds.length >= 3 && <button type="button" className="btn" disabled={routine.pending} onClick={() => routine.complete(reviewedDateRef.current)}>이 날짜의 일일 학습 체크 확인</button>}
+      {reviewedItemIds.length >= 3 && <button type="button" className="btn" disabled={routine.pending || routine.isDateSaved(reviewedDateRef.current)} onClick={() => { if (!routine.pending && !routine.isDateSaved(reviewedDateRef.current)) { routine.complete(reviewedDateRef.current); if (routine.error) routine.retry(); } }}>{routine.pending ? "일일 학습 체크 저장 중" : routine.isDateSaved(reviewedDateRef.current) ? "일일 학습 체크 저장됨" : routine.error ? "일일 학습 체크 다시 저장" : "이 날짜의 일일 학습 체크 저장"}</button>}
       <div className="page-header card" style={{ marginBottom: "14px", padding: "18px", border: "1px solid #dbeafe", background: "linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%)", boxShadow: "0 10px 22px rgba(37,99,235,0.08)" }}>
         <h1 style={{ color: "#1e3a8a", marginBottom: "4px" }}>복습</h1>
         <p className="muted" style={{ margin: 0, color: "#334155" }}>저장한 단어와 틀린 문제를 다시 확인해 보세요.</p>
@@ -638,3 +638,4 @@ export default function ReviewPage() {
     </section>
   );
 }
+

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { WORDS } from "../../data/words.ts";
 import { SENTENCES } from "../../data/sentences.ts";
 import { GRAMMAR_LESSONS } from "../../data/grammar.ts";
@@ -19,8 +20,18 @@ test("일본어 자료는 필수 필드와 고유 식별자를 유지한다", ()
   assert.equal(GRAMMAR_LESSONS.length, 51);
   for (const word of WORDS) assert.ok(word.word && word.meaning && word.reading && word.exampleReading && word.exampleMeaning);
   for (const sentence of SENTENCES) assert.ok(sentence.japanese && sentence.meaning && sentence.reading);
+  const legacy = JSON.parse(readFileSync(new URL("../../tests/fixtures/japanese-legacy-94a.json", import.meta.url), "utf8")) as { lessons: { id: string; quiz: unknown[] }[] };
+  const applicationIds = new Set(["f", "w", "t"].flatMap(prefix => Array.from({ length: 8 }, (_, index) => `${prefix}${index + 13}`)));
+  assert.equal(applicationIds.size, 24);
+  assert.equal(CURRICULUM.filter(lesson => applicationIds.has(lesson.id)).length, 24);
   for (const lesson of CURRICULUM) {
-    assert.equal(lesson.quiz.length, 8);
+    assert.equal(lesson.quiz.length, applicationIds.has(lesson.id) ? 10 : 8);
+    assert.deepEqual(lesson.quiz.slice(0, 8), legacy.lessons.find(item => item.id === lesson.id)?.quiz);
+    if (applicationIds.has(lesson.id)) {
+      assert.deepEqual(lesson.quiz.slice(8).map(quiz => quiz.kind), ["choice", "choice"]);
+      assert.equal(getSessionQuizIndices(lesson, 20, 2).length, 8);
+      assert.deepEqual(getSessionQuizIndices(lesson, 5, 2), [2, 8, 9]);
+    }
     for (const quiz of lesson.quiz) assert.ok(quiz.choices[quiz.answer] && quiz.explanation);
   }
 });
@@ -220,3 +231,4 @@ test("저것 구분 질문은 두 사람 모두에게서 먼 위치를 명시한
  assert.ok(lesson);
  assert.match(lesson.quiz.question, /말하는 사람과 듣는 사람 모두/);
 });
+

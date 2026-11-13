@@ -445,6 +445,16 @@ export default function SentencesPage() {
     { label: "기타", value: "other" },
   ];
 
+  const handleShowAllSentences = () => {
+    // Same-page navigation preserves React state; clear filters before changing URL.
+    setWordFilter("");
+    setPatternFilter("all");
+    setCategory("전체");
+    setLevelFilter("all");
+    setPracticeScope("all");
+    router.replace("/language/sentences");
+  };
+
   const handlePatternFilterChange = (nextPattern: PatternFilter) => {
     setPatternFilter(nextPattern);
     const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
@@ -600,7 +610,7 @@ export default function SentencesPage() {
                 {patternFilter !== "all" ? `패턴: ${sentencePatternLabels[patternFilter]} · ` : ""}관련 단어: {wordFilter}
               </div>
               <div style={{ marginTop: "8px" }}>
-                <button type="button" className="btn" onClick={() => router.replace("/language/sentences")}>전체 문장 보기</button>
+                <button type="button" className="btn" onClick={handleShowAllSentences}>전체 문장 보기</button>
               </div>
             </div>
           )}
@@ -728,7 +738,7 @@ export default function SentencesPage() {
               {wordFilter ? "해당 단어가 포함된 문장이 아직 없습니다." : patternFilter !== "all" ? "해당 패턴의 문장이 아직 없습니다." : "해당 카테고리의 문장이 없습니다."}
               {(patternFilter !== "all" || wordFilter) && (
                 <div style={{ marginTop: "12px" }}>
-                  <button type="button" className="btn" onClick={() => router.replace("/language/sentences")}>
+                  <button type="button" className="btn" onClick={handleShowAllSentences}>
                     전체 문장 보기
                   </button>
                 </div>
@@ -928,3 +938,4 @@ export default function SentencesPage() {
     </section>
   );
 }
+

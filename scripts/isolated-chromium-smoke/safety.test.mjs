@@ -169,7 +169,7 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const walk = async directory => (await Promise.all((await readdir(directory, { withFileTypes: true }))
     .map(async item => item.isDirectory() ? walk(join(directory, item.name)) : [join(directory, item.name)]))).flat();
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
-  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 354);
+  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 357);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
   const addition = "      - name: Verify twenty authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
@@ -177,8 +177,8 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   assert.equal(workflow.split(dietAddition).length, 2);
   assert.ok(workflow.indexOf('run: node scripts/isolated-chromium-smoke/supervisor.mjs') < workflow.indexOf(dietAddition));
   assert.ok(workflow.indexOf(dietAddition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
-  assert.equal(workflow.split('len(tests) == 354').length, 2);
-  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace('len(tests) == 354', 'len(tests) == 343')).digest('hex'), workflowHash);
+  assert.equal(workflow.split('len(tests) == 357').length, 2);
+  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace('len(tests) == 357', 'len(tests) == 343')).digest('hex'), workflowHash);
   assert.ok(workflow.indexOf('node scripts/isolated-auth-api/supervisor.mjs') < workflow.indexOf(addition));
   assert.ok(workflow.indexOf(addition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
 });
@@ -1675,6 +1675,32 @@ test('reference source 57 pins the finite route graph and six exact source mutat
       assert.equal(text.split(after).length, 2);
       assert.equal(text.split(before).length, 1);
       bytes = Buffer.from(text.replace(after, before));
+    }
+    if (file === 'components/language/useDailyRoutineCompletion.ts' || file === 'utils/routineCompletionQueue.ts') {
+      const reviewedChanges = {
+        "components/language/useDailyRoutineCompletion.ts": [
+          [
+            "    queue.current?.complete(date ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);\n  }, []);\n  const retry = useCallback(() => queue.current?.retry(), []);\n  const isDateSaved = useCallback((date: string) => current.current() && (queue.current?.isSaved(date) ?? false), []);\n  const isCurrent = useCallback(() => current.current(), []);\n  // Event handlers only: render and state updaters must use the pure predicate.\n  const ensureCurrent = useCallback(() => {\n",
+            "    queue.current?.complete(date ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);\n  }, []);\n  const retry = useCallback(() => queue.current?.retry(), []);\n  const isCurrent = useCallback(() => current.current(), []);\n  // Event handlers only: render and state updaters must use the pure predicate.\n  const ensureCurrent = useCallback(() => {\n"
+          ],
+          [
+            "    setStatus({ pending: false, saved: false, error: ACTION_SCOPE_ERROR });\n    return false;\n  }, []);\n  return { ...status, complete, retry, isDateSaved, isCurrent, ensureCurrent };\n}\n",
+            "    setStatus({ pending: false, saved: false, error: ACTION_SCOPE_ERROR });\n    return false;\n  }, []);\n  return { ...status, complete, retry, isCurrent, ensureCurrent };\n}\n"
+          ]
+        ],
+        "utils/routineCompletionQueue.ts": [
+          [
+            "    } finally { publish(); }\n  };\n  return {\n    isSaved(date: string) { return entries.get(date)?.state === 'done'; },\n    complete(date: string) {\n      if (!options.isCurrent()) return;\n      let entry = entries.get(date);\n",
+            "    } finally { publish(); }\n  };\n  return {\n    complete(date: string) {\n      if (!options.isCurrent()) return;\n      let entry = entries.get(date);\n"
+          ]
+        ]
+      };
+      let text = bytes.toString('utf8');
+      for (const [after, before] of reviewedChanges[file]) {
+        assert.equal(text.split(after).length, 2);
+        text = text.replace(after, before);
+      }
+      bytes = Buffer.from(text);
     }
     assert.equal(createHash('sha256').update(bytes).digest('hex'), hash, file);
   }

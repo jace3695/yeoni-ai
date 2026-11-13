@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+import * as jsx from 'react/jsx-runtime';
+import {createRoutineCompletionQueue} from '../utils/routineCompletionQueue.ts';
+const source=readFileSync(new URL('../app/language/review/page.tsx', import.meta.url),'utf8');
+const ast=ts.createSourceFile('page.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let expression='';
+function visit(n: ts.Node){if(ts.isJsxExpression(n)&&n.expression?.getText(ast).startsWith('reviewedItemIds.length >= 3 &&'))expression=n.expression.getText(ast);ts.forEachChild(n,visit);}visit(ast);
+assert.ok(expression);const code=ts.transpileModule('result = ('+expression+');',{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS}}).outputText;
+const tick=()=>new Promise(r=>setTimeout(r,0));
+function fixture(save: (intent: {date: string}) => Promise<void> = async()=>{}){let status={pending:false,saved:false,error:''};const dates: string[]=[];const queue=createRoutineCompletionQueue({capture:date=>({date}),save:async i=>{await save(i);dates.push(i.date)},isCurrent:()=>true,publish:s=>status=s});
+return {queue,dates,status:()=>status,render(date: string,count=3){const box={exports:{},require:()=>jsx,reviewedItemIds:Array.from({length:count},(_,i)=>String(i)),reviewedDateRef:{current:date},routine:{...status,complete:queue.complete,retry:queue.retry,isDateSaved:queue.isSaved},result:null};vm.runInNewContext(code,box);return box.result as unknown as {props: {disabled: boolean; children: string; onClick: () => void}};}};}
+test('fresh current date can save and same-date repeats do not save twice',async()=>{const f=fixture();let b=f.render('2026-11-13');assert.equal(b.props.disabled,false);b.props.onClick();await tick();b=f.render('2026-11-13');assert.equal(b.props.disabled,true);assert.equal(b.props.children,'일일 학습 체크 저장됨');b.props.onClick();await tick();assert.deepEqual(f.dates,['2026-11-13']);});
+test('yesterday saved never disables unsaved today after midnight',async()=>{const f=fixture();f.queue.complete('2026-11-12');await tick();assert.equal(f.status().saved,true);const b=f.render('2026-11-13');assert.equal(b.props.disabled,false);assert.equal(b.props.children,'이 날짜의 일일 학습 체크 저장');b.props.onClick();await tick();assert.deepEqual(f.dates,['2026-11-12','2026-11-13']);});
+test('previous-date failure retries original date and still captures current date',async()=>{let fail=true;const f=fixture(async i=>{if(i.date==='2026-11-12'&&fail){fail=false;throw Error('quota')}});f.queue.complete('2026-11-12');await tick();const b=f.render('2026-11-13');assert.equal(b.props.disabled,false);b.props.onClick();await tick();assert.deepEqual([...f.dates].sort(),['2026-11-12','2026-11-13']);assert.equal(f.queue.isSaved('2026-11-13'),true);});
+test('same-date failed save retries with no duplicate date',async()=>{let fail=true;const f=fixture(async()=>{if(fail){fail=false;throw Error('quota')}});f.queue.complete('2026-11-13');await tick();const b=f.render('2026-11-13');assert.equal(b.props.children,'일일 학습 체크 다시 저장');b.props.onClick();await tick();assert.deepEqual(f.dates,['2026-11-13']);});
+test('pending yesterday blocks briefly but completion opens unsaved today',async()=>{let release: () => void = () => {};const f=fixture(()=>new Promise(r=>release=r));f.queue.complete('2026-11-12');let b=f.render('2026-11-13');assert.equal(b.props.disabled,true);b.props.onClick();assert.equal(f.queue.isSaved('2026-11-13'),false);release();await tick();b=f.render('2026-11-13');assert.equal(b.props.disabled,false);});
+test('less than three reviewed items has no control',()=>{assert.equal(fixture().render('2026-11-13',2),false);});

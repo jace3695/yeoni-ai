@@ -131,9 +131,9 @@ export default function RecordCalendarView() {
   const [pullupStageDraft, setPullupStageDraft] = useState(1);
   const [pullupPainDraft, setPullupPainDraft] = useState(false);
   const [pullupMemoDraft, setPullupMemoDraft] = useState("");
-  const [foamTimingDraft, setFoamTimingDraft] = useState<FoamRollerTiming>("before");
+  const [foamTimingDraft, setFoamTimingDraft] = useState<FoamRollerTiming | undefined>(undefined);
   const [foamAreasDraft, setFoamAreasDraft] = useState<string[]>([]);
-  const [foamPainDraft, setFoamPainDraft] = useState(false);
+  const [foamPainDraft, setFoamPainDraft] = useState<boolean | undefined>(undefined);
   const [foamMemoDraft, setFoamMemoDraft] = useState("");
   const draftDate = useRef(selected);
   const noteEdited = useRef(false);
@@ -226,9 +226,9 @@ export default function RecordCalendarView() {
     setPullupStageDraft(selectedWorkoutRecord?.pullupStage || 1);
     setPullupPainDraft(Boolean(selectedWorkoutRecord?.pullupPain));
     setPullupMemoDraft(selectedWorkoutRecord?.pullupMemo || "");
-    setFoamTimingDraft(selectedWorkoutRecord?.foamRollerTiming || "before");
+    setFoamTimingDraft(selectedWorkoutRecord?.foamRollerTiming);
     setFoamAreasDraft(selectedWorkoutRecord?.foamRollerAreas || []);
-    setFoamPainDraft(Boolean(selectedWorkoutRecord?.foamRollerPain));
+    setFoamPainDraft(selectedWorkoutRecord?.foamRollerPain);
     setFoamMemoDraft(selectedWorkoutRecord?.foamRollerMemo || "");
   }, [selected, selectedWorkoutRecord, editingWorkout, editingSecondary]);
   if (sessionInvalid) return <p role="status">계정 또는 화면 상태가 바뀌었어요. 기록 화면을 다시 열어 주세요.</p>;
@@ -1006,11 +1006,11 @@ export default function RecordCalendarView() {
             <div className="rounded-xl bg-emerald-50 p-3 text-emerald-900 sm:col-span-2">
               <b>{selectedWorkoutRecord.foamRollerPain ? "폼롤러 ⚠️ 통증 기록 있음" : "폼롤러 완료"}</b>
               <br />
-              <span>시점: {foamTimingLabel || "미기록"}</span>
+              <span>시점: {foamTimingLabel || "미응답"}</span>
               <br />
               <span>부위: {selectedWorkoutRecord.foamRollerAreas?.length ? selectedWorkoutRecord.foamRollerAreas.join(" · ") : "미기록"}</span>
               <br />
-              <span>통증: {selectedWorkoutRecord.foamRollerPain ? "있음" : "없음"}</span>
+              <span>통증: {selectedWorkoutRecord.foamRollerPain === true ? "있음" : selectedWorkoutRecord.foamRollerPain === false ? "없음" : "미응답"}</span>
               {selectedWorkoutRecord.foamRollerMemo && (
                 <p className="mt-2 rounded-lg bg-white px-2 py-1 text-[11px] text-gray-600">메모: {selectedWorkoutRecord.foamRollerMemo}</p>
               )}
@@ -1019,9 +1019,9 @@ export default function RecordCalendarView() {
                 <button type="button" onClick={() => deleteSecondaryRecord("foam")} className="rounded-lg bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">폼롤러 기록 삭제</button>
               </div>
               {editingSecondary === "foam" ? <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 text-gray-700">
-                <p className="text-[11px] font-bold">진행 시점</p><div className="mt-1 flex flex-wrap gap-1">{(Object.keys(FOAM_ROLLER_TIMING_LABELS) as FoamRollerTiming[]).map((timing) => <button key={timing} type="button" onClick={() => setFoamTimingDraft(timing)} className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${foamTimingDraft === timing ? "bg-emerald-600 text-white" : "bg-gray-50 text-gray-600"}`}>{FOAM_ROLLER_TIMING_LABELS[timing]}</button>)}</div>
+                <p className="text-[11px] font-bold">진행 시점</p><div className="mt-1 flex flex-wrap gap-1"><button type="button" onClick={() => setFoamTimingDraft(undefined)} aria-pressed={foamTimingDraft === undefined} className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${foamTimingDraft === undefined ? "bg-emerald-600 text-white" : "bg-gray-50 text-gray-600"}`}>미응답</button>{(Object.keys(FOAM_ROLLER_TIMING_LABELS) as FoamRollerTiming[]).map((timing) => <button key={timing} type="button" onClick={() => setFoamTimingDraft(timing)} className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${foamTimingDraft === timing ? "bg-emerald-600 text-white" : "bg-gray-50 text-gray-600"}`}>{FOAM_ROLLER_TIMING_LABELS[timing]}</button>)}</div>
                 <p className="mt-2 text-[11px] font-bold">진행 부위</p><div className="mt-1 flex flex-wrap gap-1">{FOAM_ROLLER_AREAS.map((area) => <button key={area} type="button" onClick={() => setFoamAreasDraft((areas) => areas.includes(area) ? areas.filter((item) => item !== area) : [...areas, area])} className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${foamAreasDraft.includes(area) ? "bg-emerald-600 text-white" : "bg-gray-50 text-gray-600"}`}>{area}</button>)}</div>
-                <label className="mt-2 flex items-center gap-2 text-[11px] font-bold"><input type="checkbox" checked={foamPainDraft} onChange={(event) => setFoamPainDraft(event.target.checked)} className="h-4 w-4 accent-red-600" />통증 있음</label>
+                <fieldset className="mt-2 text-[11px]"><legend className="font-bold">통증 또는 불편감</legend>{([{ label: '미응답', value: undefined }, { label: '없음', value: false }, { label: '있음', value: true }] as const).map((option) => <label key={option.label} className="mr-3 inline-flex items-center gap-1"><input type="radio" name="foam-pain-edit" checked={foamPainDraft === option.value} onChange={() => setFoamPainDraft(option.value)} />{option.label}</label>)}<p className="mt-1 text-gray-500">미응답은 통증 없음으로 처리하지 않습니다.</p></fieldset>
                 <label className="mt-2 block text-[11px] font-bold">메모<textarea value={foamMemoDraft} onChange={(event) => setFoamMemoDraft(event.target.value)} className="mt-1 min-h-16 w-full rounded-lg border border-gray-200 px-3 py-2 font-normal" /></label>
                 <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => saveSecondaryEdit("foam")} className="rounded-lg bg-emerald-600 px-3 py-2 font-bold text-white">수정 저장</button><button type="button" onClick={() => setEditingSecondary(null)} className="rounded-lg bg-gray-100 px-3 py-2 font-bold text-gray-600">취소</button></div>
               </div> : null}

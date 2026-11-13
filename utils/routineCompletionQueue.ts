@@ -26,6 +26,7 @@ export function createRoutineCompletionQueue<Intent>(options: {
     } finally { publish(); }
   };
   return {
+    isSaved(date: string) { return entries.get(date)?.state === 'done'; },
     complete(date: string) {
       if (!options.isCurrent()) return;
       let entry = entries.get(date);
@@ -39,3 +40,4 @@ export function createRoutineCompletionQueue<Intent>(options: {
     retry() { for (const entry of entries.values()) void run(entry); },
   };
 }
+
