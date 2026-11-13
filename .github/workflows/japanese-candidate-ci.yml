@@ -29,7 +29,7 @@ jobs:
         run: |
           import pathlib, subprocess
           tests = sorted(str(p) for d in ['app', 'lib', 'tests'] for p in pathlib.Path(d).rglob('*.test.ts'))
-          assert len(tests) == 350, f'Unexpected test-file inventory: {len(tests)}'
+          assert len(tests) == 351, f'Unexpected test-file inventory: {len(tests)}'
           for index, target in enumerate(tests, 1):
               print(f'FILE {index}/{len(tests)} {target}', flush=True)
               subprocess.run(['node', '--experimental-strip-types', '--test', '--test-concurrency=1', '--test-reporter=tap', target], check=True, timeout=180)
@@ -81,7 +81,7 @@ jobs:
         if: matrix.compiler == 'default'
         run: node scripts/isolated-chromium-smoke/supervisor.mjs
       - name: Verify two diet and calendar regressions in isolated Chromium
-        if: matrix.compiler == 'default'
+        if: matrix.compiler == 'webpack'
         run: node scripts/isolated-diet-regression/supervisor.mjs
       - name: Remove disposable fixture
         if: always()

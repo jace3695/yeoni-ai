@@ -169,16 +169,16 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const walk = async directory => (await Promise.all((await readdir(directory, { withFileTypes: true }))
     .map(async item => item.isDirectory() ? walk(join(directory, item.name)) : [join(directory, item.name)]))).flat();
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
-  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 350);
+  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 351);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
   const addition = "      - name: Verify twenty authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
-  const dietAddition = "      - name: Verify two diet and calendar regressions in isolated Chromium\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-diet-regression/supervisor.mjs\n";
+  const dietAddition = "      - name: Verify two diet and calendar regressions in isolated Chromium\n        if: matrix.compiler == 'webpack'\n        run: node scripts/isolated-diet-regression/supervisor.mjs\n";
   assert.equal(workflow.split(dietAddition).length, 2);
   assert.ok(workflow.indexOf('run: node scripts/isolated-chromium-smoke/supervisor.mjs') < workflow.indexOf(dietAddition));
   assert.ok(workflow.indexOf(dietAddition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
-  assert.equal(workflow.split('len(tests) == 350').length, 2);
-  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace('len(tests) == 350', 'len(tests) == 343')).digest('hex'), workflowHash);
+  assert.equal(workflow.split('len(tests) == 351').length, 2);
+  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace('len(tests) == 351', 'len(tests) == 343')).digest('hex'), workflowHash);
   assert.ok(workflow.indexOf('node scripts/isolated-auth-api/supervisor.mjs') < workflow.indexOf(addition));
   assert.ok(workflow.indexOf(addition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
 });

@@ -24,3 +24,36 @@ for(const [raw,mode]of [['{broken','normal'],['null','normal'],['[]','normal'],[
 for(const callback of callbacks)test(callback+' healthy path remains usable',()=>{const f=fixture('{"2026-11-11":{"cardioDone":true,"future":"keep"}}');f.handlers[callback]();assert.equal(f.error,'');assert.notEqual(f.message,'');assert.notEqual(f.message,'previous success');assert.equal(f.progressWrites,1);assert.equal(f.progressStates,1);assert.equal(JSON.parse(f.raw)['2026-11-11'].future,'keep');assert.equal(JSON.parse(f.raw)['2026-11-12'].pullupDone,callback!=='cancelTodayPullupRecord')});
 test('progression failure after completion does not falsely claim success or rollback',()=>{const f=fixture('{}','progressfail');f.handlers.completeToday();assert.equal(JSON.parse(f.raw)['2026-11-12'].pullupDone,true);assert.equal(f.message,'');assert.equal(f.error,f.handlers.PULLUP_RECORD_ERROR);assert.equal(f.progressStates,0);assert.equal(f.error.includes('원본은 보존'),false)});
 test('error render replaces controls and hooks precede conditional return',()=>{assert.ok(source.includes('if (recordError) return <section role="alert"'));assert.ok(source.indexOf('useMemo(()')<source.indexOf('if (recordError)'));assert.ok(source.indexOf('if (recordError)')<source.indexOf('return <div className="grid gap-4'))});
+
+test('pain response defaults to unanswered, never a preselected no-pain answer',()=>{
+ assert.ok(source.includes('useState<boolean | null>(null)'));
+ assert.ok(source.includes('setPullupPain(null)'));
+ assert.equal(createDefaultPullupProgress().stageChecks.stage1.painFree,false);
+});
+for(const callback of ['completeToday','saveTodayPullupRecord']) test(callback+' unanswered pain prevents all writes',()=>{
+ const f=fixture('{}'); f.context.pullupPain=null; f.handlers[callback]();
+ assert.equal(f.raw,'{}');assert.equal(f.attempts,0);assert.equal(f.progressStates,0);
+ assert.match(f.message,/통증 여부를 먼저 선택/);assert.equal(f.error,'');
+});
+for(const pain of [false,true]) test('explicit pain answer '+pain+' is saved without inversion',()=>{
+ const f=fixture('{}');f.context.pullupPain=pain;f.handlers.saveTodayPullupRecord();
+ assert.equal(JSON.parse(f.raw)['2026-11-12'].pullupPain,pain);
+ assert.equal(JSON.parse(f.raw)['2026-11-12'].pullupDone,true);
+});
+test('promotion requires explicit no-pain response plus every completion condition',()=>{
+ let expression;function find(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)==='canPromote')expression=n.initializer.getText(ast);ts.forEachChild(n,find)}find(ast);assert.ok(expression);
+ const base={check:{todayCompleted:true,targetSetsCompleted:true,promotionReady:true,painFree:true},pullupPain:false,stage:{id:1},progress:{currentStage:1},PULLUP_STAGES:[1,2,3,4,5]};
+ assert.equal(vm.runInNewContext(expression,base),true);
+ for(const key of Object.keys(base.check))assert.equal(vm.runInNewContext(expression,{...base,check:{...base.check,[key]:false}}),false,key);
+ for(const pain of [null,true])assert.equal(vm.runInNewContext(expression,{...base,pullupPain:pain}),false);
+ assert.ok(source.includes('if (!canPromote) return;'));
+});
+test('rollover never asserts pain-free and same-day legacy records are not reclassified',()=>{
+ for(const painFree of [false,true]){
+  const prior=createDefaultPullupProgress();prior.stageChecks.stage1.painFree=painFree;
+  assert.equal(normalizePullupProgress(prior).stageChecks.stage1.painFree,painFree);
+  prior.updatedAt='2000-01-01';prior.stageChecks.stage1.completedCount=7;
+  const next=normalizePullupProgress(prior);assert.equal(next.stageChecks.stage1.painFree,false);assert.equal(next.stageChecks.stage1.completedCount,7);
+ }
+});
+
