@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import Reporter from './reporter.mjs';
-import { accepted, titles, sources, project, command } from './manifest.mjs';
+import { accepted, diagnosticLines, validReceipt, titles, sources, project, command } from './manifest.mjs';
 
 const root = new URL('../../', import.meta.url);
 test('diet config differs only in exact test selection, reporter, project and output directory', () => {
@@ -45,7 +45,7 @@ for(const [label,options] of Object.entries({partial:{count:6},previousFourOnly:
   test(`reporter rejects ${label}`,()=>assert.equal(run(options),false));
 }
 test('receipt rejects stale token, unexpected fields and missing cleanup',()=>{
-  const good={token:'a',status:'passed',total:7,passed:7,cleaned:7};
+  const good={token:'a',status:'passed',total:7,passed:7,cleaned:7,cases:Array.from({length:7},(_,i)=>({index:i+1,status:1,cleanup:1}))};
   assert.equal(accepted(good,'b'),false);assert.equal(accepted({...good,extra:true},'a'),false);assert.equal(accepted({...good,cleaned:1},'a'),false);
 });
 
@@ -55,4 +55,15 @@ test('application regression source is pinned without changing the original diet
 
 test('safety UX regression source is pinned without changing previous four cases',()=>{
   assert.equal(createHash('sha256').update(readFileSync(new URL('tests/e2e/safety-ux-followup.spec.ts',root))).digest('hex'),'758e67f6bd1f36012bdbc7756df8ac1109eef1c8af0dac8eb299d8ebbd78d397');
+});
+
+test('numeric diagnostics never expose arbitrary strings or upgrade failure',()=>{
+  const report={token:'x',status:'failed',total:7,passed:6,cleaned:7,cases:Array.from({length:7},(_,i)=>({index:i+1,status:i===4?2:1,cleanup:1}))};
+  assert.equal(validReceipt(report,'x'),true);assert.equal(accepted(report,'x'),false);
+  const lines=diagnosticLines(report,'x');assert.equal(lines.length,7);assert.equal(lines[4],'regression-case index=5 status=2 cleanup=1');
+  for(const line of lines)assert.match(line,/^regression-case index=[1-7] status=[0-6] cleanup=[01]$/);
+  for(const bad of [{...report,token:'wrong'},{...report,error:'PRIVATE_STRING'}, {...report,cases:[...report.cases.slice(0,6)]}, {...report,cases:report.cases.map(x=>({...x,status:'PRIVATE_STRING'}))}]) {
+    assert.deepEqual(diagnosticLines(bad,'x'),['regression-cases receipt=unverified']);assert.equal(accepted(bad,'x'),false);
+  }
+  assert.deepEqual(diagnosticLines(undefined,'x'),['regression-cases receipt=unverified']);
 });

@@ -926,6 +926,14 @@ test('active settings coverage pins its reviewed product overlay and narrowly sc
       assert.equal(text.split(before).length, 1);
       bytes = Buffer.from(text.replace(after, before));
     }
+    if (path === 'tests/japanese-preview-session-options.test.ts') {
+      const before = "test('20-minute mode exposes every question including all 210 former input questions, all as choices', () => {\n  let formerInputs = 0;\n  for (const lesson of curriculum.CURRICULUM) {\n    const indices = sessions.getSessionQuizIndices(lesson, 20);\n    assert.deepEqual(indices, lesson.quiz.map((_, index) => index));\n";
+      const after = "test('legacy 20-minute plans retain 8 questions and V2 plans include appended application choices', () => {\n  let formerInputs = 0;\n  for (const lesson of curriculum.CURRICULUM) {\n    const indices = sessions.getSessionQuizIndices(lesson, 20);\n    assert.deepEqual(indices, lesson.quiz.slice(0, 8).map((_, index) => index));\n    const fresh = sessions.createLearningSession(lesson.id, 20, 'starter');\n    const freshIndices = sessions.getSessionQuizIndices(lesson, 20, fresh.quizPlanVersion);\n    assert.equal(freshIndices.length, 8);\n    const applicationLesson = /^[fwt](1[3-9]|20)$/.test(lesson.id);\n    assert.equal(fresh.quizPlanVersion, applicationLesson ? 2 : undefined);\n    assert.deepEqual(freshIndices, applicationLesson ? [0, 2, 4, 6, 3, 5, 8, 9] : indices);\n    for (const index of freshIndices) for (const mode of ['starter', 'reader'] as const) {\n      const choices = sessions.getQuestionChoices(lesson, index, mode);\n      assert.ok(choices.length >= 2); assert.equal(choices.filter(choice => choice.correct).length, 1);\n    }\n";
+      const text = bytes.toString('utf8');
+      assert.equal(text.split(after).length, 2);
+      assert.equal(text.split(before).length, 1);
+      bytes = Buffer.from(text.replace(after, before));
+    }
     assert.equal(createHash('sha256').update(bytes).digest('hex'), hash, path);
   }
   const source = await readFile('tests/e2e/japanese-settings-recovery.spec.ts', 'utf8');

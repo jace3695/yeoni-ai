@@ -157,11 +157,18 @@ test('choice response timing uses the choice threshold after restoration, while 
 
 test('short sessions preserve unasked historical typed reviews and source quiz indices', () => {
   for (const entry of CURRICULUM) {
-    const indices = entry.quiz.map((_, questionIndex) => questionIndex);
+    const indices = entry.quiz.slice(0, 8).map((_, questionIndex) => questionIndex);
     const vocabulary = indices.filter(questionIndex => questionIndex >= 2 && entry.quiz[questionIndex].kind !== 'input' && entry.quiz[questionIndex].kind !== 'listening');
     assert.deepEqual(getSessionQuizIndices(entry, 5), (vocabulary.length >= 3 ? vocabulary : indices).slice(0, 3));
     assert.deepEqual(getSessionQuizIndices(entry, 10), indices.filter(questionIndex => entry.quiz[questionIndex].kind !== 'input').slice(0, 5));
     assert.deepEqual(getSessionQuizIndices(entry, 20), indices);
+    const fresh = createLearningSession(entry.id, 20, 'reader');
+    for (const minutes of [5, 10, 20] as const) {
+      const selected = getSessionQuizIndices(entry, minutes, fresh.quizPlanVersion);
+      if (fresh.quizPlanVersion === 2) {
+        assert.deepEqual(selected, minutes === 5 ? [2, 8, 9] : minutes === 10 ? [2, 4, 6, 8, 9] : [0, 2, 4, 6, 3, 5, 8, 9]);
+      } else assert.deepEqual(selected, getSessionQuizIndices(entry, minutes));
+    }
   }
   const oldSession = answerSessionQuestion(createLearningSession(lesson.id, 20, 'reader'), index, false, '以前の入力', { neededHelp: true, modality: 'typing', responseMs: 20000 });
   const oldReviews = updateSessionReviews([], lesson, oldSession, now);

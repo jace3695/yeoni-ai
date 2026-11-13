@@ -127,11 +127,21 @@ test('failed writes, invalid options and malformed prior settings preserve bytes
   store.clear(); assert.deepEqual(readPreviewSessionOptions(store), { minutes: 10, mode: 'starter' });
 });
 
-test('20-minute mode exposes every question including all 210 former input questions, all as choices', () => {
+test('legacy 20-minute plans retain 8 questions and V2 plans include appended application choices', () => {
   let formerInputs = 0;
   for (const lesson of curriculum.CURRICULUM) {
     const indices = sessions.getSessionQuizIndices(lesson, 20);
-    assert.deepEqual(indices, lesson.quiz.map((_, index) => index));
+    assert.deepEqual(indices, lesson.quiz.slice(0, 8).map((_, index) => index));
+    const fresh = sessions.createLearningSession(lesson.id, 20, 'starter');
+    const freshIndices = sessions.getSessionQuizIndices(lesson, 20, fresh.quizPlanVersion);
+    assert.equal(freshIndices.length, 8);
+    const applicationLesson = /^[fwt](1[3-9]|20)$/.test(lesson.id);
+    assert.equal(fresh.quizPlanVersion, applicationLesson ? 2 : undefined);
+    assert.deepEqual(freshIndices, applicationLesson ? [0, 2, 4, 6, 3, 5, 8, 9] : indices);
+    for (const index of freshIndices) for (const mode of ['starter', 'reader'] as const) {
+      const choices = sessions.getQuestionChoices(lesson, index, mode);
+      assert.ok(choices.length >= 2); assert.equal(choices.filter(choice => choice.correct).length, 1);
+    }
     for (const index of indices) {
       if (lesson.quiz[index].kind === 'input') formerInputs++;
       for (const mode of ['starter', 'reader'] as const) {
