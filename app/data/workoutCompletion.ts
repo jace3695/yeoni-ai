@@ -54,6 +54,7 @@ export type WorkoutNeurologicalSymptom =
   | "numbness"
   | "leg-weakness";
 export interface WorkoutFeedback {
+  elapsedMinutes?: number;
   status: WorkoutOverallStatus;
   difficulty?: WorkoutDifficulty;
   fatigue?: number;
@@ -77,6 +78,8 @@ export interface WorkoutDayRecord {
   workoutPainExercise?: string;
   workoutPainSet?: number;
   workoutMemo?: string;
+  /** Measured session time, independent of editable notes. */
+  workoutElapsedMinutes?: number;
   workoutStatus?: WorkoutOverallStatus;
   workoutDifficulty?: WorkoutDifficulty;
   workoutFatigue?: number;
@@ -143,6 +146,7 @@ const GENERAL_WORKOUT_FIELDS: (keyof WorkoutDayRecord)[] = [
   "workoutPainExercise",
   "workoutPainSet",
   "workoutMemo",
+  "workoutElapsedMinutes",
   "workoutStatus",
   "workoutDifficulty",
   "workoutFatigue",
@@ -368,3 +372,4 @@ export function isWorkoutCompletedOnDate(
 ) {
   return isWorkoutDone(store[getLocalDateKey(date)]);
 }
+

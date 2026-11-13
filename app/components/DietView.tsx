@@ -8,7 +8,7 @@ import { authenticatedJsonHeaders } from '@/app/lib/authenticatedHeaders';
 import { notifyRecordsChanged, recoverStorageTransaction, writeStorageBatch, RECORDS_CHANGED_EVENT } from '../data/storageTransaction';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import NextImage from 'next/image';
-import { DIGESTION_LABELS, normalizeDigestion, normalizeMealCheck, previousMeal, quickMealPreset, summarizeFreeDiet, type DigestionStatus, type MealCheck, type QuickMeal } from '../data/freeDietTools';
+import { DIGESTION_LABELS, hasProteinResponse, normalizeDigestion, normalizeMealCheck, previousMeal, quickMealPreset, summarizeFreeDiet, type DigestionStatus, type MealCheck, type QuickMeal } from '../data/freeDietTools';
 import DietPatterns from './DietPatterns';
 import DietWorkoutContext from './DietWorkoutContext';
 import WorkoutTimes from './WorkoutTimes';
@@ -90,6 +90,7 @@ type DietDayRecord = Record<string, unknown> & {
   dietMemo?: string;
   meals?: Partial<MealCompletion>;
   proteinTotal?: number;
+  proteinRecorded?: boolean;
   waterMl?: number;
   lastMealTime?: string;
 };
@@ -651,6 +652,8 @@ export default function DietView() {
         fasting14h: fastingStatus === '14h',
         meals: mealCompletion,
         proteinTotal,
+        proteinRecorded: hasProteinResponse(mealLog, lunchProtein) ||
+          (previousToday.proteinRecorded === true && previousToday.proteinTotal === proteinTotal),
         proteinDone: proteinTotal >= 100,
         lunchProtein:
           mealLog.lunchProteinChoice !== 'none' || lunchProtein.protein > 0,
@@ -1071,7 +1074,7 @@ export default function DietView() {
                           type="number"
                           inputMode="numeric"
                           min={0}
-                          value={mealLog.lunchProteinCustom || ''}
+                          value={mealLog.lunchProteinCustom ?? ''}
                           onChange={(event) =>
                             setMealLog((current) => ({
                               ...current,
@@ -1169,7 +1172,7 @@ export default function DietView() {
                     type="number"
                     inputMode="numeric"
                     min={0}
-                    value={mealLog.dinnerProteinCustom || ''}
+                    value={mealLog.dinnerProteinCustom ?? ''}
                     onChange={(event) =>
                       setMealLog((current) => ({
                         ...current,
@@ -1677,3 +1680,4 @@ export default function DietView() {
     </div>
   );
 }
+

@@ -358,12 +358,13 @@ function FitnessApp() {
           workoutPainExercise: feedback?.painExercise?.trim() || undefined,
           workoutPainSet: feedback?.painSet,
           workoutMemo: selectedOptionalCardio?.id === 'rest' ? (memo.trim() || '토요일 선택 휴식') : memo.trim() || undefined,
+          workoutElapsedMinutes: selectedOptionalCardio?.id === "rest" ? undefined : (feedback?.elapsedMinutes ?? current.workoutElapsedMinutes),
           workoutStatus: recordedWorkoutStatus,
           workoutDifficulty: feedback ? feedback.difficulty : current.workoutDifficulty,
           workoutFatigue: feedback ? feedback.fatigue : current.workoutFatigue,
           workoutLastSetRpe: feedback ? feedback.lastSetRpe : current.workoutLastSetRpe,
           workoutPainArea: feedback ? feedback.painArea : current.workoutPainArea,
-          workoutExerciseRecords: exerciseRecords || current.workoutExerciseRecords,
+          workoutExerciseRecords: selectedOptionalCardio?.id === "rest" ? undefined : (exerciseRecords || current.workoutExerciseRecords),
           workoutMethod: dayWorkout?.optionalCardio ? undefined : { ...activeWorkoutMethod },
           workoutRecordedAt: new Date().toISOString(),
           rosaryCardioDone: hasWarmupSlidingBoard || undefined,
@@ -409,6 +410,7 @@ function FitnessApp() {
           workoutPainExercise: undefined,
           workoutPainSet: undefined,
           workoutMemo: undefined,
+          workoutElapsedMinutes: undefined,
           workoutStatus: undefined,
           workoutDifficulty: undefined,
           workoutFatigue: undefined,
@@ -542,6 +544,15 @@ function FitnessApp() {
           workoutPainExercise: undefined,
           workoutPainSet: undefined,
           workoutMemo: undefined,
+          workoutElapsedMinutes: undefined,
+          workoutStatus: undefined,
+          workoutDifficulty: undefined,
+          workoutFatigue: undefined,
+          workoutLastSetRpe: undefined,
+          workoutPainArea: undefined,
+          workoutExerciseRecords: undefined,
+          workoutMethod: undefined,
+          workoutRecordedAt: undefined,
           rosaryCardioDone: undefined,
           rosaryCardioMinutes: undefined,
           rosaryDecades: undefined,
@@ -1113,3 +1124,4 @@ function FitnessApp() {
 export default function Page() {
   return <AuthGate><FitnessApp /></AuthGate>;
 }
+

@@ -15,6 +15,7 @@ import { supabase } from "../lib/supabase";
 import { readRecordStores, type DietDayRecord } from "../data/recordStorage";
 import { getWorkoutRecord, isWorkoutPerformed, type WorkoutDayRecord } from "../data/workoutCompletion";
 import { isRetiredGrowthRoutine } from "../data/growthRoutines";
+import { calendarDietStatusLabel, calendarFastingStatusLabel } from "../data/calendarDietLabels";
 
 type Task = { id: string; title: string; due_at: string | null; status: string };
 type Budget = { id: string; date: string; amount: number | string; category?: string; description?: string; memo?: string };
@@ -124,7 +125,7 @@ function UnifiedCalendar() {
   const row = selected ? info[selected] : undefined;
   const selectedGoogleEvents = selected ? googleByDate[selected] || [] : [];
   const workout = row?.workout ? [row.workout.workoutRoutineName || row.workout.workoutPlanName, ...(row.workout.workoutExerciseNames || []), row.workout.cardioDone ? `${row.workout.cardioType || "유산소"} ${row.workout.cardioMinutes || 0}분` : "", row.workout.workoutMemo || row.note].filter(Boolean) as string[] : [];
-  const diet = row?.diet ? [row.diet.dietStatus, row.diet.fastingRecordStatus ? `공복 ${row.diet.fastingRecordStatus}` : "", row.water ? `물 ${row.water.toLocaleString()}mL` : "", row.diet.dietMemo].filter((value): value is string => typeof value === "string" && Boolean(value)) : [];
+  const diet = row?.diet ? [calendarDietStatusLabel(row.diet.dietStatus), `공복 ${calendarFastingStatusLabel(row.diet.fastingRecordStatus)}`, row.water ? `물 ${row.water.toLocaleString()}mL` : "", row.diet.dietMemo].filter((value): value is string => typeof value === "string" && Boolean(value)) : [];
 
   return <main className="min-h-dvh bg-yeoni-bg text-[#242231]"><header className="app-module-header"><div className="app-module-header-inner"><AppIdentity kind="calendar" title="통합 달력" subtitle="모든 앱의 날짜별 기록" /><Link href="/calendar/settings" className="inline-flex min-h-11 shrink-0 items-center px-3 text-sm font-bold">설정</Link></div></header><div className="yeoni-page-content">
     <p className="mb-5 leading-relaxed">날짜를 누르면 그날의 일정과 기록을 함께 볼 수 있어요.</p>
@@ -169,3 +170,4 @@ function UnifiedCalendar() {
 }
 
 export default function Page() { return <AuthGate><UnifiedCalendar /></AuthGate>; }
+

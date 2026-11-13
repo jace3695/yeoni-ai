@@ -49,7 +49,7 @@ export const PULLUP_STAGES: PullupStage[] = [
 
 export const getPullupVideoUrl = (query: string) => youtubeSearchUrl(query);
 
-const makeDefaultStageCheck = (): PullupStageCheck => ({ todayCompleted: false, targetSetsCompleted: false, painFree: true, promotionReady: false, completedCount: 0, maxSeconds: 0, maxReps: 0 });
+const makeDefaultStageCheck = (): PullupStageCheck => ({ todayCompleted: false, targetSetsCompleted: false, painFree: false, promotionReady: false, completedCount: 0, maxSeconds: 0, maxReps: 0 });
 export const createDefaultPullupProgress = (): PullupProgress => ({ currentStage: 1, stageChecks: Object.fromEntries(PULLUP_STAGES.map((stage) => [`stage${stage.id}`, makeDefaultStageCheck()])), updatedAt: getLocalDateKey() });
 
 export function normalizePullupProgress(saved: unknown): PullupProgress {
@@ -95,9 +95,10 @@ export function normalizePullupProgress(saved: unknown): PullupProgress {
           ...check,
           todayCompleted: false,
           targetSetsCompleted: false,
-          painFree: true,
+          painFree: false,
         },
       ]),
     ),
   };
 }
+

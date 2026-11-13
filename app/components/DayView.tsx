@@ -207,9 +207,10 @@ export default function DayView({ day, workoutMethod = DEFAULT_WORKOUT_METHOD, i
         setPainExercise(result.painExercise || '');
         setPainSet(result.painSet);
         setMemo(combinedMemo);
-        onSaveWorkout(result.pain, combinedMemo, selectedCardioOptionId, result.exerciseRecords, selectedCardioMinutes, { status: result.status, difficulty: result.difficulty, fatigue: result.fatigue, lastSetRpe: result.lastSetRpe, painArea: result.painArea, backStatus: result.backStatus, neurologicalSymptoms: result.neurologicalSymptoms, painExercise: result.painExercise, painSet: result.painSet });
+        onSaveWorkout(result.pain, combinedMemo, selectedCardioOptionId, result.exerciseRecords, selectedCardioMinutes, { elapsedMinutes: result.elapsedMinutes, status: result.status, difficulty: result.difficulty, fatigue: result.fatigue, lastSetRpe: result.lastSetRpe, painArea: result.painArea, backStatus: result.backStatus, neurologicalSymptoms: result.neurologicalSymptoms, painExercise: result.painExercise, painSet: result.painSet });
       }}
     />}
     </>}
   </div>;
 }
+

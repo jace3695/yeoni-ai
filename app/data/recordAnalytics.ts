@@ -171,6 +171,10 @@ export function getRecentConditionSummary(
 
 function getSessionMinutes(value?: WorkoutCompletionValue) {
   if (typeof value !== "object" || !value) return 0;
+  if (typeof value.workoutElapsedMinutes === "number" && Number.isFinite(value.workoutElapsedMinutes) && value.workoutElapsedMinutes >= 0) {
+    return value.workoutElapsedMinutes;
+  }
+  // Legacy records retain their existing note-based fallback; no backfill.
   const memoMatch = value.workoutMemo?.match(
     /\[따라하기 세션\]\s*(\d+)\s*분/,
   );
@@ -558,3 +562,4 @@ export function formatShortDate(dateKey: string) {
   const date = parseDateKey(dateKey);
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
+

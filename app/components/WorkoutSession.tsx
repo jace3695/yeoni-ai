@@ -9,6 +9,7 @@ import ExerciseGuidePanel, { getExerciseVideoHref, getExerciseVideoLabel } from 
 import ExerciseRecordEditor from './ExerciseRecordEditor';
 import { useUnsavedChanges } from '@/components/useUnsavedChanges';
 import { elapsedSecondsSince, remainingSecondsUntil } from '../data/timerClock';
+import { sessionElapsedMinutes } from '../data/workoutDuration';
 import { IntervalTimer } from './WorkoutControls';
 import { notifyRecordsChanged } from '../data/storageTransaction';
 import { useWorkoutVoice } from './useWorkoutVoice';
@@ -43,6 +44,7 @@ interface WorkoutSessionDraft {
 }
 
 export interface WorkoutSessionResult {
+  elapsedMinutes: number;
   pain: boolean;
   memo: string;
   exerciseRecords: ExerciseRecord[];
@@ -204,7 +206,7 @@ function buildSessionMemo({
   painMemo: string;
 }) {
   const lines = [
-    `[따라하기 세션] ${Math.max(1, Math.ceil(elapsedSeconds / 60))}분`,
+    `[따라하기 세션] ${sessionElapsedMinutes(elapsedSeconds)}분`,
     `완료 ${completedCount}개${skippedCount ? ` · 건너뜀 ${skippedCount}개` : ''}`,
   ];
   if (painScore > 0 || painSymptoms.length) {
@@ -578,6 +580,7 @@ export default function WorkoutSession({
     window.localStorage.removeItem(draftKey);
     notifyRecordsChanged();
     onFinish?.({
+      elapsedMinutes: sessionElapsedMinutes(elapsedSecondsRef.current),
       pain: painScore > 0 || painSymptoms.length > 0 || Boolean(painArea),
       memo: buildSessionMemo({
         elapsedSeconds: elapsedSecondsRef.current,
@@ -772,7 +775,7 @@ export default function WorkoutSession({
               <p className="text-[13px] font-bold text-[#534AB7]">{hasSafetyConcern ? '안전 종료 기록' : '세션 완료'}</p>
               <h2 className="mt-2 text-[26px] font-bold text-gray-900">{hasSafetyConcern ? '회복과 증상 확인을 우선하세요' : '오늘 운동을 마쳤습니다'}</h2>
               <div className="mt-5 grid grid-cols-3 gap-2">
-                <div className="rounded-2xl bg-white p-3"><p className="text-[11px] text-gray-400">운동시간</p><p className="mt-1 text-[18px] font-bold">{Math.max(1, Math.ceil(elapsedSecondsRef.current / 60))}분</p></div>
+                <div className="rounded-2xl bg-white p-3"><p className="text-[11px] text-gray-400">운동시간</p><p className="mt-1 text-[18px] font-bold">{sessionElapsedMinutes(elapsedSecondsRef.current)}분</p></div>
                 <div className="rounded-2xl bg-white p-3"><p className="text-[11px] text-gray-400">완료</p><p className="mt-1 text-[18px] font-bold">{completed.size}개</p></div>
                 <div className="rounded-2xl bg-white p-3"><p className="text-[11px] text-gray-400">건너뜀</p><p className="mt-1 text-[18px] font-bold">{skipped.size}개</p></div>
               </div>
@@ -823,3 +826,4 @@ export default function WorkoutSession({
     </div>
   );
 }
+
