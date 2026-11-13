@@ -186,6 +186,16 @@ test('success uses exact fresh bundle route and the corrected official direct AP
   assert.equal(f.commands.some(command => command.args.includes(FFMPEG_EXECUTABLE)), false);
   assert.equal(f.commands.some(command => command.args.includes(CHILD_LIBRARY)), false);
   assert.equal(f.loads.length, 2);
+  for (const version of ['20261101.360.1', '20261111.370.1']) {
+    const accepted = fixture(); accepted.context.env.ImageVersion = version;
+    assert.equal(await runDriver(accepted.context, accepted.io), 0);
+    assert.ok(accepted.commands.every(command => command.env.ImageVersion === version));
+  }
+  for (const version of ['20261102.1.1', '20261111.370.2', '20261101.360.1 ', '']) {
+    const rejected = fixture(); rejected.context.env.ImageVersion = version;
+    assert.equal(await runDriver(rejected.context, rejected.io), DRIVER_EXIT_CODES.contract);
+    assert.equal(rejected.commands.length, 0); assert.equal(rejected.mkdirs.length, 0);
+  }
 });
 
 /** @type {[string, (f: Fixture) => void][]} */

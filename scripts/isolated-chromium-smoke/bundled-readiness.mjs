@@ -2,11 +2,11 @@
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { runPrivateStage, lifecycleLine, terminationGraceMs } from '../qa-private-lifecycle.mjs';
-import { BUNDLE_CACHE, driverEnvironment, DRIVER_EXIT_CODES, missingLibraryId } from './bundled-driver.mjs';
+import { BUNDLE_CACHE, driverEnvironmentFor, APPROVED_IMAGE_VERSIONS, DRIVER_EXIT_CODES, missingLibraryId } from './bundled-driver.mjs';
 
 export { BUNDLE_CACHE };
 const imageContext = Object.freeze({ RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64',
-  RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261111.370.1',
+  RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24',
   GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com' });
 /** @typedef {'request' | 'runner' | 'image' | 'repository' | 'override'} ContextCategory */
 export class InspectionContextError extends Error {
@@ -25,6 +25,7 @@ export function bundledChromiumContext(env, allowCache = false) {
     && env.GITHUB_EVENT_NAME === 'push' && env.GITHUB_REF === 'refs/heads/agent/yeoni-japanese-ci-20261110', 'request');
   for (const [name, value] of Object.entries(imageContext)) requireContext(env[name] === value,
     name.startsWith('Image') ? 'image' : name.startsWith('RUNNER_') ? 'runner' : 'repository');
+  requireContext(typeof env.ImageVersion === 'string' && APPROVED_IMAGE_VERSIONS.includes(env.ImageVersion), 'image');
   requireContext(!Object.keys(env).some(name => {
     const value = env[name];
     if (!value) return false;
@@ -36,7 +37,7 @@ export function bundledChromiumContext(env, allowCache = false) {
     return /^(?:PLAYWRIGHT_|PW_|PWTEST_|CHROME_|CHROMIUM_|SELENIUM_|LD_|DYLD_)/.test(normalized);
   }), 'override');
   if (allowCache) requireContext(env.PLAYWRIGHT_BROWSERS_PATH === BUNDLE_CACHE, 'override');
-  return { ...imageContext };
+  return { ...imageContext, ImageVersion: env.ImageVersion };
 }
 
 /** @typedef {{ check: () => void, watch: (child: import('node:child_process').ChildProcess) => Promise<number>, readonly finished: boolean, readonly interrupted: boolean }} ReadinessControl */
@@ -112,12 +113,12 @@ export async function checkBundledChromium({ cwd, env, signal, timeoutMs = 240_0
   const group = { initial: 'unobserved', final: 'unverified', term: 'not-attempted', kill: 'not-attempted' };
   let groupInitiallyAbsent = false;
   const result = await runPrivateStage(/** @param {ReadinessControl} control */ async control => {
-    bundledChromiumContext(env, true); control.check();
+    const admitted = bundledChromiumContext(env, true); control.check();
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 240_000
       || typeof cwd !== 'string' || !cwd || cwd.length > 4096 || cwd.includes('\0')) throw new Error('Readiness rejected');
     category = 'runner';
     /** @type {import('node:child_process').SpawnOptionsWithStdioTuple<'ignore', 'ignore', 'ignore'>} */
-    const options = { cwd, env: { ...driverEnvironment }, stdio: ['ignore', 'ignore', 'ignore'], detached: true };
+    const options = { cwd, env: driverEnvironmentFor(admitted.ImageVersion), stdio: ['ignore', 'ignore', 'ignore'], detached: true };
     const child = launch(process.execPath, [resolve(cwd, 'scripts/isolated-chromium-smoke/bundled-driver.mjs')], options);
     const code = await control.watch(child);
     groupInitiallyAbsent = await finishOwnedGroup(child.pid, control, signalGroup, group);

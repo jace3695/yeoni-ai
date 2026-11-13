@@ -54,6 +54,18 @@ test('bundled readiness launches only its fixed private driver with no caller se
   assert.ok(!Object.values(state.launches[0].config.env).includes(canary));
   assert.equal(state.output.at(-2), 'stage-02 readiness browser=playwright-chromium-headless-shell revision=1243 major=153 minor=0 build=8010 patch=12 install=passed hostValidation=passed status=passed');
   assert.equal(state.output.at(-1), 'stage-02 passed');
+  for (const version of ['20261101.360.1', '20261111.370.1']) {
+    const accepted = fixture(0, { env: { ...environment(), ImageVersion: version } });
+    assert.equal(await checkBundledChromium(accepted.options), 0);
+    assert.equal(accepted.launches[0].config.env.ImageVersion, version);
+    assert.deepEqual(accepted.launches[0].config.env, { ...driverEnvironment, ImageVersion: version });
+    assert.equal(bundledChromiumContext(accepted.options.env, true).ImageVersion, version);
+  }
+  for (const version of ['20261102.1.1', '20261111.370.2', '20261101.360.1 ', '']) {
+    const rejected = fixture(0, { env: { ...environment(), ImageVersion: version } });
+    assert.equal(await checkBundledChromium(rejected.options), 1);
+    assert.equal(rejected.launches.length, 0);
+  }
   assert.ok(!state.output.some(x => x.includes('realBrowser=true'))); safeOutput(state.output);
 });
 

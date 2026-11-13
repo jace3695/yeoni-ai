@@ -16,6 +16,12 @@ export const driverEnvironment = Object.freeze({
   GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com',
   RUNNER_TEMP: '/home/runner/work/_temp', TMPDIR: '/home/runner/work/_temp',
 });
+export const APPROVED_IMAGE_VERSIONS = Object.freeze(['20261101.360.1', '20261111.370.1']);
+/** @param {string | undefined} imageVersion */
+export function driverEnvironmentFor(imageVersion) {
+  if (typeof imageVersion !== 'string' || !APPROVED_IMAGE_VERSIONS.includes(imageVersion)) throw new Error('BUNDLED_DRIVER_REJECTED');
+  return Object.freeze({ ...driverEnvironment, ImageVersion: imageVersion });
+}
 export const DRIVER_EXIT_CODES = Object.freeze({
   success: 0, contract: 20, cache: 21, install: 22,
   bundle: 23, dependencies: 24, validation: 25, unexpected: 26,
@@ -203,7 +209,7 @@ function validateContext(context) {
   requireCondition(path.isAbsolute(context.cwd) && path.resolve(context.cwd) === context.cwd);
   requireCondition(path.isAbsolute(context.executable));
   const actual = Object.entries(context.env);
-  const expected = Object.entries(driverEnvironment);
+  const expected = Object.entries(driverEnvironmentFor(context.env.ImageVersion));
   requireCondition(actual.length === expected.length);
   for (const [key, value] of expected) requireCondition(context.env[key] === value);
 }
