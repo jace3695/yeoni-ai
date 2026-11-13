@@ -7,7 +7,7 @@ import { loadContext, childEnvironment, readPrivateFile } from '../isolated-auth
 import { checkBundledChromium, bundledChromiumContext, BUNDLE_CACHE } from '../isolated-chromium-smoke/bundled-readiness.mjs';
 import { command, accepted } from './manifest.mjs';
 
-const failure = 'diet-regression failed tests=2 realBrowser=unverified fixtureCleanup=unverified';
+const failure = 'diet-regression failed tests=4 realBrowser=unverified fixtureCleanup=unverified';
 async function main() {
   await loadContext();
   const context = bundledChromiumContext(process.env);
@@ -26,7 +26,7 @@ async function main() {
     if (await checkBundledChromium({cwd:options.cwd, env, signal:controller.signal, timeoutMs:240_000, emit:options.emit}) !== 0) throw new Error('readiness');
     if (await runStages([{id:'stage-02', command}], {...options, timeoutMs:240_000}) !== 0) throw new Error('browser');
     if (controller.signal.aborted || !accepted(JSON.parse(await readPrivateFile(receipt, 1024)), token)) throw new Error('receipt');
-    console.log('diet-regression passed tests=2 browser=playwright-chromium-headless-shell realBrowser=true fixtureCleanup=passed');
+    console.log('diet-regression passed tests=4 browser=playwright-chromium-headless-shell realBrowser=true fixtureCleanup=passed');
   } finally {
     clearTimeout(timer); process.off('SIGTERM',abort); process.off('SIGINT',abort);
   }

@@ -169,16 +169,16 @@ test('existing tests, fixtures, WebKit guards, dependencies, schema and stack ar
   const walk = async directory => (await Promise.all((await readdir(directory, { withFileTypes: true }))
     .map(async item => item.isDirectory() ? walk(join(directory, item.name)) : [join(directory, item.name)]))).flat();
   const files = (await Promise.all(['app', 'lib', 'tests'].map(walk))).flat();
-  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 353);
+  assert.equal(files.filter(file => file.endsWith('.test.ts')).length, 354);
   const workflow = await readFile('.github/workflows/japanese-candidate-ci.yml', 'utf8');
   const addition = "      - name: Verify twenty authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
-  const dietAddition = "      - name: Verify two diet and calendar regressions in isolated Chromium\n        if: matrix.compiler == 'webpack'\n        run: node scripts/isolated-diet-regression/supervisor.mjs\n";
+  const dietAddition = "      - name: Verify four diet calendar and lesson regressions in isolated Chromium\n        if: matrix.compiler == 'webpack'\n        run: node scripts/isolated-diet-regression/supervisor.mjs\n";
   assert.equal(workflow.split(dietAddition).length, 2);
   assert.ok(workflow.indexOf('run: node scripts/isolated-chromium-smoke/supervisor.mjs') < workflow.indexOf(dietAddition));
   assert.ok(workflow.indexOf(dietAddition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
-  assert.equal(workflow.split('len(tests) == 353').length, 2);
-  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace('len(tests) == 353', 'len(tests) == 343')).digest('hex'), workflowHash);
+  assert.equal(workflow.split('len(tests) == 354').length, 2);
+  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace('len(tests) == 354', 'len(tests) == 343')).digest('hex'), workflowHash);
   assert.ok(workflow.indexOf('node scripts/isolated-auth-api/supervisor.mjs') < workflow.indexOf(addition));
   assert.ok(workflow.indexOf(addition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
 });
@@ -750,6 +750,44 @@ test('reviewed curriculum repair and bounded real-UI scenarios retain exact sour
       for (const [after, before] of displayOnly) {
         assert.equal(text.split(after).length, 2);
         assert.equal(text.split(before).length, 1);
+        text = text.replace(after, before);
+      }
+      bytes = Buffer.from(text);
+    }
+    if (path === 'components/language/FocusedLesson.tsx' || path === 'utils/learningSession.ts') {
+      const reviewedChanges = {
+        "components/language/FocusedLesson.tsx": [
+          [
+            "  const finishing = useRef(false);\n  const audio = useLearningAudio();\n  const { stop, play } = audio;\n  const quizIndices = getSessionQuizIndices(lesson, session.minutes, session.quizPlanVersion);\n  const questionIndex = quizIndices[session.quizCursor];\n  const result = getSessionResult(lesson, session);\n  const word = lesson.words[session.wordIndex];\n",
+            "  const finishing = useRef(false);\n  const audio = useLearningAudio();\n  const { stop, play } = audio;\n  const quizIndices = getSessionQuizIndices(lesson, session.minutes);\n  const questionIndex = quizIndices[session.quizCursor];\n  const result = getSessionResult(lesson, session);\n  const word = lesson.words[session.wordIndex];\n"
+          ]
+        ],
+        "utils/learningSession.ts": [
+          [
+            "export type LearningMinutes = 5 | 10 | 20;\nexport type LearningSession = {\n  version: 1;\n  quizPlanVersion?: 2;\n  id: string;\n  lessonId: string;\n  minutes: LearningMinutes;\n",
+            "export type LearningMinutes = 5 | 10 | 20;\nexport type LearningSession = {\n  version: 1;\n  id: string;\n  lessonId: string;\n  minutes: LearningMinutes;\n"
+          ],
+          [
+            "};\n\nexport function createLearningSession(lessonId: string, minutes: LearningMinutes, mode: LearnerMode): LearningSession {\n  return { version: 1, ...(/^[fwt](1[3-9]|20)$/.test(lessonId) ? { quizPlanVersion: 2 as const } : {}), id: globalThis.crypto.randomUUID(), lessonId, minutes, mode, stage: 0, wordIndex: 0, quizCursor: 0, answers: {}, firstAnswers: {}, responses: {}, speakingChecks: [false, false, false] };\n}\n\nexport function getSessionQuizIndices(lesson: CurriculumLesson, minutes: LearningMinutes, quizPlanVersion?: 2): number[] {\n  if (quizPlanVersion !== undefined && quizPlanVersion !== 2) throw new Error(\"지원하지 않는 학습 문항 버전이에요.\");\n  if (quizPlanVersion === 2 && /^[fwt](1[3-9]|20)$/.test(lesson.id)) {\n    if (lesson.quiz.length < 10) throw new Error(\"문형 연습 자료가 없어 기록을 안전하게 이어갈 수 없어요.\");\n    // Immutable V2 plans: new identities 8/9, legacy identities 0–7 unchanged.\n    if (minutes === 5) return [2, 8, 9];\n    if (minutes === 10) return [2, 4, 6, 8, 9];\n    return [0, 2, 4, 6, 3, 5, 8, 9];\n  }\n  const indices = lesson.quiz.slice(0, 8).map((_, index) => index);\n  // The generated vocabulary checks cover all three words, even in a short\n  // session. Preserve their source indices so existing review IDs stay valid.\n  const vocabulary = indices.filter((index) => index >= 2 && lesson.quiz[index].kind !== \"input\" && lesson.quiz[index].kind !== \"listening\");\n",
+            "};\n\nexport function createLearningSession(lessonId: string, minutes: LearningMinutes, mode: LearnerMode): LearningSession {\n  return { version: 1, id: globalThis.crypto.randomUUID(), lessonId, minutes, mode, stage: 0, wordIndex: 0, quizCursor: 0, answers: {}, firstAnswers: {}, responses: {}, speakingChecks: [false, false, false] };\n}\n\nexport function getSessionQuizIndices(lesson: CurriculumLesson, minutes: LearningMinutes): number[] {\n  const indices = lesson.quiz.map((_, index) => index);\n  // The generated vocabulary checks cover all three words, even in a short\n  // session. Preserve their source indices so existing review IDs stay valid.\n  const vocabulary = indices.filter((index) => index >= 2 && lesson.quiz[index].kind !== \"input\" && lesson.quiz[index].kind !== \"listening\");\n"
+          ],
+          [
+            "  const draft = value as Partial<LearningSession>;\n  if (draft.version !== 1 || draft.lessonId !== lesson.id || ![5, 10, 20].includes(draft.minutes ?? 0)) return;\n  if (draft.mode !== \"starter\" && draft.mode !== \"reader\") return;\n  if (draft.quizPlanVersion !== undefined && draft.quizPlanVersion !== 2) throw new Error(\"지원하지 않는 학습 문항 버전이에요. 기록을 덮어쓰지 않고 중단했어요.\");\n  // The storage reader validates before opting into lossless saved fields.\n  // Other callers retain the existing defensive normalization contract.\n  const clean = { ...(preserveStoredFields ? draft : {}), ...createLearningSession(lesson.id, draft.minutes as LearningMinutes, draft.mode) };\n  // Never upgrade a saved legacy draft merely by loading it.\n  delete clean.quizPlanVersion;\n  if (draft.quizPlanVersion === 2) clean.quizPlanVersion = 2;\n  if (typeof draft.id === \"string\" && draft.id.length <= 100 && draft.id.length > 0) clean.id = draft.id;\n  const bounded = (number: unknown, max: number) => typeof number === \"number\" && Number.isInteger(number) ? Math.max(0, Math.min(number, max)) : 0;\n  clean.stage = bounded(draft.stage, 4);\n  clean.wordIndex = bounded(draft.wordIndex, lesson.words.length - 1);\n  clean.quizCursor = bounded(draft.quizCursor, getSessionQuizIndices(lesson, clean.minutes, clean.quizPlanVersion).length - 1);\n  const answerMap = (map: unknown): Record<number, boolean> => !map || typeof map !== \"object\" ? {} : Object.fromEntries(Object.entries(map).filter(([key, result]) => /^\\d+$/.test(key) && (preserveStoredFields || Number(key) < lesson.quiz.length) && typeof result === \"boolean\"));\n  clean.answers = answerMap(draft.answers);\n  clean.firstAnswers = answerMap(draft.firstAnswers);\n",
+            "  const draft = value as Partial<LearningSession>;\n  if (draft.version !== 1 || draft.lessonId !== lesson.id || ![5, 10, 20].includes(draft.minutes ?? 0)) return;\n  if (draft.mode !== \"starter\" && draft.mode !== \"reader\") return;\n  // The storage reader validates before opting into lossless saved fields.\n  // Other callers retain the existing defensive normalization contract.\n  const clean = { ...(preserveStoredFields ? draft : {}), ...createLearningSession(lesson.id, draft.minutes as LearningMinutes, draft.mode) };\n  if (typeof draft.id === \"string\" && draft.id.length <= 100 && draft.id.length > 0) clean.id = draft.id;\n  const bounded = (number: unknown, max: number) => typeof number === \"number\" && Number.isInteger(number) ? Math.max(0, Math.min(number, max)) : 0;\n  clean.stage = bounded(draft.stage, 4);\n  clean.wordIndex = bounded(draft.wordIndex, lesson.words.length - 1);\n  clean.quizCursor = bounded(draft.quizCursor, getSessionQuizIndices(lesson, clean.minutes).length - 1);\n  const answerMap = (map: unknown): Record<number, boolean> => !map || typeof map !== \"object\" ? {} : Object.fromEntries(Object.entries(map).filter(([key, result]) => /^\\d+$/.test(key) && (preserveStoredFields || Number(key) < lesson.quiz.length) && typeof result === \"boolean\"));\n  clean.answers = answerMap(draft.answers);\n  clean.firstAnswers = answerMap(draft.firstAnswers);\n"
+          ],
+          [
+            "}\n\nexport function getSessionResult(lesson: CurriculumLesson, session: LearningSession) {\n  const indices = getSessionQuizIndices(lesson, session.minutes, session.quizPlanVersion);\n  const answered = indices.filter((index) => typeof session.answers[index] === \"boolean\").length;\n  const correct = indices.filter((index) => session.answers[index] === true).length;\n  const firstCorrect = indices.filter((index) => session.firstAnswers[index] === true).length;\n",
+            "}\n\nexport function getSessionResult(lesson: CurriculumLesson, session: LearningSession) {\n  const indices = getSessionQuizIndices(lesson, session.minutes);\n  const answered = indices.filter((index) => typeof session.answers[index] === \"boolean\").length;\n  const correct = indices.filter((index) => session.answers[index] === true).length;\n  const firstCorrect = indices.filter((index) => session.firstAnswers[index] === true).length;\n"
+          ],
+          [
+            "\nexport function updateSessionReviews(existing: CurriculumReviewItem[], lesson: CurriculumLesson, session: LearningSession, now: Date): CurriculumReviewItem[] {\n  const updated = new Map(existing.map((item) => [item.id, item]));\n  for (const index of getSessionQuizIndices(lesson, session.minutes, session.quizPlanVersion)) {\n    if (session.answers[index] === undefined) continue;\n    const id = lesson.id + \":\" + index;\n    const previous = updated.get(id);\n",
+            "\nexport function updateSessionReviews(existing: CurriculumReviewItem[], lesson: CurriculumLesson, session: LearningSession, now: Date): CurriculumReviewItem[] {\n  const updated = new Map(existing.map((item) => [item.id, item]));\n  for (const index of getSessionQuizIndices(lesson, session.minutes)) {\n    if (session.answers[index] === undefined) continue;\n    const id = lesson.id + \":\" + index;\n    const previous = updated.get(id);\n"
+          ]
+        ]
+      };
+      let text = bytes.toString('utf8');
+      for (const [after, before] of reviewedChanges[path]) {
+        assert.equal(text.split(after).length, 2);
         text = text.replace(after, before);
       }
       bytes = Buffer.from(text);

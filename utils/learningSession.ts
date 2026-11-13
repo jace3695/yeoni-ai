@@ -6,6 +6,7 @@ export type LearnerMode = "starter" | "reader";
 export type LearningMinutes = 5 | 10 | 20;
 export type LearningSession = {
   version: 1;
+  quizPlanVersion?: 2;
   id: string;
   lessonId: string;
   minutes: LearningMinutes;
@@ -21,11 +22,19 @@ export type LearningSession = {
 };
 
 export function createLearningSession(lessonId: string, minutes: LearningMinutes, mode: LearnerMode): LearningSession {
-  return { version: 1, id: globalThis.crypto.randomUUID(), lessonId, minutes, mode, stage: 0, wordIndex: 0, quizCursor: 0, answers: {}, firstAnswers: {}, responses: {}, speakingChecks: [false, false, false] };
+  return { version: 1, ...(/^[fwt](1[3-9]|20)$/.test(lessonId) ? { quizPlanVersion: 2 as const } : {}), id: globalThis.crypto.randomUUID(), lessonId, minutes, mode, stage: 0, wordIndex: 0, quizCursor: 0, answers: {}, firstAnswers: {}, responses: {}, speakingChecks: [false, false, false] };
 }
 
-export function getSessionQuizIndices(lesson: CurriculumLesson, minutes: LearningMinutes): number[] {
-  const indices = lesson.quiz.map((_, index) => index);
+export function getSessionQuizIndices(lesson: CurriculumLesson, minutes: LearningMinutes, quizPlanVersion?: 2): number[] {
+  if (quizPlanVersion !== undefined && quizPlanVersion !== 2) throw new Error("지원하지 않는 학습 문항 버전이에요.");
+  if (quizPlanVersion === 2 && /^[fwt](1[3-9]|20)$/.test(lesson.id)) {
+    if (lesson.quiz.length < 10) throw new Error("문형 연습 자료가 없어 기록을 안전하게 이어갈 수 없어요.");
+    // Immutable V2 plans: new identities 8/9, legacy identities 0–7 unchanged.
+    if (minutes === 5) return [2, 8, 9];
+    if (minutes === 10) return [2, 4, 6, 8, 9];
+    return [0, 2, 4, 6, 3, 5, 8, 9];
+  }
+  const indices = lesson.quiz.slice(0, 8).map((_, index) => index);
   // The generated vocabulary checks cover all three words, even in a short
   // session. Preserve their source indices so existing review IDs stay valid.
   const vocabulary = indices.filter((index) => index >= 2 && lesson.quiz[index].kind !== "input" && lesson.quiz[index].kind !== "listening");
@@ -39,14 +48,18 @@ export function normalizeLearningSession(value: unknown, lesson: CurriculumLesso
   const draft = value as Partial<LearningSession>;
   if (draft.version !== 1 || draft.lessonId !== lesson.id || ![5, 10, 20].includes(draft.minutes ?? 0)) return;
   if (draft.mode !== "starter" && draft.mode !== "reader") return;
+  if (draft.quizPlanVersion !== undefined && draft.quizPlanVersion !== 2) throw new Error("지원하지 않는 학습 문항 버전이에요. 기록을 덮어쓰지 않고 중단했어요.");
   // The storage reader validates before opting into lossless saved fields.
   // Other callers retain the existing defensive normalization contract.
   const clean = { ...(preserveStoredFields ? draft : {}), ...createLearningSession(lesson.id, draft.minutes as LearningMinutes, draft.mode) };
+  // Never upgrade a saved legacy draft merely by loading it.
+  delete clean.quizPlanVersion;
+  if (draft.quizPlanVersion === 2) clean.quizPlanVersion = 2;
   if (typeof draft.id === "string" && draft.id.length <= 100 && draft.id.length > 0) clean.id = draft.id;
   const bounded = (number: unknown, max: number) => typeof number === "number" && Number.isInteger(number) ? Math.max(0, Math.min(number, max)) : 0;
   clean.stage = bounded(draft.stage, 4);
   clean.wordIndex = bounded(draft.wordIndex, lesson.words.length - 1);
-  clean.quizCursor = bounded(draft.quizCursor, getSessionQuizIndices(lesson, clean.minutes).length - 1);
+  clean.quizCursor = bounded(draft.quizCursor, getSessionQuizIndices(lesson, clean.minutes, clean.quizPlanVersion).length - 1);
   const answerMap = (map: unknown): Record<number, boolean> => !map || typeof map !== "object" ? {} : Object.fromEntries(Object.entries(map).filter(([key, result]) => /^\d+$/.test(key) && (preserveStoredFields || Number(key) < lesson.quiz.length) && typeof result === "boolean"));
   clean.answers = answerMap(draft.answers);
   clean.firstAnswers = answerMap(draft.firstAnswers);
@@ -95,7 +108,7 @@ export function retrySessionQuestion(session: LearningSession, index: number): L
 }
 
 export function getSessionResult(lesson: CurriculumLesson, session: LearningSession) {
-  const indices = getSessionQuizIndices(lesson, session.minutes);
+  const indices = getSessionQuizIndices(lesson, session.minutes, session.quizPlanVersion);
   const answered = indices.filter((index) => typeof session.answers[index] === "boolean").length;
   const correct = indices.filter((index) => session.answers[index] === true).length;
   const firstCorrect = indices.filter((index) => session.firstAnswers[index] === true).length;
@@ -128,7 +141,7 @@ export function getNextReviewInterval(current = 0): number {
 
 export function updateSessionReviews(existing: CurriculumReviewItem[], lesson: CurriculumLesson, session: LearningSession, now: Date): CurriculumReviewItem[] {
   const updated = new Map(existing.map((item) => [item.id, item]));
-  for (const index of getSessionQuizIndices(lesson, session.minutes)) {
+  for (const index of getSessionQuizIndices(lesson, session.minutes, session.quizPlanVersion)) {
     if (session.answers[index] === undefined) continue;
     const id = lesson.id + ":" + index;
     const previous = updated.get(id);

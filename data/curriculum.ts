@@ -23,6 +23,8 @@ export type CurriculumLesson = {
   quiz: LessonQuiz[];
 };
 
+import { APPLICATION_QUIZZES } from "./japaneseApplicationQuiz.ts";
+
 import { EXPANDED_CURRICULUM } from "./curriculumExpansion.ts";
 import { MANUFACTURING_CURRICULUM } from "./curriculumManufacturing.ts";
 import { ADVANCED_CURRICULUM } from "./curriculumAdvanced.ts";
@@ -495,7 +497,7 @@ const expandLessonQuiz = (item: CurriculumLesson): CurriculumLesson => {
       { kind: "input" as const, prompt: `‘${word.meaning}’를 일본어로 입력하세요.`, choices: [word.japanese], answer: 0, explanation: `정답은 ${word.japanese}(${word.reading})예요.` },
     ];
   });
-  return { ...item, quiz: [...item.quiz, ...wordQuestions].slice(0, 8) };
+  return { ...item, quiz: [...[...item.quiz, ...wordQuestions].slice(0, 8), ...(APPLICATION_QUIZZES[item.id] ?? [])] };
 };
 
 export const CURRICULUM: CurriculumLesson[] = [...CORE_CURRICULUM, ...EXPANDED_CURRICULUM, ...ADVANCED_CURRICULUM, ...MANUFACTURING_CURRICULUM].map(expandLessonQuiz);

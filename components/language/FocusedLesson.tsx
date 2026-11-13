@@ -36,7 +36,7 @@ export default function FocusedLesson({ lesson, studyLevel }: { lesson: Curricul
   const finishing = useRef(false);
   const audio = useLearningAudio();
   const { stop, play } = audio;
-  const quizIndices = getSessionQuizIndices(lesson, session.minutes);
+  const quizIndices = getSessionQuizIndices(lesson, session.minutes, session.quizPlanVersion);
   const questionIndex = quizIndices[session.quizCursor];
   const result = getSessionResult(lesson, session);
   const word = lesson.words[session.wordIndex];

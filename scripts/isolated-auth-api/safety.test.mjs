@@ -247,15 +247,15 @@ test('workflow differs only by two default-only private steps and dependency pin
   const addition = "      - name: Verify disposable Auth and API persistence privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-auth-api/supervisor.mjs\n";
   const browserAddition = "      - name: Verify twenty authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
-  const dietAddition = "      - name: Verify two diet and calendar regressions in isolated Chromium\n        if: matrix.compiler == 'webpack'\n        run: node scripts/isolated-diet-regression/supervisor.mjs\n";
+  const dietAddition = "      - name: Verify four diet calendar and lesson regressions in isolated Chromium\n        if: matrix.compiler == 'webpack'\n        run: node scripts/isolated-diet-regression/supervisor.mjs\n";
   assert.equal(workflow.split(dietAddition).length, 2);
   assert.ok(workflow.indexOf('run: node scripts/isolated-chromium-smoke/supervisor.mjs') < workflow.indexOf(dietAddition));
   assert.ok(workflow.indexOf(dietAddition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
   assert.equal(workflow.split(browserAddition).length, 2);
   assert.ok(workflow.indexOf(addition) < workflow.indexOf(browserAddition));
   assert.ok(workflow.indexOf(browserAddition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
-  assert.equal(workflow.split('len(tests) == 353').length, 2);
-  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace(browserAddition, '').replace('len(tests) == 353', 'len(tests) == 343')).digest('hex'), '241904839f93becc07d89ce3be920659f26f22be1840be4ac81abb2bbb914970');
+  assert.equal(workflow.split('len(tests) == 354').length, 2);
+  assert.equal(createHash('sha256').update(workflow.replace(dietAddition, '').replace(addition, '').replace(browserAddition, '').replace('len(tests) == 354', 'len(tests) == 343')).digest('hex'), '241904839f93becc07d89ce3be920659f26f22be1840be4ac81abb2bbb914970');
   assert.ok(workflow.indexOf('node scripts/japanese-preview/http-check.mjs') < workflow.indexOf(addition));
   assert.ok(workflow.indexOf(addition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));
   const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));

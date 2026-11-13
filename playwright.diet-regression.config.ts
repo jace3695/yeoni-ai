@@ -20,7 +20,7 @@ if (env.CI !== 'true' || env.GITHUB_ACTIONS !== 'true' || env.RUNNER_TEMP !== '/
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: ['diet-protein-response.spec.ts'],
+  testMatch: ['diet-protein-response.spec.ts', 'japanese-application-plan.spec.ts'],
   fullyParallel: false,
   workers: 1,
   retries: 0,
