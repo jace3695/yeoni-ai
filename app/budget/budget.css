@@ -1899,3 +1899,108 @@ button, input, textarea, select { font: inherit; }
 .budget-app-shell .home-yeoni-diagnosis .home-ai-summary { display: block; overflow: visible; -webkit-line-clamp: unset; }
 .budget-app-shell .home-yeoni-diagnosis .home-diagnosis-basis { font-size: .75rem; line-height: 1.5; }
 .budget-app-shell .home-yeoni-diagnosis .home-text-action { min-height: 44px; flex-wrap: wrap; }
+
+/* Yeoni ledger refinement: original visual system, not Rolly assets or layout.
+   Budget-only scope. No changes to records, calculations, actions or AI claims. */
+.budget-app-shell.budget-app-shell {
+  --background: #f7f7fb;
+  --surface: #ffffff;
+  --surface-muted: #f2f1f8;
+  --foreground: #252331;
+  --foreground-muted: #666273;
+  --border: #e5e3ed;
+  --sage: #6752a7;
+  --sage-dark: #514184;
+  --income: #217265;
+  --expense: #af423b;
+  --saving: #436da0;
+  --warning: #916314;
+  --shadow-sm: 0 3px 14px rgb(37 35 49 / 3%);
+  --shadow-md: 0 8px 28px rgb(37 35 49 / 5%);
+}
+
+.budget-app-shell .living-finance-home { padding-block: 28px 112px !important; }
+.budget-app-shell .home-header { gap: 20px; margin-bottom: 24px; }
+.budget-app-shell .home-header h1 { font-size: clamp(24px, 3vw, 30px); letter-spacing: -.04em; }
+.budget-app-shell .home-greeting { font-size: 14px; line-height: 1.65; }
+.budget-app-shell .home-month-picker input {
+  min-height: 44px; border-color: var(--border); border-radius: 12px;
+  color: var(--foreground); font-size: 14px; background: var(--surface);
+}
+.budget-app-shell .home-ai-status { border: 0; background: var(--surface-muted); color: var(--foreground-muted); }
+.budget-app-shell .home-logout { min-height: 44px; border-color: var(--border); }
+.budget-app-shell .budget-home-actions { gap: 12px; margin-bottom: 24px; }
+.budget-app-shell .budget-primary-action {
+  min-height: 48px; border-radius: 14px; background: var(--sage); color: #fff;
+  border: 1px solid var(--sage); box-shadow: none; font-weight: 700;
+}
+.budget-app-shell .budget-secondary-action,
+.budget-app-shell .home-secondary-action {
+  min-height: 44px; border-radius: 12px; border-color: var(--border);
+  background: var(--surface); color: var(--sage-dark); box-shadow: none;
+}
+.budget-app-shell :is(.home-overview-card, .home-flow-card, .home-ai-card,
+  .home-budget-editor, .home-expense-card, .home-recent-card) {
+  border: 1px solid var(--border); border-radius: 22px;
+  background: var(--surface); box-shadow: var(--shadow-sm);
+}
+.budget-app-shell .home-overview-card { padding: clamp(20px, 4vw, 32px); }
+.budget-app-shell .home-main-amount {
+  font-size: clamp(30px, 5vw, 46px); line-height: 1.25;
+  overflow-wrap: anywhere; letter-spacing: -.045em;
+}
+.budget-app-shell .home-section-label { font-size: 12px; letter-spacing: .015em; }
+.budget-app-shell .home-day-badge { background: var(--surface-muted); color: var(--sage-dark); }
+.budget-app-shell .home-progress { height: 8px; background: var(--surface-muted); }
+.budget-app-shell .home-budget-summary { gap: 12px; }
+.budget-app-shell .home-budget-summary > div,
+.budget-app-shell .home-metric { border-radius: 14px; background: #f7f7fb; }
+.budget-app-shell .home-budget-summary strong { font-size: 16px; overflow-wrap: anywhere; }
+.budget-app-shell .home-card-footer { flex-wrap: wrap; }
+.budget-app-shell .home-yeoni-diagnosis {
+  padding: 22px; border-color: #ddd7ed !important;
+  background: #faf9fd; box-shadow: none;
+}
+.budget-app-shell .home-ai-action-line { background: #eeeaf7; border-radius: 12px; }
+.budget-app-shell .home-ai-action-line strong { color: var(--sage-dark); }
+.budget-app-shell .home-text-action { min-height: 44px; font-size: 13px; }
+.budget-app-shell .home-flow-item { background: #f7f7fb; }
+.budget-app-shell .home-recent-row { padding-block: 16px; }
+.budget-app-shell .home-recent-copy strong { font-size: 14px; }
+.budget-app-shell .home-recent-copy span { font-size: 12px; }
+.budget-app-shell .home-recent-amount { font-size: 15px; }
+.budget-app-shell .home-more-button { min-height: 44px; background: var(--surface); }
+.budget-app-shell .budget-home-details { border-color: var(--border); border-radius: 18px; }
+.budget-app-shell .budget-home-details > summary { min-height: 48px; line-height: 1.6; }
+.budget-app-shell .budget-entry-switch { padding: 5px; border-radius: 14px; background: var(--surface-muted); }
+.budget-app-shell .budget-entry-switch button { min-height: 44px; border-radius: 10px; }
+.budget-app-shell .budget-entry-switch button[aria-pressed="true"] {
+  background: var(--surface); color: var(--sage-dark); box-shadow: var(--shadow-sm);
+}
+.budget-app-shell .record-screen :is(input, textarea, select),
+.budget-app-shell .ai-screen :is(input, textarea) { border-radius: 14px !important; }
+.budget-app-shell .ai-screen .budget-consultation-response {
+  border-radius: 20px; background: var(--surface); border-color: var(--border);
+}
+.budget-app-shell .ai-screen .budget-consultation-bubble { padding: 12px; }
+.budget-app-shell .living-finance-app .budget-improvement-card {
+  color: var(--foreground); background: var(--surface); border-color: var(--border);
+  border-radius: 18px; box-shadow: var(--shadow-sm);
+}
+.budget-app-shell .living-finance-app .budget-improvement-card :is(button, select) {
+  color: var(--sage-dark); background: var(--surface-muted); border-color: var(--border);
+}
+.budget-app-shell .living-finance-app .budget-change-row { border-color: var(--border); }
+.budget-app-shell .living-finance-app :focus-visible { outline: 3px solid var(--sage); outline-offset: 3px; }
+@media (max-width: 767px) {
+  .budget-app-shell .home-month-picker input { font-size: 16px; }
+  .budget-app-shell .living-finance-home { padding-block: 20px 112px !important; }
+  .budget-app-shell .home-header { gap: 12px; margin-bottom: 20px; }
+  .budget-app-shell .home-overview-top { flex-direction: column-reverse; }
+  .budget-app-shell .home-yeoni-diagnosis { padding: 18px; }
+  .budget-app-shell .home-budget-summary > div { padding: 12px; }
+  .budget-app-shell .home-budget-summary strong { font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .budget-app-shell .living-finance-app button { transform: none !important; transition: none !important; }
+}
