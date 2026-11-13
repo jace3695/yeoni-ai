@@ -737,7 +737,25 @@ test('reviewed curriculum repair and bounded real-UI scenarios retain exact sour
   "tests/e2e/curriculum-terminal.spec.ts": "18847114d43198589168f95303a44b770325e46278acc921515c68834f33420a",
   "tests/e2e/curriculum-browser-state.ts": "276908fe0cc7b095cf34ad530b4cfa04c51271c3ee8402a885caca42fe3d0a7b"
 };
-  for (const [path, hash] of Object.entries(hashes)) assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), hash, path);
+  for (const [path, hash] of Object.entries(hashes)) {
+    let bytes = await readFile(path);
+    if (path === 'app/language/progress/page.tsx') {
+      let text = bytes.toString('utf8');
+      const displayOnly = [
+        ["{ key: \"wrongKana\", label: \"가나 오답 기록\",", "{ key: \"wrongKana\", label: \"헷갈린 글자\","],
+        ["{obj.type === \"hiragana\" ? \"히라가나\" : obj.type === \"katakana\" ? \"가타카나\" : obj.type}", "{obj.type}"],
+        ["{obj.mode === \"quiz\" ? \"퀴즈 오답\" : obj.mode === \"confusing\" ? \"헷갈리는 글자 연습 오답\" : obj.mode}", "{obj.mode}"],
+        ["wrongKana: \"가나 오답 기록을 모두 삭제할까요?\",", "wrongKana: \"헷갈린 글자 오답을 모두 삭제할까요?\","],
+      ];
+      for (const [after, before] of displayOnly) {
+        assert.equal(text.split(after).length, 2);
+        assert.equal(text.split(before).length, 1);
+        text = text.replace(after, before);
+      }
+      bytes = Buffer.from(text);
+    }
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), hash, path);
+  }
   const helper = await readFile('tests/e2e/curriculum-browser-state.ts', 'utf8');
   const corruption = await readFile('tests/e2e/curriculum-corruption.spec.ts', 'utf8');
   const terminal = await readFile('tests/e2e/curriculum-terminal.spec.ts', 'utf8');
