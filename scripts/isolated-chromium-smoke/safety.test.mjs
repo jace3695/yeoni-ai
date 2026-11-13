@@ -22,7 +22,7 @@ const jwt = role => `e30.${Buffer.from(JSON.stringify({ role })).toString('base6
 const environment = () => ({ PATH: process.env.PATH, GITHUB_ACTIONS: 'true', RUNNER_TEMP, YEONI_E2E: '1',
   GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/agent/yeoni-japanese-ci-20261110',
   NEXT_PUBLIC_SUPABASE_URL: STACK_ORIGIN, NEXT_PUBLIC_SUPABASE_ANON_KEY: jwt('anon'), CI: 'true', RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64',
-  RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261101.360.1',
+  RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261111.370.1',
   GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com',
   PLAYWRIGHT_BROWSERS_PATH: '/home/runner/work/_temp/yeoni-chromium-1-63' });
 const journal = events => events.map(event => JSON.stringify({ token, ...event }) + '\n').join('');

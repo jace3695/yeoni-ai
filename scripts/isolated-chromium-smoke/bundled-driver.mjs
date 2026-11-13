@@ -12,7 +12,7 @@ export const driverEnvironment = Object.freeze({
   GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push',
   GITHUB_REF: 'refs/heads/agent/yeoni-japanese-ci-20261110',
   RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64', RUNNER_ENVIRONMENT: 'github-hosted',
-  ImageOS: 'ubuntu24', ImageVersion: '20261101.360.1',
+  ImageOS: 'ubuntu24', ImageVersion: '20261111.370.1',
   GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com',
   RUNNER_TEMP: '/home/runner/work/_temp', TMPDIR: '/home/runner/work/_temp',
 });

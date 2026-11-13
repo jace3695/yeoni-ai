@@ -10,7 +10,7 @@ import { supervise, mainFailureLine } from './supervisor.mjs';
 const canary = 'SYNTHETIC_PRIVATE_eyJtoken.sb_secret_FAKE.https://private.invalid/?secret=CANARY\r\n::error::PRIVATE';
 const environment = () => ({ CI: 'true', GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push',
   GITHUB_REF: 'refs/heads/agent/yeoni-japanese-ci-20261110', RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64',
-  RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261101.360.1',
+  RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261111.370.1',
   GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com', PLAYWRIGHT_BROWSERS_PATH: BUNDLE_CACHE });
 const safeOutput = output => {
   for (const line of output) assert.match(line, /^[a-zA-Z0-9 =-]+$/);
@@ -210,7 +210,7 @@ test('actual main and fixture entry source distinguishes safe defaults and every
     const jwt = role => `e30.${Buffer.from(JSON.stringify({ role })).toString('base64url')}.synthetic`;
     const base = () => ({ CI: 'true', GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push',
       GITHUB_REF: 'refs/heads/agent/yeoni-japanese-ci-20261110', RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64',
-      RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261101.360.1',
+      RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261111.370.1',
       GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com',
       RUNNER_TEMP: runnerTemp, YEONI_E2E: '1', NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
       NEXT_PUBLIC_SUPABASE_ANON_KEY: jwt('anon'), PATH: '/synthetic/bin', HOME: '/synthetic/home', LANG: 'C' });

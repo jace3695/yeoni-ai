@@ -6,7 +6,7 @@ import { BUNDLE_CACHE, driverEnvironment, DRIVER_EXIT_CODES, missingLibraryId } 
 
 export { BUNDLE_CACHE };
 const imageContext = Object.freeze({ RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64',
-  RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261101.360.1',
+  RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'ubuntu24', ImageVersion: '20261111.370.1',
   GITHUB_REPOSITORY: 'jace3695/yeoni-ai', GITHUB_SERVER_URL: 'https://github.com' });
 /** @typedef {'request' | 'runner' | 'image' | 'repository' | 'override'} ContextCategory */
 export class InspectionContextError extends Error {
