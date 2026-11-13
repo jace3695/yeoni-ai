@@ -2,7 +2,7 @@
 
 import LocalRecordGuidance from "@/components/yeoni/LocalRecordGuidance";
 import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
-import { RECORDS_CHANGED_EVENT } from "../data/storageTransaction";
+import { notifyRecordsChanged, RECORDS_CHANGED_EVENT } from "../data/storageTransaction";
 import AppCompanion from "@/components/AppCompanion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -486,6 +486,7 @@ function FitnessApp() {
       writeWorkoutCompletionStore(next);
       return next;
     })) return;
+    notifyRecordsChanged();
   };
 
   const cancelFoamRoller = () => {
@@ -1124,4 +1125,5 @@ function FitnessApp() {
 export default function Page() {
   return <AuthGate><FitnessApp /></AuthGate>;
 }
+
 

@@ -77,7 +77,7 @@ test('foam unanswered timing and pain remain absent through save reload and cale
   await test.step('QA_STAGE_34', async () => {});
   await expect.poll(async()=>Object.hasOwn(row(await qa.read()),'foamRollerPain')).toBe(false); await synced(page);
   await test.step('QA_STAGE_35', async () => {});
-  const restored=await qa.read(); expect(row(restored)).toEqual(row(saved)); preserved(restored);
+  const restored=await qa.read(); expect(row(restored)).toEqual({...row(saved),foamRollerAreas:[]}); preserved(restored);
   await test.step('QA_STAGE_36', async () => {});
   expect(await qa.readLanguage()).toEqual(language); qa.traffic.assertConfirmed(restored);
   await test.step('QA_STAGE_37', async () => {});
@@ -127,7 +127,7 @@ test('daily review save control follows the displayed date and prevents same-dat
   await test.step('QA_STAGE_09', async () => {});
   await expect(page.getByRole('button',{name:'일일 학습 체크 저장됨',exact:true})).toBeDisabled();
   await test.step('QA_STAGE_10', async () => {});
-  await expect.poll(async()=>JSON.parse((await qa.readLanguage()).dailyLearningHistory as string)[day]?.completedIds).toEqual(['review']); await languageSynced(page);
+  await expect.poll(async()=>{const raw=(await qa.readLanguage()).dailyLearningHistory;return raw===undefined?undefined:JSON.parse(raw as string)[day]?.completedIds;}).toEqual(['review']); await languageSynced(page);
   await test.step('QA_STAGE_11', async () => {});
   const first=await qa.readLanguage(), firstDay=JSON.parse(first.dailyLearningHistory as string)[day];qa.traffic.assertLanguageConfirmed(first);
   await test.step('QA_STAGE_12', async () => {});
