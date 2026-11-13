@@ -5,7 +5,7 @@ export default class Reporter {
   invalid = false; seen = new Set(); cleaned = new Set(); buffers = new Map(); total = 0;
   onBegin(config, suite) {
     const all = suite.allTests(); this.total = all.length;
-    this.invalid ||= all.length !== 4 || config.workers !== 1 || config.forbidOnly !== true;
+    this.invalid ||= all.length !== 7 || config.workers !== 1 || config.forbidOnly !== true;
     const names = new Set();
     for (const t of all) {
       this.invalid ||= !titles.includes(t.title) || names.has(t.title) || basename(t.location.file) !== sources[t.title]
@@ -36,7 +36,7 @@ export default class Reporter {
   }
   onError() { this.invalid = true; }
   onEnd(result) {
-    const status = !this.invalid && result.status === 'passed' && this.total === 4 && this.seen.size === 4 && this.cleaned.size === 4 ? 'passed' : 'failed';
+    const status = !this.invalid && result.status === 'passed' && this.total === 7 && this.seen.size === 7 && this.cleaned.size === 7 ? 'passed' : 'failed';
     try {
       const token = process.env.YEONI_DIET_RECEIPT_TOKEN;
       if (!/^[a-f0-9]{64}$/.test(token || '') || !process.env.YEONI_DIET_RECEIPT_FILE) throw new Error('missing receipt');

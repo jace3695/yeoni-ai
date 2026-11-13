@@ -1,0 +1,96 @@
+import { test, expect, login, synced, today, canonical, type State } from './fixture';
+import { SENTENCES } from '../../data/sentences';
+
+const languageSynced = (page: import('@playwright/test').Page) => expect(page.getByText('학습 기록 · 서버 저장 확인', { exact: true })).toBeVisible();
+const workouts = 'ai-fitness-workout-completed-days';
+
+test('foam unanswered timing and pain remain absent through save reload and calendar edits', async ({ page, qa }) => {
+  await login(page, qa.account, '/fitness'); await synced(page);
+  const before = await qa.read(), language = await qa.readLanguage(), day = today();
+  await page.getByRole('button', { name:'운동 시작하기',exact:true }).click();
+  const panel = page.locator('section').filter({ has:page.getByRole('heading',{name:'폼롤러 완료 저장',exact:true}) });
+  await expect(panel).toHaveCount(1);
+  await expect(panel.getByRole('button',{name:'미응답',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(panel.getByRole('radio',{name:'미응답',exact:true})).toBeChecked();
+  await panel.getByPlaceholder('폼롤러 느낌 입력').fill('CI foam unanswered');
+  await panel.getByRole('button',{name:'폼롤러 완료로 기록',exact:true}).click();
+  const row = (s:State) => (s[workouts] as Record<string,State>)[day];
+  await expect.poll(async()=>row(await qa.read())?.foamRollerMemo).toBe('CI foam unanswered'); await synced(page);
+  const saved = await qa.read(); expect(row(saved)).toMatchObject({foamRollerDone:true,foamRollerMemo:'CI foam unanswered'});
+  expect(row(saved)).not.toHaveProperty('foamRollerTiming'); expect(row(saved)).not.toHaveProperty('foamRollerPain');
+  const preserved = (s:State) => {
+    expect(Object.fromEntries(Object.entries(s).filter(([key])=>key!==workouts))).toEqual(Object.fromEntries(Object.entries(before).filter(([key])=>key!==workouts)));
+    for(const [date,value] of Object.entries(before[workouts] as State)) expect((s[workouts] as State)[date]).toEqual(value);
+  };
+  preserved(saved); qa.traffic.assertConfirmed(saved);
+  await page.reload(); await synced(page); expect(await qa.read()).toEqual(saved);
+  const savedPanel=page.locator('section').filter({has:page.getByRole('heading',{name:'폼롤러 기록됨',exact:true})});
+  await expect(savedPanel.getByRole('radio',{name:'미응답',exact:true})).toBeChecked();
+  await page.getByRole('button',{name:'홈',exact:true}).click();
+  await page.getByRole('button',{name:/지난 기록.*달력 보기/}).click();
+  await page.getByRole('tab',{name:'운동기록',exact:true}).click();
+  const record=page.getByRole('tabpanel',{name:'운동기록',exact:true});
+  await expect(record.getByText('통증: 미응답',{exact:true})).toBeVisible();
+  await expect(record.getByText('시점: 미응답',{exact:true})).toBeVisible();
+  await record.getByRole('button',{name:'폼롤러 기록 수정',exact:true}).click();
+  await expect(record.getByRole('radio',{name:'미응답',exact:true})).toBeChecked();
+  await record.getByRole('radio',{name:'없음',exact:true}).check();
+  await record.getByRole('button',{name:'수정 저장',exact:true}).click();
+  await expect.poll(async()=>row(await qa.read()).foamRollerPain).toBe(false); await synced(page);
+  await expect(record.getByText('통증: 없음',{exact:true})).toBeVisible();
+  await record.getByRole('button',{name:'폼롤러 기록 수정',exact:true}).click();
+  await record.getByRole('radio',{name:'미응답',exact:true}).check();
+  await record.getByRole('button',{name:'수정 저장',exact:true}).click();
+  await expect.poll(async()=>Object.hasOwn(row(await qa.read()),'foamRollerPain')).toBe(false); await synced(page);
+  const restored=await qa.read(); expect(row(restored)).toEqual(row(saved)); preserved(restored);
+  expect(await qa.readLanguage()).toEqual(language); qa.traffic.assertConfirmed(restored);
+});
+
+test('sentence polite endings avoid particle filter and both show-all controls reset filters without saving', async ({ page, qa }) => {
+  const fitness=await qa.read(), language=await qa.readLanguage();
+  const polite=SENTENCES.find(item=>item.japanese==='大きいです。'||item.japanese==='大きいです'); expect(polite).toBeDefined(); expect(polite!.pattern).toBe('desu');
+  await login(page,qa.account,'/language/sentences?word=大きい&pattern=particle-de'); await languageSynced(page);
+  await page.getByLabel('연습 자료').selectOption('all');
+  await page.getByRole('button',{name:'で 패턴',exact:true}).click();
+  await expect(page.getByText(polite!.meaning,{exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'です 문장',exact:true}).click();
+  await expect(page.getByText(polite!.meaning,{exact:true}).first()).toBeVisible();
+  for(const position of ['first','last'] as const){
+    await page.goto('/language/sentences?word=CI_NO_SUCH_WORD_937&pattern=particle-de'); await languageSynced(page);
+    const buttons=page.getByRole('button',{name:'전체 문장 보기',exact:true}); await expect(buttons).toHaveCount(2);
+    await buttons[position]().click();
+    await expect(page).toHaveURL('http://127.0.0.1:3000/language/sentences');
+    await expect(page.getByLabel('연습 자료')).toHaveValue('all');
+    await expect(page.getByText('해당 단어가 포함된 문장이 아직 없습니다.',{exact:true})).toHaveCount(0);
+    await expect(page.getByText(polite!.meaning,{exact:true}).first()).toBeVisible();
+    await expect(buttons).toHaveCount(0);
+    expect(await qa.readLanguage()).toEqual(language);expect(await qa.read()).toEqual(fitness);
+  }
+  await page.reload();await languageSynced(page);expect(await qa.readLanguage()).toEqual(language);expect(await qa.read()).toEqual(fitness);
+});
+
+test('daily review save control follows the displayed date and prevents same-date duplicates after rollover', async ({page,qa})=>{
+  // Explicit synthetic reviewed-history fixture; date rollover is browser-clock simulation, not a phone test.
+  const day=today(), next=new Date(Date.parse(`${day}T12:00:00Z`)+86400000).toISOString().slice(0,10);
+  const words=['one','two','three'].map(label=>({word:`ci-day-${label}`,meaning:`CI ${label}`,example:'CI example',category:'일상'}));
+  const items=words.map(w=>`saved-word:${w.word}`), fitness=await qa.read();
+  const before={...await qa.readLanguage(),savedWords:JSON.stringify(words),reviewCompletedItemsByDate:JSON.stringify([{date:day,items},{date:next,items}])};
+  const seeded=await qa.account.client.from('language_user_state').update({state:before}).eq('user_id',qa.account.id).select('state').single();expect(seeded.error).toBeNull();expect(seeded.data?.state).toEqual(before);
+  await login(page,qa.account,'/language/review'); await languageSynced(page);
+  const save=page.getByRole('button',{name:'이 날짜의 일일 학습 체크 저장',exact:true});
+  await expect(save).toBeEnabled();await save.click();
+  await expect(page.getByRole('button',{name:'일일 학습 체크 저장됨',exact:true})).toBeDisabled();
+  await expect.poll(async()=>JSON.parse((await qa.readLanguage()).dailyLearningHistory as string)[day]?.completedIds).toEqual(['review']); await languageSynced(page);
+  const first=await qa.readLanguage(), firstDay=JSON.parse(first.dailyLearningHistory as string)[day];qa.traffic.assertLanguageConfirmed(first);
+  await page.clock.setFixedTime(new Date(`${next}T12:00:00+09:00`)); await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await expect(save).toBeEnabled();await save.click();
+  await expect(page.getByRole('button',{name:'일일 학습 체크 저장됨',exact:true})).toBeDisabled();
+  await expect.poll(async()=>Object.keys(JSON.parse((await qa.readLanguage()).dailyLearningHistory as string)).sort()).toEqual([day,next]); await languageSynced(page);
+  const saved=await qa.readLanguage(), history=JSON.parse(saved.dailyLearningHistory as string);
+  expect(history[day]).toEqual(firstDay);expect(history[next]).toMatchObject({completedIds:['review'],completedCount:1,totalCount:5});
+  expect(JSON.parse(saved.dailyRoutineProgress as string)).toEqual({date:next,completedIds:['review']});
+  const omit=(s:State)=>Object.fromEntries(Object.entries(s).filter(([key])=>!['dailyRoutineProgress','dailyLearningHistory'].includes(key)));
+  expect(canonical(omit(saved))).toBe(canonical(before)); expect(await qa.read()).toEqual(fitness);qa.traffic.assertLanguageConfirmed(saved);
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));expect(canonical(await qa.readLanguage())).toBe(canonical(saved));
+  await expect(page.getByRole('button',{name:'일일 학습 체크 저장됨',exact:true})).toBeDisabled();
+});

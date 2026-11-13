@@ -64,4 +64,3 @@ export function useDailyRoutineCompletion(routineId: RoutineId) {
   }, []);
   return { ...status, complete, retry, isDateSaved, isCurrent, ensureCurrent };
 }
-

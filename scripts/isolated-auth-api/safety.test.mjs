@@ -247,7 +247,7 @@ test('workflow differs only by two default-only private steps and dependency pin
   const addition = "      - name: Verify disposable Auth and API persistence privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-auth-api/supervisor.mjs\n";
   const browserAddition = "      - name: Verify twenty authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
-  const dietAddition = "      - name: Verify four diet calendar and lesson regressions in isolated Chromium\n        if: matrix.compiler == 'webpack'\n        run: node scripts/isolated-diet-regression/supervisor.mjs\n";
+  const dietAddition = "      - name: Verify seven diet lesson and safety UX regressions in isolated Chromium\n        if: matrix.compiler == 'webpack'\n        run: node scripts/isolated-diet-regression/supervisor.mjs\n";
   assert.equal(workflow.split(dietAddition).length, 2);
   assert.ok(workflow.indexOf('run: node scripts/isolated-chromium-smoke/supervisor.mjs') < workflow.indexOf(dietAddition));
   assert.ok(workflow.indexOf(dietAddition) < workflow.indexOf('      - name: Remove disposable fixture\n        if: always()'));

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { APPLICATION_QUIZZES } from '../data/japaneseApplicationQuiz.ts';
 import test from 'node:test';
 import { CURRICULUM } from '../data/curriculum.ts';
 import { JAPANESE_CHUNK_LESSONS, getChunkLesson } from '../data/japaneseChunkLessons.ts';
@@ -11,10 +13,24 @@ import { chooseJapaneseLevel, dueUpperAnswers, emptyLevelJourney, rememberUpperA
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const lesson = (id: string) => getJapaneseReadingLesson(id)!;
 
-test('all 62 legacy lessons and 496 questions retain everything except reviewed explanations and two scoped wording fixes', () => {
+test('all 496 legacy questions stay unchanged and only 24 reviewed lessons append 48 application questions', () => {
   assert.equal(CURRICULUM.length, 62);
-  assert.equal(CURRICULUM.flatMap(l => l.quiz).length, 496);
-  const exceptExplanation = CURRICULUM.map(l => ({ ...l, quiz: l.quiz.map((q, index) => {
+  const expectedIds = ['f', 'w', 't'].flatMap(prefix => Array.from({ length: 8 }, (_, index) => `${prefix}${index + 13}`)).sort();
+  assert.deepEqual(Object.keys(APPLICATION_QUIZZES).sort(), expectedIds);
+  const baseline = JSON.parse(readFileSync(new URL('./fixtures/japanese-legacy-94a.json', import.meta.url), 'utf8')) as { lessons: { id: string; quiz: unknown[] }[] };
+  const legacy = CURRICULUM.map(l => ({ ...l, quiz: l.quiz.slice(0, 8) }));
+  assert.equal(legacy.flatMap(l => l.quiz).length, 496);
+  assert.equal(CURRICULUM.flatMap(l => l.quiz).length, 544);
+  let appended = 0;
+  for (const item of CURRICULUM) {
+    assert.deepEqual(item.quiz.slice(0, 8), baseline.lessons.find(l => l.id === item.id)?.quiz);
+    const extra = item.quiz.slice(8);
+    assert.equal(item.quiz.length, expectedIds.includes(item.id) ? 10 : 8);
+    assert.deepEqual(extra, APPLICATION_QUIZZES[item.id] ?? []);
+    appended += extra.length;
+  }
+  assert.equal(appended, 48);
+  const exceptExplanation = legacy.map(l => ({ ...l, quiz: l.quiz.map((q, index) => {
     const { explanation, ...rest } = q; assert.ok(explanation);
     // Restore only the reviewed distractor and ambiguous prompt for the frozen
     // baseline comparison. Answer positions, spoken targets and stored IDs stay fixed.
@@ -24,7 +40,7 @@ test('all 62 legacy lessons and 496 questions retain everything except reviewed 
   }) }));
   // Frozen c241877f source contract before the two explanation-template corrections.
   assert.equal(digest(exceptExplanation), '53f84910ab43acdbb125d37c2090f71dcef42055cfc4850b17e3588f1e5637d0');
-  const fixed = CURRICULUM.flatMap(l => l.quiz).filter(q => /의 뜻은 ‘.+’입니다\./.test(q.explanation));
+  const fixed = legacy.flatMap(l => l.quiz).filter(q => /의 뜻은 ‘.+’입니다\./.test(q.explanation));
   assert.equal(fixed.length, 210);
   for (const meaning of ['사진', '경험', '한 번', '예정', '산책', '공부', '요리']) {
     assert.ok(fixed.some(q => q.explanation.includes(`‘${meaning}’입니다.`)), meaning);
