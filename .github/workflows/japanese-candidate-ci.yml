@@ -80,7 +80,9 @@ jobs:
       - name: Verify twenty authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately
         if: matrix.compiler == 'default'
         run: node scripts/isolated-chromium-smoke/supervisor.mjs
+      - name: Verify two diet and calendar regressions in isolated Chromium
+        if: matrix.compiler == 'default'
+        run: node scripts/isolated-diet-regression/supervisor.mjs
       - name: Remove disposable fixture
         if: always()
         run: node scripts/e2e-stack.mjs stop
-

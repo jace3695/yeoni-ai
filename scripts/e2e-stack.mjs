@@ -87,4 +87,3 @@ try {
   console.error(redact(error.stderr || error.message));
   process.exitCode = 1;
 }
-

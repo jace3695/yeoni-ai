@@ -82,7 +82,9 @@ test('receipt integration appends only the exact reviewed migration and preserve
   const exact = "    appendFileSync(`${workdir}/supabase/seed.sql`, '\\n' + readFileSync('" + receipt + "', 'utf8'));\n";
   const launcher = read('scripts/e2e-stack.mjs');
   assert.equal(launcher.split(exact).length, 2);
-  assert.equal(sha(launcher.replace(exact, '')), 'd7fc44ec6775a1924bdeada67f50faeaff50a67d5968da8c2719e6abd95b8966');
+  const protein = "    appendFileSync(`${workdir}/supabase/seed.sql`, '\\n' + readFileSync('supabase/migrations/20261113055000_diet_protein_response_marker.sql', 'utf8'));\n";
+  assert.equal(launcher.split(protein).length, 2);
+  assert.equal(sha(launcher.replace(exact, '').replace(protein, '')), 'd7fc44ec6775a1924bdeada67f50faeaff50a67d5968da8c2719e6abd95b8966');
   assert.ok(launcher.indexOf(exact) > launcher.indexOf(chunk));
   assert.ok(launcher.indexOf(exact) < launcher.indexOf("run('start', '--exclude'"));
   assert.equal(sha(read(receipt)), 'cb1b93c4679e8ccfe4784bcc0e0775df760ed99ba6bbbc0a174f6b201494e0a5');

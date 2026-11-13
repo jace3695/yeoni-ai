@@ -27,7 +27,7 @@ type SectionKey = "wrongKana" | "wrongWords" | "wrongSentences";
 type ProgressTab = "all" | "kana" | "words" | "sentences" | "grammar";
 
 const SECTIONS: { key: SectionKey; label: string; href: string; linkLabel: string }[] = [
-  { key: "wrongKana", label: "헷갈린 글자", href: "/language/kana", linkLabel: "가나 다시 학습" },
+  { key: "wrongKana", label: "가나 오답 기록", href: "/language/kana", linkLabel: "가나 다시 학습" },
   { key: "wrongWords", label: "틀린 단어", href: "/language/words", linkLabel: "단어 다시 학습" },
   { key: "wrongSentences", label: "틀린 문장", href: "/language/sentences", linkLabel: "문장 다시 학습" },
 ];
@@ -192,7 +192,7 @@ function renderKanaItem(item: AnyItem, i: number): React.ReactNode {
             marginRight: "0.4rem",
           }}
         >
-          {obj.type}
+          {obj.type === "hiragana" ? "히라가나" : obj.type === "katakana" ? "가타카나" : obj.type}
         </span>
       )}
       {typeof obj.mode === "string" && (
@@ -206,7 +206,7 @@ function renderKanaItem(item: AnyItem, i: number): React.ReactNode {
             marginRight: "0.4rem",
           }}
         >
-          {obj.mode}
+          {obj.mode === "quiz" ? "퀴즈 오답" : obj.mode === "confusing" ? "헷갈리는 글자 연습 오답" : obj.mode}
         </span>
       )}
       {typeof obj.createdAt === "string" && (
@@ -602,7 +602,7 @@ export default function ProgressPage() {
 
   function handleClearSection(key: SectionKey) {
     const confirmMessages: Record<SectionKey, string> = {
-      wrongKana: "헷갈린 글자 오답을 모두 삭제할까요?",
+      wrongKana: "가나 오답 기록을 모두 삭제할까요?",
       wrongWords: "틀린 단어 오답을 모두 삭제할까요?",
       wrongSentences: "틀린 문장 오답을 모두 삭제할까요?",
     };
@@ -1466,3 +1466,4 @@ export default function ProgressPage() {
     </div>
   );
 }
+
