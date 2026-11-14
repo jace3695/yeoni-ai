@@ -96,3 +96,20 @@
   .budget-app-shell .living-finance-app button,
   .budget-app-shell .home-progress span { transition: none !important; transform: none !important; }
 }
+
+/* Read-only totals use every filtered row, independently of list expansion. */
+.budget-app-shell .history-result-summary {
+  margin: 0 0 20px; padding: 16px; min-width: 0;
+  border: 1px solid var(--border); border-radius: 18px;
+  background: var(--surface); color: var(--foreground);
+}
+.budget-app-shell .history-result-summary h3 { margin: 0; font-size: 16px; }
+.budget-app-shell .history-result-summary p { margin: 8px 0 0; color: var(--foreground-muted); font-size: 12px; line-height: 1.6; }
+.budget-app-shell .history-result-summary dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; margin: 14px 0 0; }
+.budget-app-shell .history-result-summary dl > div { min-width: 0; padding: 12px; border-radius: 12px; background: var(--surface-muted); }
+.budget-app-shell .history-result-summary dt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 13px; font-weight: 600; }
+.budget-app-shell .history-result-summary dt span { color: var(--foreground-muted); font-size: 11px; font-weight: 400; }
+.budget-app-shell .history-result-summary dd { margin: 8px 0 0; font-size: 20px; font-weight: 750; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.budget-app-shell .history-result-summary [data-summary-kind='income'] dd { color: var(--income); }
+.budget-app-shell .history-result-summary [data-summary-kind='expense'] dd { color: var(--expense); }
+.budget-app-shell .history-result-summary [data-summary-kind='saving'] dd { color: var(--saving); }

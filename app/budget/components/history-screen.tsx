@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Search } from 'lucide-react'
 import CategoryEditor from './category-editor'
+import HistorySummary from './history-summary'
 import { amountRange, historyCsv } from '../lib/history-edit'
 
 type HistoryType = 'all' | 'income' | 'expense' | 'saving'
@@ -159,6 +160,8 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                   총 {filteredIncomeItems.length + filteredExpenseItems.length + filteredSavingItems.length}건
                 </p>
               </section>
+
+              <HistorySummary income={filteredIncomeItems} expense={filteredExpenseItems} saving={filteredSavingItems} filterError={filterError} formatAmount={formatKRW} />
 
               <details className="budget-improvement-card">
                 <summary>지출 수정·분류 기억·변경 이력</summary>
