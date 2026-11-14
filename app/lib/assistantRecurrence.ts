@@ -1,10 +1,33 @@
 export type RecurrenceRule = "none" | "daily" | "weekly" | "monthly";
 
+// Korean has no useful JavaScript \b boundary. Match whole expressions instead
+// of fragments in titles such as 구매일, 구매주기, 매일경제, or 매달리기.
+// Share these exact expressions with title cleanup so recognition and removal
+// cannot disagree. Preserve the existing daily/weekly/monthly precedence.
+const recurrenceExpressions = [
+  ["daily", String.raw`(?:매일매일|매\s*일(?:마다)?|날마다)`],
+  ["weekly", String.raw`(?:매\s*주(?:마다)?|주마다)`],
+  ["monthly", String.raw`(?:매\s*월(?:마다)?|매\s*달(?:마다)?|달마다)`],
+] as const;
+
+function recurrencePattern(rule: RecurrenceRule, expression: string, global = false) {
+  // Retain the previously supported 매주월요일 spelling without consuming the
+  // weekday title or inventing a due date. Arbitrary attached words stay literal.
+  const end = rule === "weekly"
+    ? String.raw`(?:(?![\p{L}\p{M}\p{N}_])|(?=[월화수목금토일]요일(?:에|은|는|도)?(?![\p{L}\p{M}\p{N}_])))`
+    : String.raw`(?![\p{L}\p{M}\p{N}_])`;
+  return new RegExp(String.raw`\s*(?<![\p{L}\p{M}\p{N}_])${expression}(?:\s*반복)?(?:으로|로)?${end}\s*`, global ? "gu" : "u");
+}
+
 export function parseRecurrence(message: string): RecurrenceRule {
-  if (/(매일|매s*일|날마다|매일마다)/.test(message)) return "daily";
-  if (/(매주|매s*주|주마다)/.test(message)) return "weekly";
-  if (/(매월|매달|달마다|매s*월)/.test(message)) return "monthly";
+  for (const [rule, expression] of recurrenceExpressions) {
+    if (recurrencePattern(rule, expression).test(message)) return rule;
+  }
   return "none";
+}
+
+export function stripRecurrenceExpressions(message: string) {
+  return recurrenceExpressions.reduce((text, [rule, expression]) => text.replace(recurrencePattern(rule, expression, true), " "), message);
 }
 
 export function recurrenceLabel(rule: RecurrenceRule) {

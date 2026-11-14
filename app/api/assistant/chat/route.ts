@@ -10,7 +10,7 @@ import { AiBudgetExceededError } from "@/lib/ai-budget";
 import { generateAiText, isAiFeatureAvailable } from "@/lib/ai-router";
 import { getWorkoutDayForDate, getWorkoutRecord, type WorkoutCompletionStore } from "@/app/data/workoutCompletion";
 import { dayIdToKoreanLabel, getDayWorkoutForPlan, getWeeklyWorkoutPlanById, getWorkoutGroupForPlanDay } from "@/app/data/workoutPlans";
-import { parseRecurrence } from "@/app/lib/assistantRecurrence";
+import { parseRecurrence, stripRecurrenceExpressions } from "@/app/lib/assistantRecurrence";
 import { buildPersonalMemoryContext, selectConversationHistory, type AssistantConversationMessage } from "@/app/lib/assistantConversation";
 import { isRetiredGrowthRoutine } from "@/app/data/growthRoutines";
 import { commandDueDate, parseTaskCompletionTarget, type TaskCommandProposal, type TaskCommandValues } from "@/lib/assistant-task-command";
@@ -40,14 +40,13 @@ function won(value: number) {
 }
 
 function taskTitle(message: string) {
-  return message
+  return stripRecurrenceExpressions(message
     .replace(/^((오늘|내일|모레|긴급|중요|높은\s*우선순위|낮은\s*우선순위)\s*)*(할\s*일|일정)(에|로|으로)?\s*/, "")
     .replace(/\s*(추가|등록|기록)(해\s*줘|해줘|해|해주세요|해요)?[.!?]?$/, "")
     .replace(/\s*(오늘|내일|모레|긴급|중요|높은\s*우선순위|낮은\s*우선순위)(로|까지|으로)?\s*/g, " ")
     .replace(/\s*\d{1,2}월\s*\d{1,2}일(까지|로)?\s*/g, " ")
     .replace(/\s*\d{4}-\d{2}-\d{2}(까지|로)?\s*/g, " ")
-    .replace(/\s*['“”]?[^'“”]+['“”]?\s*프로젝트에\s*/, " ")
-    .replace(/\s*(매일|날마다|매주|주마다|매월|매달|달마다)(\s*반복)?\s*/g, " ")
+    .replace(/\s*['“”]?[^'“”]+['“”]?\s*프로젝트에\s*/, " "))
     .trim();
 }
 
@@ -60,11 +59,10 @@ function parsePriority(message: string) {
 }
 
 function cleanTaskTarget(message: string) {
-  return message
+  return stripRecurrenceExpressions(message)
     .replace(/^(할\s*일|일정)\s*/, "")
     .replace(/\s*(오늘|내일|모레|\d{1,2}월\s*\d{1,2}일)(로|까지)?\s*(마감|날짜)?\s*/, " ")
     .replace(/\s*(긴급|최우선|중요|높은\s*우선순위|낮은\s*우선순위|우선순위\s*[1-5]|여유)(으?로)?\s*/, " ")
-    .replace(/\s*(매일|날마다|매주|주마다|매월|매달|달마다)(\s*반복)?(으?로)?\s*/, " ")
     .replace(/\s*반복\s*(없음|해제|중지)(으?로)?\s*/, " ")
     .replace(/\s*(할\s*일|일정)?(을|를)?\s*(완료|끝|수정|변경)(\s*처리)?(해\s*줘|해주세요|해)?[.!?]?$/, "")
     .trim();
