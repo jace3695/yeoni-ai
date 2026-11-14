@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { ALL_JAPANESE_CHUNK_LESSONS as JAPANESE_CHUNK_LESSONS, getChunkLesson } from '@/data/japaneseChunkLessons';
+import { watchJapaneseReviewClock } from '@/utils/japaneseReviewClock';
 import { chunkReviewItems, type ChunkReviewState } from '@/utils/japaneseChunkReview';
 import { CHUNK_TRACK_LABELS, chunkLessonInfo, type ChunkTrack } from '@/utils/japaneseChunkCatalog';
 import { useChunkReview } from './useChunkReview';
@@ -29,6 +30,11 @@ export function ChunkReviewList({ value, reload }: { value: ChunkReviewState; re
   const [active, setActive] = useState<ActivePractice>();
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (!active) heading.current?.focus(); }, [active]);
+  const [, refreshClock] = useState(0);
+  useEffect(() => {
+    if (active) return;
+    return watchJapaneseReviewClock(chunkReviewItems(value).map(item => Date.parse(item.nextReviewAt)), () => refreshClock(tick => tick + 1));
+  }, [value, active]);
   const activeLesson = active && getChunkLesson(active.lessonId);
   const start = (lessonId: string, questionIds: string[], from: ActivePractice['from']) => setActive({ lessonId, questionIds: [...questionIds], from, sessionId: crypto.randomUUID() });
   const close = () => { setActive(undefined); reload(); };

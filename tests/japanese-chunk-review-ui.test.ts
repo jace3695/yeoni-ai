@@ -1,3 +1,4 @@
+import { watchJapaneseReviewClock } from '../utils/japaneseReviewClock.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequire } from 'node:module';
@@ -20,7 +21,7 @@ const Link = ({ children, ...props }: { children: React.ReactNode }) => React.cr
 function compile(file: string, dependencies: Record<string, unknown>, globals: Record<string, unknown> = {}) {
   const source = ts.transpileModule(read(file), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
   const exports: Record<string, Component> = {};
-  vm.runInNewContext(source, { exports, crypto, Date, Error, Set, AbortController, ...globals, require: (name: string) => name.endsWith('.module.css') ? css : dependencies[name] ?? require(name) });
+  vm.runInNewContext(source, { exports, crypto, Date, Error, Set, AbortController, ...globals, require: (name: string) => name === '@/utils/japaneseReviewClock' ? dependencies[name] ?? { watchJapaneseReviewClock: () => () => {} } : name.endsWith('.module.css') ? css : dependencies[name] ?? require(name) });
   return exports;
 }
 function elements(node: React.ReactNode): Element[] {
@@ -33,17 +34,26 @@ function label(node: React.ReactNode): string {
   if (React.isValidElement<Record<string, unknown>>(node)) return label(node.props.children as React.ReactNode);
   return node === null || node === undefined || typeof node === 'boolean' ? '' : String(node);
 }
-function hooks() {
+function hooks(reconcileEffects = false) {
   const values: unknown[] = [], cleanups: (() => void)[] = [];
+  const effects = new Map<number, { dependencies?: readonly unknown[]; cleanup?: () => void }>();
   let cursor = 0, writes = 0;
   const api = { ...React,
     useState(initial: unknown) { const index = cursor++; if (!(index in values)) values[index] = typeof initial === 'function' ? initial() : initial; return [values[index], (value: unknown) => { writes++; values[index] = typeof value === 'function' ? value(values[index]) : value; }]; },
     useRef(initial: unknown) { const index = cursor++; if (!(index in values)) values[index] = { current: initial }; return values[index]; },
     useReducer(reducer: (state: unknown, action: unknown) => unknown, argument: unknown, init?: (arg: unknown) => unknown) { const index = cursor++; if (!(index in values)) values[index] = init ? init(argument) : argument; return [values[index], (action: unknown) => { writes++; values[index] = reducer(values[index], action); }]; },
-    useEffect(effect: () => (() => void) | void) { const index = cursor++; if (!(index in values)) { values[index] = true; const cleanup = effect(); if (cleanup) cleanups.push(cleanup); } },
+    useEffect(effect: () => (() => void) | void, dependencies?: readonly unknown[]) {
+      const index = cursor++;
+      if (reconcileEffects) {
+        const previous = effects.get(index);
+        if (previous && dependencies && previous.dependencies && dependencies.length === previous.dependencies.length && dependencies.every((value, i) => Object.is(value, previous.dependencies![i]))) return;
+        previous?.cleanup?.();
+        const cleanup = effect(); effects.set(index, { dependencies, cleanup: cleanup || undefined });
+      } else if (!(index in values)) { values[index] = true; const cleanup = effect(); if (cleanup) cleanups.push(cleanup); }
+    },
     useCallback<T>(fn: T) { cursor++; return fn; },
   };
-  return { api, begin: () => { cursor = 0; }, unmount: () => cleanups.forEach(fn => fn()), writes: () => writes };
+  return { api, begin: () => { cursor = 0; }, unmount: () => { cleanups.forEach(fn => fn()); effects.forEach(value => value.cleanup?.()); effects.clear(); }, writes: () => writes };
 }
 function buttons(render: () => Element) {
   const button = (text: string) => { const node = elements(render()).find(item => item.type === 'button' && label(item.props.children as React.ReactNode) === text); assert.ok(node, `Button missing: ${text}`); return node; };
@@ -151,15 +161,16 @@ test('requested review queues are fixed, unknown question IDs are harmless, and 
   const empty = practice.createChunkPractice(first, { questionIds: ['removed'] }); assert.deepEqual(empty.queue, []); assert.equal(empty.stage, 'done');
 });
 
-function workspace(initial = review.emptyChunkReview()) {
-  const runtime = hooks(); let value = initial, reloads = 0;
+function workspace(initial = review.emptyChunkReview(), clock?: { now: () => number; watch: (dates: number[], refresh: () => void) => () => void }) {
+  const runtime = hooks(true); let value = initial, reloads = 0;
   const Practice = () => React.createElement('div', { 'data-practice-double': true });
   const components = compile('../components/language/ChunkReviewWorkspace.tsx', {
+    '@/utils/japaneseReviewClock': clock ? { watchJapaneseReviewClock: clock.watch } : undefined,
     react: runtime.api, 'next/link': Link, '@/utils/japaneseChunkReview': review, '@/utils/japaneseChunkCatalog': catalog,
     '@/data/japaneseChunkLessons': data, './JapaneseChunkPractice': Practice, './useChunkReview': { useChunkReview() { throw new Error('List tests use explicit synthetic records'); } },
-  });
+  }, clock ? { Date: class extends Date { static now() { return clock.now(); } } } : {});
   const render = () => { runtime.begin(); return components.ChunkReviewList({ value, reload() { reloads++; } }); };
-  return { ...buttons(render), render, html: () => renderToStaticMarkup(render()), refresh: (next: review.ChunkReviewState) => { value = next; }, active: () => elements(render()).find(item => item.type === Practice), reloads: () => reloads };
+  return { unmount: runtime.unmount, stateWrites: runtime.writes, ...buttons(render), render, html: () => renderToStaticMarkup(render()), refresh: (next: review.ChunkReviewState) => { value = next; }, active: () => elements(render()).find(item => item.type === Practice), reloads: () => reloads };
 }
 
 test('workspace has separate due/all/free views, current lesson titles and purposes, empty states and non-destructive unknown content', () => {
@@ -232,4 +243,66 @@ test('useLearningAudio returns true only for onEnd while still current, false fo
   const stopped = audio.play('가상'); audio.stop(); jobs[2].options.onEnd(); jobs[2].resolve(); assert.equal(await stopped, false);
   const old = audio.play('가상'), newer = audio.play('가상'); jobs[3].options.onEnd(); jobs[3].resolve(); assert.equal(await old, false); jobs[4].reject(new Error('failed')); assert.equal(await newer, false);
   const closed = audio.play('가상'); runtime.unmount(); jobs[5].options.onEnd(); jobs[5].resolve(); assert.equal(await closed, false);
+});
+
+ test('open due list refreshes when its scheduled deadline passes without a storage reload', () => {
+  const value=seed(); const deadline=Date.parse(review.chunkReviewItems(value)[0].nextReviewAt);
+  let now=deadline-1, tick:(()=>void)|undefined;
+  const before=JSON.stringify(value);
+  const flow=workspace(value,{now:()=>now,watch:(dates,refresh)=>{assert.ok(dates.includes(deadline));tick=refresh;return()=>{};}});
+  assert.match(flow.html(),/지금 예정 0문제/);assert.ok(tick,'An open list must schedule its next due refresh');
+  const writes=flow.stateWrites();now=deadline;tick();assert.ok(flow.stateWrites()>writes);
+  assert.match(flow.html(),/지금 예정 1문제/);assert.equal(flow.reloads(),0);assert.equal(JSON.stringify(value),before);
+ });
+
+test('active review cleans up list timer and closing restarts it without replacing the question queue', () => {
+  const value = seed(); let starts = 0, stops = 0, liveTimers = 0;
+  const flow = workspace(value, { now: () => Date.now(), watch: () => {
+    starts++; liveTimers++;
+    return () => { stops++; liveTimers--; };
+  } });
+  flow.render(); assert.equal(starts, 1); assert.equal(liveTimers, 1);
+  flow.click('이 문제 다시 풀기');
+  const active = flow.active()!;
+  assert.ok(active); assert.equal(stops, 1); assert.equal(liveTimers, 0);
+  const frozen = active.props.questionIds;
+  flow.refresh({ ...value });
+  assert.equal(flow.active()!.key, active.key); assert.equal(flow.active()!.props.questionIds, frozen);
+  assert.equal(starts, 1); assert.equal(liveTimers, 0);
+  (flow.active()!.props.onClose as () => void)();
+  flow.render(); assert.equal(starts, 2); assert.equal(liveTimers, 1); assert.equal(flow.reloads(), 1);
+  flow.unmount(); assert.equal(stops, 2); assert.equal(liveTimers, 0);
+});
+
+function fixture(deadlines: number[]) {
+ let now=1000, hidden=false, ticks=0, nextId=0;
+ const timers=new Map<number,{callback:()=>void;delay:number}>();
+ let listener:(()=>void)|undefined;
+ const stop=watchJapaneseReviewClock(deadlines,()=>ticks++,{
+  now:()=>now,hidden:()=>hidden,
+  schedule:(callback,delay)=>{const id=++nextId;timers.set(id,{callback,delay});return id;},
+  cancel:id=>{timers.delete(id);},listen:fn=>{listener=fn;return()=>{listener=undefined;};},
+ });
+ return {timers,stop,ticks:()=>ticks,setNow:(value:number)=>{now=value;},visible:(value:boolean)=>{hidden=!value;listener?.();},listener:()=>listener,
+ fire:()=>{const [id,timer]=[...timers][0];timers.delete(id);timer.callback();return timer;}};
+}
+test('wakes at due boundary once and never spins on already due dates',()=>{
+ const f=fixture([1005,1005,NaN]);assert.equal([...f.timers.values()][0].delay,5);
+ f.setNow(1005);f.fire();assert.equal(f.ticks(),1);assert.equal(f.timers.size,1);assert.equal([...f.timers.values()][0].delay,60000);
+});
+test('empty and invalid deadlines allocate no timers/listeners',()=>{
+ for(const dates of [[],[NaN,Infinity,-Infinity]]){const f=fixture(dates);assert.equal(f.timers.size,0);assert.equal(f.listener(),undefined);f.stop();}
+});
+test('far dates and clock shifts have bounded delays and refreshed due decisions',()=>{
+ const f=fixture([9e15]);assert.equal([...f.timers.values()][0].delay,60000);
+ f.setNow(-100000);f.fire();assert.equal(f.ticks(),1);assert.equal([...f.timers.values()][0].delay,60000);
+ f.stop();const near=fixture([1100]);near.setNow(5000);near.fire();assert.equal(near.ticks(),1);assert.equal([...near.timers.values()][0].delay,60000);
+});
+test('hidden pauses, visible refreshes immediately, cleanup rejects queued callbacks',()=>{
+ const f=fixture([1500]);const stale=[...f.timers.values()][0].callback;
+ f.visible(false);assert.equal(f.timers.size,0);stale();assert.equal(f.ticks(),0);
+ f.setNow(2000);f.visible(true);assert.equal(f.ticks(),1);assert.equal(f.timers.size,1);
+ stale();assert.equal(f.ticks(),1);assert.equal(f.timers.size,1);
+ const queued=[...f.timers.values()][0].callback;const visibility=f.listener()!;f.stop();assert.equal(f.timers.size,0);assert.equal(f.listener(),undefined);
+ queued();visibility();assert.equal(f.ticks(),1);
 });
