@@ -37,6 +37,74 @@ const EXCLUDED_SECTION = /^(?:\d+\s+)?(?:Body Composition History|Segmental (?:L
 const normalize = (text: string) => text.trim().replace(/\s+/g, ' ');
 const UNSTORED_COMPOSITION_ROW = /^(?:(?:Total amount of water in body\s+)?Total Body Water\s+\(L\)|(?:For building muscles\s+)?Protein\s+\(kg\)|(?:For strengthening bones\s+)?Minerals\s+\(kg\))\s+\d+(?:\.\d+)?(?:\s*\(\s*\d+(?:\.\d+)?\s*[~–-]\s*\d+(?:\.\d+)?\s*\))?$/i;
 
+const DATE_LABEL = /\bTest Date & Time\b/i;
+const DATE_OCCURRENCES = /\bTest Date & Time\b/gi;
+const OTHER_DATE_CONTEXT = /\b(?:date|birth|birthday|DOB|print|printed|printing|issue|issued|generate|generated|history)\b/i;
+const confident = (confidence: number) => Number.isFinite(confidence) && confidence >= 60;
+
+/** Never infer US/European order. Preserve the original token for cross-read agreement. */
+function measurementDate(lines: readonly InbodyOcrLine[]) {
+  const labels = lines.map((line, index) => ({ ...line, index })).filter(line => DATE_LABEL.test(line.text));
+  if (labels.length !== 1) return undefined;
+  const line = labels[0];
+  if (!confident(line.confidence) || lines.slice(0, line.index).some(line =>
+    SECTIONS.some(([pattern]) => pattern.test(line.text)) || EXCLUDED_SECTION.test(line.text))) return undefined;
+  const match = line.text.match(/^Test Date & Time\s*:?\s+(\d{4}([-/.])\d{2}\2\d{2}|\d{2}([-/.])\d{2}\3\d{4})(?: ([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?)?$/i);
+  if (!match) return undefined;
+  const token = match[1], parts = token.split(/[-/.]/).map(Number);
+  let year: number, month: number, day: number;
+  if (/^\d{4}/.test(token)) [year, month, day] = parts;
+  else {
+    year = parts[2];
+    if (parts[0] > 12 && parts[1] <= 12) [day, month] = parts;
+    else if (parts[1] > 12 && parts[0] <= 12) [month, day] = parts;
+    else return undefined;
+  }
+  const date = [year, String(month).padStart(2, '0'), String(day).padStart(2, '0')].join('-');
+  const parsed = new Date(date + 'T00:00:00Z');
+  const now = new Date();
+  const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+  if (year < 2000 || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date || date > today) return undefined;
+  return { date, token };
+}
+
+/** Official label is above its own date/time column, before composition analysis.
+ * Do not borrow a neighboring identity/date column or an arbitrary subsequent line. */
+function headerDateLine(lines: readonly InbodyLayoutLine[], bodyTop: number): InbodyOcrLine[] {
+  // OCR may merge several columns into ONE line. Count phrases, not lines,
+  // in both representations before cropping any column or discarding context.
+  const textStream = lines.map(line => normalize(line.text)).join(' ');
+  const wordStream = normalize(lines.flatMap(line => line.words).map(word => word.text).join(' '));
+  if ((textStream.match(DATE_OCCURRENCES) || []).length !== 1
+    || (wordStream.match(DATE_OCCURRENCES) || []).length !== 1) return [];
+  // Fail closed on competing date meanings anywhere in the header, even if
+  // their label is left/right of the candidate or split into another OCR block.
+  // Legitimate unfamiliar header layouts remain available for manual entry.
+  const header = lines.filter(line => line.bbox.y0 < bodyTop);
+  const context = normalize(header.flatMap(line => [line.text, ...line.words.map(word => word.text)]).join(' '));
+  if (OTHER_DATE_CONTEXT.test(context.replace(DATE_OCCURRENCES, ''))) return [];
+  const labels = lines.filter(line => DATE_LABEL.test(normalize(line.text)));
+  if (labels.length !== 1) return [];
+  const label = labels[0];
+  const words = [...label.words].sort((a, b) => a.bbox.x0 - b.bbox.x0);
+  const start = words.findIndex((word, i) => words.slice(i, i + 4).map(w => w.text).join(' ') === 'Test Date & Time');
+  if (start < 0 || !confident(label.confidence)) return [];
+  const heading = words.slice(start, start + 4);
+  if (!heading.every(word => confident(word.confidence))) return [];
+  const box = { x0: heading[0].bbox.x0, x1: heading[3].bbox.x1,
+    y0: Math.min(...heading.map(word => word.bbox.y0)), y1: Math.max(...heading.map(word => word.bbox.y1)) };
+  const height = box.y1 - box.y0;
+  if (height <= 0 || box.y1 >= bodyTop) return [];
+  const below = lines.flatMap(line => line.words).filter(word => word.bbox.y0 >= box.y1
+    && word.bbox.y1 < bodyTop && word.bbox.y0 <= box.y1 + height * 3
+    && word.bbox.x0 >= box.x0 - height * .5 && word.bbox.x0 <= box.x1 + height * 3);
+  if (!below.length || !below.every(word => confident(word.confidence))) return [];
+  // One visible row only, including time; multiple rows are ambiguous even if equal.
+  if (Math.min(...below.map(word => word.bbox.y1)) <= Math.max(...below.map(word => word.bbox.y0))) return [];
+  const text = 'Test Date & Time: ' + below.sort((a, b) => a.bbox.x0 - b.bbox.x0).map(word => word.text).join(' ');
+  return [{ text, confidence: Math.min(label.confidence, ...heading.map(word => word.confidence), ...below.map(word => word.confidence)) }];
+}
+
 /** Tesseract may split table columns into separate blocks. Rejoin only words
  * on the same visible row inside three independently identified headings.
  * Never concatenate the next text line or scrape the first available number. */
@@ -69,8 +137,8 @@ export function inbodyLayoutLines(lines: readonly InbodyLayoutLine[]): InbodyOcr
   const assembled = rows.map(row => ({ text: row.words.sort((a, b) => a.bbox.x0 - b.bbox.x0).map(word => word.text).join(' '),
     confidence: Math.min(...row.words.map(word => word.confidence)) }));
   const ordered = [...lines].sort((a, b) => Number(a.bbox.x0 >= rightEdge) - Number(b.bbox.x0 >= rightEdge) || a.bbox.y0 - b.bbox.y0 || a.bbox.x0 - b.bbox.x0);
-  return ordered.flatMap(line => line === start ? [{ text: line.text, confidence: line.confidence }, ...assembled]
-    : inTable(line.bbox) ? [] : [{ text: line.text, confidence: line.confidence }]);
+  return [...headerDateLine(lines, start.bbox.y0), ...ordered.filter(line => !DATE_LABEL.test(line.text)).flatMap(line => line === start ? [{ text: line.text, confidence: line.confidence }, ...assembled]
+    : inTable(line.bbox) ? [] : [{ text: line.text, confidence: line.confidence }])];
 }
 
 function measurement(text: string, field: Field) {
@@ -135,11 +203,14 @@ export function agreedInbody270sReport(observations: readonly (readonly InbodyOc
         method: 'ocr', mappingVersion: 'inbody-270s-en-v1' };
     }
   }
+  const dateReads = observations.map(lines => measurementDate(lines.map(line => ({ ...line, text: normalize(line.text) }))));
   const known = reads.length >= 2 && reads.every(read => read.confirmedModel);
-  return { values, metricSources, recognizedCount: Object.keys(values).length,
+  const date = dateReads[0];
+  const detectedDate = known && date && dateReads.every(read => read?.date === date.date && read?.token === date.token) ? date.date : undefined;
+  return { values, metricSources, detectedDate, recognizedCount: Object.keys(values).length,
     reviewKeys: INBODY_270S_INVENTORY.filter(([key]) => values[key] === undefined).map(([key]) => key),
     warnings: [known
-      ? 'InBody270S 영문 결과지의 명확한 라벨·단위가 있는 항목만 읽어요. 그래프 눈금·목표값·과거 기록은 제외합니다. 측정 날짜는 사진에서 직접 확인해 입력해 주세요.'
+      ? 'InBody270S 영문 결과지의 명확한 라벨·단위가 있는 항목만 읽어요. 그래프 눈금·목표값·과거 기록은 제외합니다. 측정 날짜 후보가 있더라도 사진과 직접 비교해 확인해 주세요. 날짜가 비어 있으면 직접 입력해 주세요.'
       : 'InBody270S 영문 양식을 확인하지 못했어요. 자동 반영하지 않으며 사진의 항목명·단위를 직접 확인해야 합니다. 다른 양식은 자동 지원하지 않아요.'] };
 }
 

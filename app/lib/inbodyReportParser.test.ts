@@ -167,3 +167,85 @@ test('small OCR left-edge differences keep research rows after their own heading
   const normalized = inbodyLayoutLines(input);
   assert.deepEqual(agreedInbody270sReport([normalized, normalized]).values, {weight:79.6,fatFreeMass:62.2,basalMetabolicRate:1623});
 });
+
+const observe = (date: string, confidence = 95) => [
+  { text: '[InBody270S]', confidence: 95 },
+  { text: 'Test Date & Time: ' + date, confidence },
+  { text: 'Body Composition Analysis', confidence: 95 },
+  { text: 'Weight (kg) 78.4', confidence: 95 },
+];
+test('single explicit measurement header agrees in two observations, including uniquely ordered year-last dates', () => {
+  for (const date of ['2025-11-24', '2025/11/24 14:35', '2025.11.24 14:35:22', '11.24.2025 14:35', '24/11/2025']) {
+    const result = agreedInbody270sReport([observe(date), observe(date)]);
+    assert.equal(result.detectedDate, '2025-11-24', date);
+    assert.equal(result.values.weight, 78.4);
+  }
+});
+test('uncertain or conflicting dates never affect numeric candidates', () => {
+  for (const date of ['', '2025-11', '11/12/2025', '12/12/2025', '2025-02-29', '2025-04-31', '2099-11-24',
+    '2025-11/24', '2025-1-24', '2025-11-24 25:00', '2025-11-24 14:99', '2025-11-24 2025-11-25',
+    'DOB 2025-11-24', 'Printed 2025-11-24', '2025-11-24Z']) {
+    const r = agreedInbody270sReport([observe(date), observe(date)]);
+    assert.equal(r.detectedDate, undefined, date); assert.equal(r.values.weight, 78.4);
+  }
+  const a = observe('2025-11-24');
+  for (const b of [observe('2025-11-25'), observe('24/11/2025'), observe('2025-11-24', 59), observe('2025-11-24', NaN),
+    [...a, a[1]], [...a, { text: 'Test Date & Time: invalid', confidence: 20 }],
+    a.map(l => ({ ...l, text: l.text.replace('InBody270S', 'InBody770') }))]) {
+    assert.equal(agreedInbody270sReport([a, b]).detectedDate, undefined);
+  }
+  assert.equal(agreedInbody270sReport([a]).detectedDate, undefined);
+});
+test('birth, print, history and unlabeled date lines are not measurement headers', () => {
+  for (const text of ['Birth Date: 2025-11-24', 'Print Date: 2025-11-24', 'Measurement date: 2025-11-24', '2025-11-24']) {
+    const lines = observe('2025-11-24'); lines[1].text = text;
+    assert.equal(agreedInbody270sReport([lines, lines]).detectedDate, undefined);
+  }
+  const lines = [observe('')[0], {text:'Body Composition History',confidence:95}, ...observe('2025-11-24').slice(1)];
+  assert.equal(agreedInbody270sReport([lines, lines]).detectedDate, undefined);
+});
+function line(text:string,x:number,y:number): InbodyLayoutLine {
+  let offset=x;
+  const words=text.split(' ').map(text=>{const bbox={x0:offset,y0:y,x1:offset+text.length*8,y1:y+18};offset=bbox.x1+8;return {text,confidence:95,bbox};});
+  return {text,confidence:95,bbox:{x0:x,x1:offset-8,y0:y,y1:y+18},words};
+}
+const layout = () => [line('[InBody270S]',20,10), line('Test Date & Time',700,50),line('2025-11-24 14:35',700,80),
+  line('Body Composition Analysis',20,130),line('Weight (kg) 78.4',20,180),line('Muscle-Fat Analysis',20,240),line('Research Parameters',700,300)];
+test('official header position joins only its immediately underlying date row, not a nearby identity or history',()=>{
+  const l=layout(), before=structuredClone(l), rows=inbodyLayoutLines(l);
+  assert.equal(agreedInbody270sReport([rows,rows]).detectedDate,'2025-11-24');
+  assert.deepEqual(l,before);
+  for(const bad of [
+    layout().filter((_,i)=>i!==1),
+    [...layout(),line('Test Date & Time',700,500)],
+    [...layout(),line('2025-11-25',700,105)],
+    layout().map((l,i)=>i===2?line('2025-11-24 14:35',20,80):l),
+    layout().map((l,i)=>i===2?line('2025-11-24 14:35',700,400):l),
+    layout().map((l,i)=>i===2?{...l,words:l.words.map(w=>({...w,confidence:50}))}:l),
+  ]) {const rows=inbodyLayoutLines(bad);assert.equal(agreedInbody270sReport([rows,rows]).detectedDate,undefined);}
+});
+
+test('date layout rejects duplicate label occurrences in one OCR line and competing whole-row date context', () => {
+  const run = (items: InbodyLayoutLine[]) => {
+    const rows = inbodyLayoutLines(items);
+    return agreedInbody270sReport([rows, rows]).detectedDate;
+  };
+  assert.equal(run(layout()), '2025-11-24');
+  const duplicate = layout(), second = line('Test Date & Time', 1000, 50);
+  duplicate[1] = {...duplicate[1], text: duplicate[1].text + ' ' + second.text,
+    words: [...duplicate[1].words, ...second.words], bbox: {...duplicate[1].bbox, x1:second.bbox.x1}};
+  duplicate.push(line('2025-11-25 14:35', 1000, 80));
+  assert.equal(run(duplicate), undefined, 'two labels in the same OCR line are two occurrences');
+  // Text and word streams must independently have exactly one label occurrence.
+  const inconsistent = layout();
+  inconsistent[1].words.push(...second.words);
+  assert.equal(run(inconsistent), undefined);
+  for (const text of ['Print Date:', 'Printed:', 'Date of Birth:', 'DOB:', 'Report Date:', 'Generated:', 'Issued:', 'History:']) {
+    for (const x of [50, 500, 1000]) {
+      assert.equal(run([...layout(), line(text, x, 80)]), undefined, text + x);
+      assert.equal(run([...layout(), line(text, x, 50)]), undefined, 'neighboring header ' + text + x);
+    }
+  }
+  const split = [...layout(), line('Print', 400, 80), line('Date:', 450, 80)];
+  assert.equal(run(split), undefined);
+});

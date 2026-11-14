@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { bodyForm, bodyImportOwner, validMeasurementDate } from '../app/lib/bodyImport.ts';
 
+import { agreedInbody270sReport } from '../app/lib/inbodyReportParser.ts';
 import { dateFromText } from '../app/lib/oaReportParser.ts';
 
 type Result = { values: Record<string, number>; detectedDate?: string };
@@ -183,4 +184,42 @@ test('account changes invalidate InBody recognition just as they invalidate OA r
   f.storage.set('fitness-cloud-sync-epoch', '2'); f.emit('yeoni-cloud-session-changed');
   const before = structuredClone(f.state); f.pending[0].progress(100); f.pending[0].resolve({ values: { skeletalMuscleMass: 32.8 } }); await task;
   assert.deepEqual(structuredClone(f.state), before);
+});
+
+
+test('actual InBody date agreement reaches the shipped importer as an unreviewed draft without writes', async () => {
+  const lines = (date: string) => ['[InBody270S]', 'Test Date & Time: ' + date,
+    'Body Composition Analysis', 'Weight (kg) 78.4'].map(text => ({ text, confidence: 95 }));
+  const parsed = (date: string) => agreedInbody270sReport([lines(date), lines(date)]);
+  const f = fixture('inbody-270s-en'); const before = [...f.storage]; const task = f.start();
+  f.pending[0].resolve(parsed('11.24.2025 14:35')); await task;
+  assert.equal((f.state.draft as { date: string }).date, '2025-11-24');
+  assert.equal((f.state.draft as { sourceReviewed: boolean }).sourceReviewed, false);
+  assert.deepEqual([...f.storage], before);
+  const first = f.start(), second = f.start();
+  f.pending[2].resolve(parsed('11.25.2025 14:35')); await second;
+  f.pending[1].resolve(parsed('11.24.2025 14:35')); await first;
+  assert.equal((f.state.draft as { date: string }).date, '2025-11-25');
+  assert.deepEqual([...f.storage], before);
+  const changed = f.start(); f.storage.set('fitness-cloud-sync-epoch', '2'); f.emit('yeoni-cloud-session-changed');
+  const state = structuredClone(f.state); f.pending[3].resolve(parsed('11.26.2025 14:35')); await changed;
+  assert.deepEqual(structuredClone(f.state), state);
+});
+
+test('shipped date edit revokes review and cancel clears the candidate without writing records', () => {
+  const source = readFileSync(new URL('../app/components/BodyRecordCard.tsx', import.meta.url), 'utf8');
+  const dateEdit = source.match(/id="body-measurement-date"[^\n]+onChange=\{(\(event\) => \{[^\n]+?\})\}/)?.[1];
+  const cancel = source.match(/onClick=\{(\(\) => \{ setDraft\(null\);[^\n]+?\})\}[^\n]+사진 입력 취소/)?.[1];
+  assert.ok(dateEdit && cancel);
+  let draft: {date:string;sourceReviewed:boolean}|null = {date:'2025-11-24',sourceReviewed:true};
+  let writes = 0;
+  const run = (code: string) => vm.runInNewContext('(' + code + ')', {
+    draft, setDraft: (next: typeof draft) => {draft = next;},
+    setRecordMessage: () => {}, setImportMessage: () => {},
+    window: {localStorage: {setItem: () => { writes++; }, removeItem: () => { writes++; }}},
+  });
+  run(dateEdit)({target:{value:'2025-11-25'}});
+  assert.deepEqual(JSON.parse(JSON.stringify(draft)), {date:'2025-11-25',sourceReviewed:false});
+  run(cancel)();
+  assert.equal(draft,null); assert.equal(writes,0);
 });
