@@ -112,11 +112,14 @@ test('reset prevents source replacement resurrection and unmount cancels pending
 for (const presentation of ['review', 'assistant']) {
   test(`cancel pending clip in ${presentation} presentation without revival after late result or source replacement`, async ({ page }) => {
     await page.goto(`/?case=reply&presentation=${presentation}`);
-    const panel = page.getByRole('region', { name: '연이 대화 캐릭터', exact: true });
+    // The assistant presentation intentionally hides its idle panel after cancel/reload.
+    // Retain DOM state assertions, then separately require the real visibility contract.
+    const panel = page.getByRole('region', { name: '연이 대화 캐릭터', exact: true, includeHidden: true });
     const metrics = page.getByTestId('reply-source-metrics');
     await page.getByRole('button', { name: '보류 소스로 바꾸기', exact: true }).click();
     await page.getByRole('button', { name: '저장 답변 전달', exact: true }).click();
     await expect(panel).toHaveAttribute('data-reply-status', 'loading');
+    await expect(panel).toBeVisible();
     await expect(metrics).toHaveAttribute('data-pending', '1');
     const cancel = panel.getByRole('button', { name: '취소', exact: true });
     await expect(cancel).toBeVisible();
@@ -127,6 +130,8 @@ for (const presentation of ['review', 'assistant']) {
       await cancel.focus(); await page.keyboard.press('Enter');
     } else await cancel.click();
     await expect(panel).toHaveAttribute('data-reply-status', 'idle');
+    if (presentation === 'assistant') await expect(panel).toBeHidden();
+    else await expect(panel).toBeVisible();
     await expect(cancel).toHaveCount(0);
     await expect(metrics).toHaveAttribute('data-aborts', '1');
     await expect(panel.locator('audio')).not.toHaveAttribute('src');
@@ -136,17 +141,22 @@ for (const presentation of ['review', 'assistant']) {
     await expect(metrics).toHaveAttribute('data-resolutions', '1');
     await expect(metrics).toHaveAttribute('data-loads', '0');
     await expect(panel).toHaveAttribute('data-reply-status', 'idle');
+    if (presentation === 'assistant') await expect(panel).toBeHidden();
+    else await expect(panel).toBeVisible();
     expect(await panel.locator('audio').evaluate(node => (node as HTMLAudioElement).paused)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
     // Only a genuinely new response may prepare the same saved clip again.
     await page.getByRole('button', { name: '저장 답변 전달', exact: true }).click();
     await expect(panel).toHaveAttribute('data-reply-status', 'ready');
+    await expect(panel).toBeVisible();
     await expect(metrics).toHaveAttribute('data-loads', '1');
     await expect(cancel).toHaveCount(0);
     expect(await panel.locator('audio').evaluate(node => (node as HTMLAudioElement).paused)).toBe(true);
     await page.reload();
     await expect(panel).toHaveAttribute('data-reply-status', 'idle');
+    if (presentation === 'assistant') await expect(panel).toBeHidden();
+    else await expect(panel).toBeVisible();
     await expect(panel.locator('audio')).not.toHaveAttribute('src');
     await expect(metrics).toHaveAttribute('data-loads', '0');
   });

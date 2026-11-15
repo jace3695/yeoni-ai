@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import StorageAccessGate from '../../../app/components/StorageAccessGate';
 import { EmptyListFixture, MotionFixture, StaticPoseFixture } from './BasicFixtures';
 import AssessmentFixture from './AssessmentFixture';
 import ReplyFixture from './ReplyFixture';
@@ -14,8 +15,8 @@ const scenario = new URLSearchParams(location.search).get('case');
 const fixture = scenario === 'assessment' ? <AssessmentFixture />
   : scenario === 'home-briefing' ? <HomeBriefingFixture />
   : scenario === 'home-overview' ? <HomeOverviewFixture />
-  : scenario === 'body-import' ? <BodyImportFixture />
-  : scenario === 'body-import-real-ocr' ? <BodyImportRealOcrFixture />
+  : scenario === 'body-import' ? <StorageAccessGate><BodyImportFixture /></StorageAccessGate>
+  : scenario === 'body-import-real-ocr' ? <StorageAccessGate><BodyImportRealOcrFixture /></StorageAccessGate>
   : scenario === 'practice' ? <PracticeFixture />
   : scenario === 'reply' ? <ReplyFixture />
     : scenario === 'motion' ? <MotionFixture />

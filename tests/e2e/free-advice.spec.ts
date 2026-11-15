@@ -70,6 +70,7 @@ test('free advice previews real owner records across four areas without modifyin
     await expect(panel.getByText('보낼 기록 요약', { exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: '무료 AI 조언받기', exact: true })).toBeDisabled();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const sentBeforeReload = chatCalls;
     await page.reload();
     await expect(chat).toBeVisible();
     await expect(savedReply).toHaveCount(replyCount);
@@ -77,7 +78,7 @@ test('free advice previews real owner records across four areas without modifyin
     await expect(panel).toHaveCount(0);
     // Restored history is read-only: it must not regain execution or voice
     // controls. A fresh supported entry URL may prefill, but never auto-send.
-    await expect(chat.getByText('이전 대화 · 읽기 전용 (재전송·음성 제외)', { exact: true }).first()).toBeVisible();
+    expect(chatCalls, 'restoring saved replies must not retransmit chat requests').toBe(sentBeforeReload);
     await expect(chat.getByRole('link', { name: '연이와 조언 이어가기 →', exact: true })).toHaveCount(0);
     await expect(chat.getByRole('button', { name: '답변 읽기', exact: true })).toHaveCount(0);
     const sentBeforeEntry = chatCalls;
@@ -196,12 +197,10 @@ test('unified chat keeps ordinary queries and writes on their original review pa
   await input.fill('요즘 운동 잘하고 있어?'); await send.click();
   await expect(chat.getByRole('region', { name: '운동 무료 AI 조언', exact: true })).toBeVisible();
   await chat.getByRole('button', { name: '조언 취소', exact: true }).click();
-  const examples = chat.getByRole('region', { name: '추천 질문', exact: true });
-  const workout = examples.getByRole('button', { name: '오늘 운동 계획 보여줘', exact: true });
-  await expect(examples.getByRole('button', { name: '다른 질문', exact: true })).toBeEnabled();
-  // There are two rotating recommendation pages, not a fixed quick-send row.
-  if (await workout.count() === 0) await examples.getByRole('button', { name: '다른 질문', exact: true }).click();
-  await workout.click();
+  // The current UI intentionally removed recommendations. Typing a query is
+  // draft-only; the explicit Send action must still use the ordinary path.
+  await expect(chat.getByRole('region', { name: '추천 질문', exact: true })).toHaveCount(0);
+  await input.fill('오늘 운동 계획 보여줘');
   await expect(input).toHaveValue('오늘 운동 계획 보여줘');
   expect(chatCalls).toBe(1);
   await expect(chat.getByRole('link', { name: /회복 계획 보기|운동 세부 화면 열기|운동 앱 열기/ })).toHaveCount(0);
