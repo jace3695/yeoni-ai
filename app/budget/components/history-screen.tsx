@@ -66,6 +66,10 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
   const [maximumAmount, setMaximumAmount] = useState('')
   const [paymentFilter, setPaymentFilter] = useState('all')
   const formatKRW = (n: number) => formatDisplayCurrency(n, currency)
+  const formatRecordAmount = (amount: unknown, sign: '+' | '-') => {
+    const value = sumHistoryAmounts([{ amount }])
+    return value === null ? '금액 확인 필요' : `${sign}${formatKRW(value)}`
+  }
   const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase('ko-KR')
   const range = amountRange(minimumAmount, maximumAmount)
   const filterError = range.error || (historyStartDate && historyEndDate && historyStartDate > historyEndDate ? '시작일이 종료일보다 늦습니다.' : '')
@@ -189,7 +193,7 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                         <p style={{ color: '#E0E0EA', fontSize: 11, margin: 0 }}>저축 · {item.date}</p>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <p style={{ color: '#4ECDC4', fontSize: 15, fontFamily: 'monospace', fontWeight: 700, margin: '0 0 2px' }}>+{formatKRW(item.amount)}</p>
+                        <p style={{ color: '#4ECDC4', fontSize: 15, fontFamily: 'monospace', fontWeight: 700, margin: '0 0 2px' }}>{formatRecordAmount(item.amount, '+')}</p>
                         <button type="button" aria-label={`${item.goal_name || '저축'} 내역 삭제`} onClick={() => handleDeleteSaving(item.id)} disabled={Boolean(processingRecordKey)} style={{ minHeight: 36, background: '#FF6B6B22', border: '1px solid #FF6B6B', borderRadius: 8, color: '#FF6B6B', fontSize: 12, fontWeight: 600, cursor: processingRecordKey ? 'not-allowed' : 'pointer', padding: '6px 10px', opacity: processingRecordKey && processingRecordKey !== `saving:${item.id}` ? 0.45 : 1 }}>{processingRecordKey === `saving:${item.id}` ? '삭제 중…' : '삭제'}</button>
                       </div>
                     </div>
@@ -214,7 +218,7 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                         <p style={{ color: '#E0E0EA', fontSize: 11, margin: 0 }}>수입 · {item.date}</p>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <p style={{ color: '#4ECDC4', fontSize: 15, fontFamily: 'monospace', fontWeight: 700, margin: '0 0 2px' }}>+{formatKRW(item.amount)}</p>
+                        <p style={{ color: '#4ECDC4', fontSize: 15, fontFamily: 'monospace', fontWeight: 700, margin: '0 0 2px' }}>{formatRecordAmount(item.amount, '+')}</p>
                         <button type="button" aria-label={`${item.name || '수입'} 내역 삭제`} onClick={() => handleDeleteIncome(item.id)} disabled={Boolean(processingRecordKey)} style={{ minHeight: 36, background: '#FF6B6B22', border: '1px solid #FF6B6B', borderRadius: 8, color: '#FF6B6B', fontSize: 12, fontWeight: 600, cursor: processingRecordKey ? 'not-allowed' : 'pointer', padding: '6px 10px', opacity: processingRecordKey && processingRecordKey !== `income:${item.id}` ? 0.45 : 1 }}>{processingRecordKey === `income:${item.id}` ? '삭제 중…' : '삭제'}</button>
                       </div>
                     </div>
@@ -246,7 +250,7 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <p style={{ color: '#FF6B6B', fontSize: 15, fontFamily: 'monospace', fontWeight: 700, margin: '0 0 2px' }}>-{formatKRW(t.amount)}</p>
+                          <p style={{ color: '#FF6B6B', fontSize: 15, fontFamily: 'monospace', fontWeight: 700, margin: '0 0 2px' }}>{formatRecordAmount(t.amount, '-')}</p>
                           <button type="button" aria-label={`${t.place || '지출'} 내역 삭제`} onClick={() => handleDelete(t.id)} disabled={Boolean(processingRecordKey)} style={{ minHeight: 36, background: '#FF6B6B22', border: '1px solid #FF6B6B', borderRadius: 8, color: '#FF6B6B', fontSize: 12, fontWeight: 600, cursor: processingRecordKey ? 'not-allowed' : 'pointer', padding: '6px 10px', opacity: processingRecordKey && processingRecordKey !== `expense:${t.id}` ? 0.45 : 1 }}>{processingRecordKey === `expense:${t.id}` ? '삭제 중…' : '삭제'}</button>
                         </div>
                       </div>

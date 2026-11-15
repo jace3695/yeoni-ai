@@ -190,3 +190,29 @@ test('CSV retains zero, numeric strings, exact values and formula escaping; filt
     else Reflect.deleteProperty(globalThis, 'document')
   }
 })
+
+
+test('real history rows mark invalid stored money without a currency value or directional sign', () => {
+  for (const kind of ['income', 'expense', 'saving'] as const) {
+    for (const amount of [null, undefined, '', ' ', false, true, NaN, Infinity, -1, 1.5, '1e3', '1,000', '9007199254740992', Number.MAX_SAFE_INTEGER + 1]) {
+      const html = renderToStaticMarkup(csvScreen([amount], kind).tree)
+      assert.ok(html.includes('>금액 확인 필요</p>'), `${kind}: ${String(amount)}`)
+      assert.ok(!html.includes('>+금액 확인 필요'))
+      assert.ok(!html.includes('>-금액 확인 필요'))
+      assert.ok(!/>[+-]₩/.test(html), `${kind}: invalid money rendered as currency`)
+      assert.ok(!html.includes('NaN'))
+    }
+  }
+})
+
+test('real history rows retain valid zero, numeric strings and the safe integer boundary with correct sign', () => {
+  for (const kind of ['income', 'expense', 'saving'] as const) {
+    for (const amount of [0, '0', '001200', Number.MAX_SAFE_INTEGER]) {
+      const html = renderToStaticMarkup(csvScreen([amount], kind).tree)
+      const sign = kind === 'expense' ? '-' : '+'
+      const value = new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(Number(amount))
+      assert.ok(html.includes(`>${sign}${value}</p>`), `${kind}: ${String(amount)}`)
+      assert.ok(!html.includes('>금액 확인 필요</p>'))
+    }
+  }
+})
