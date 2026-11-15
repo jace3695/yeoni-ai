@@ -176,6 +176,85 @@ function verifiedBodyFatPercentGraphRow(lines: readonly InbodyLayoutLine[], left
   }];
 }
 
+/** Separate narrow SMM path: a standalone observed (kg) may be joined only
+ * inside the abbreviation/value gap on the same visible row. Neither another
+ * OCR scale nor the lower full label may supply a missing unit or digit. */
+function verifiedSkeletalMuscleGraphRow(lines: readonly InbodyLayoutLine[], leftEdge: number, rightEdge: number): InbodyOcrLine[] {
+  const boxIsValid = (box: Box) => Object.values(box).every(value => Number.isFinite(value) && value >= 0)
+    && box.x1 > box.x0 && box.y1 > box.y0;
+  if (lines.some(line => !boxIsValid(line.bbox))) return [];
+  const coherentLine = (line: InbodyLayoutLine) => line.words.length > 0
+    && normalize(line.words.map(word => word.text).join(' ')) === normalize(line.text)
+    && line.words.every((word, index) => boxIsValid(word.bbox)
+      && word.bbox.x0 >= line.bbox.x0 && word.bbox.x1 <= line.bbox.x1
+      && word.bbox.y0 >= line.bbox.y0 && word.bbox.y1 <= line.bbox.y1
+      && (index === 0 || word.bbox.x0 >= line.words[index - 1].bbox.x1));
+  const exactLine = (line: InbodyLayoutLine) => coherentLine(line) && confident(line.confidence)
+    && line.words.every(word => confident(word.confidence));
+  const stream = (line: InbodyLayoutLine) => normalize(line.words.map(word => word.text).join(' '));
+  const heading = (text: string) => {
+    const pattern = new RegExp(`^(?:\\d+\\s+)?${text}$`, 'i');
+    const matches = lines.filter(line => pattern.test(normalize(line.text)) || pattern.test(stream(line)));
+    return matches.length === 1 && normalize(matches[0].text) === text && exactLine(matches[0]) ? matches[0] : undefined;
+  };
+  const start = heading('Muscle-Fat Analysis'), end = heading('Obesity Analysis');
+  if (!start || !end || end.bbox.y0 <= start.bbox.y1
+    || Math.abs(start.bbox.x0 - end.bbox.x0) > Math.min(start.bbox.y1 - start.bbox.y0, end.bbox.y1 - end.bbox.y0)
+    || [start, end].some(line => line.bbox.x0 < leftEdge || line.bbox.x1 >= rightEdge)) return [];
+  // Keep partial overlaps as ambiguity. Do not drop a crossed excluded heading,
+  // conflicting row or second unit simply because its left edge is outside.
+  const overlaps = lines.filter(line => line.bbox.x1 > leftEdge && line.bbox.x0 < rightEdge
+    && line.bbox.y1 > start.bbox.y1 && line.bbox.y0 < end.bbox.y0);
+  if (overlaps.some(line => line.bbox.x0 < leftEdge || line.bbox.x1 >= rightEdge
+    || line.bbox.y0 < start.bbox.y1 || line.bbox.y1 > end.bbox.y0)) return [];
+  const abbreviations = overlaps.filter(line => /\bSMM\b/i.test(line.text) || /\bSMM\b/i.test(stream(line)));
+  const labels = overlaps.filter(line => /\bSkeletal Muscle Mass\b/i.test(normalize(line.text))
+    || /\bSkeletal Muscle Mass\b/i.test(stream(line)));
+  if (abbreviations.length !== 1 || labels.length !== 1) return [];
+  const row = abbreviations[0], label = labels[0];
+  if (!exactLine(row) || !exactLine(label) || normalize(label.text) !== 'Skeletal Muscle Mass') return [];
+  const complete = row.words.length === 3 && /^SMM \(kg\) \d+\.\d+$/.test(normalize(row.text));
+  const split = row.words.length === 2 && /^SMM \d+\.\d+$/.test(normalize(row.text));
+  if (!complete && !split) return [];
+  const abbreviation = row.words[0], value = row.words.at(-1)!;
+  if (abbreviation.text !== 'SMM' || !/^\d+\.\d+$/.test(value.text)) return [];
+  const sameBand = overlaps.filter(line => line !== row
+    && line.bbox.y1 > row.bbox.y0 && line.bbox.y0 < row.bbox.y1);
+  let unit = complete ? row.words[1] : undefined;
+  let fragment: InbodyLayoutLine | undefined;
+  if (complete) { if (sameBand.length) return []; }
+  else {
+    if (sameBand.length !== 1) return [];
+    fragment = sameBand[0];
+    if (!exactLine(fragment) || normalize(fragment.text) !== '(kg)' || fragment.words.length !== 1
+      || fragment.bbox.x0 <= abbreviation.bbox.x1 || fragment.bbox.x1 >= value.bbox.x0) return [];
+    const sharedHeight = Math.min(row.bbox.y1, fragment.bbox.y1) - Math.max(row.bbox.y0, fragment.bbox.y0);
+    if ([row, fragment].some(line => sharedHeight < (line.bbox.y1 - line.bbox.y0) * .6)) return [];
+    unit = fragment.words[0];
+  }
+  if (!unit || unit.text !== '(kg)' || unit.bbox.x0 <= abbreviation.bbox.x1 || unit.bbox.x1 >= value.bbox.x0) return [];
+  const words = [abbreviation, unit, value];
+  const top = Math.min(...words.map(word => word.bbox.y0)), bottom = Math.max(...words.map(word => word.bbox.y1));
+  const common = Math.min(...words.map(word => word.bbox.y1)) - Math.max(...words.map(word => word.bbox.y0));
+  // Both heights matter: a huge unit box covering a small row is not a match.
+  if (words.some(word => common < (word.bbox.y1 - word.bbox.y0) * .6)) return [];
+  const height = bottom - top, labelHeight = label.bbox.y1 - label.bbox.y0;
+  if (label.bbox.y0 < bottom || label.bbox.y0 - bottom > height * 1.5
+    || Math.abs(label.bbox.x0 - abbreviation.bbox.x0) > Math.min(height, labelHeight) * .5
+    || label.bbox.x1 >= unit.bbox.x0
+    || Math.abs(abbreviation.bbox.x0 - start.bbox.x0) > start.bbox.y1 - start.bbox.y0) return [];
+  // This deliberately supports a narrow SMM-only graph section. Unknown text,
+  // later units, other rows or intervening numbers cannot be silently consumed.
+  const other = overlaps.filter(line => line !== row && line !== label && line !== fragment);
+  if (other.some(line => !coherentLine(line) || line.bbox.y1 > top || line.bbox.x0 < unit!.bbox.x0
+    || !/^\d+(?:\.\d+)*(?:\s+\d+(?:\.\d+)*)+$/.test(normalize(line.text)))) return [];
+  return [{ text: start.text, confidence: start.confidence }, {
+    text: `SMM ${normalize(label.text)} ${unit.text} ${value.text}`,
+    confidence: Math.min(row.confidence, label.confidence, fragment?.confidence ?? row.confidence,
+      ...words.map(word => word.confidence), ...label.words.map(word => word.confidence)),
+  }];
+}
+
 /** Tesseract may split table columns into separate blocks. Rejoin only words
  * on the same visible row inside three independently identified headings.
  * Never concatenate the next text line or scrape the first available number. */
@@ -210,7 +289,8 @@ export function inbodyLayoutLines(lines: readonly InbodyLayoutLine[]): InbodyOcr
   const ordered = [...lines].sort((a, b) => Number(a.bbox.x0 >= rightEdge) - Number(b.bbox.x0 >= rightEdge) || a.bbox.y0 - b.bbox.y0 || a.bbox.x0 - b.bbox.x0);
   return [...headerDateLine(lines, start.bbox.y0), ...ordered.filter(line => !DATE_LABEL.test(line.text)).flatMap(line => line === start ? [{ text: line.text, confidence: line.confidence }, ...assembled]
     : inTable(line.bbox) ? [] : [{ text: line.text, confidence: line.confidence }]),
-    ...verifiedBodyFatPercentGraphRow(lines, leftEdge, rightEdge)];
+    ...verifiedBodyFatPercentGraphRow(lines, leftEdge, rightEdge),
+    ...verifiedSkeletalMuscleGraphRow(lines, leftEdge, rightEdge)];
 }
 
 function measurement(text: string, field: Field) {

@@ -410,3 +410,134 @@ test('PBF prior graph context cannot hide excluded text or detached words behind
   lowTicks[7].words.forEach(word => { word.confidence = 0; });
   assert.equal(graphReport(lowTicks).values.bodyFatPercent, 21.9, 'tick values are not measurement evidence');
 });
+
+function muscleGraphLayout(split = false): InbodyLayoutLine[] {
+  const base = percentGraphLayout();
+  const added = [line('70 80 90 100 110 120 130', 320, 270),
+    split ? graphRow(['SMM', '32.8'], [30, 450], 300) : graphRow(['SMM', '(kg)', '32.8'], [30, 250, 450], 300),
+    line('Skeletal Muscle Mass', 30, 330)];
+  if (split) added.push(line('(kg)', 250, 300));
+  base.splice(4, 0, ...added); return base;
+}
+const muscleRow = (items: InbodyLayoutLine[], text: string) => items.find(item => item.text === text)!;
+const mutateMuscle = (edit: (items: InbodyLayoutLine[]) => void, split = true) => { const items = muscleGraphLayout(split); edit(items); return items; };
+const replaceMuscleLine = (items: InbodyLayoutLine[], old: string, text: string) => {
+  const index = items.findIndex(item => item.text === old), before = items[index];
+  items[index] = line(text, before.bbox.x0, before.bbox.y0);
+};
+
+test('SMM graph uses an observed inline unit or one same-row unit fragment, never inferred muscle meaning', () => {
+  for (const split of [false, true]) {
+    const items = muscleGraphLayout(split), before = structuredClone(items), result = graphReport(items);
+    assert.equal(result.values.skeletalMuscleMass, 32.8); assert.equal(result.values.bodyFatPercent, 21.9);
+    assert.equal(result.values.weight, 79.6); assert.equal(result.values.bmi, undefined);
+    assert.equal(result.metricSources?.skeletalMuscleMass?.originalText, 'SMM Skeletal Muscle Mass (kg) 32.8');
+    assert.equal(result.metricSources?.skeletalMuscleMass?.originalUnit, 'kg');
+    assert.deepEqual(items, before); assert.equal(graphReport([...items].reverse()).values.skeletalMuscleMass, 32.8);
+  }
+});
+
+test('SMM fragment rejects absent, wrong, extra, uncertain or detached units and numbers', () => {
+  for (const text of ['', '(%)', '(lb)', 'kg', '(KG)', '(kg) 33.0', '(kg) (kg)']) {
+    const items = mutateMuscle(x => replaceMuscleLine(x, '(kg)', text || 'Missing unit'));
+    assert.equal(graphReport(items).values.skeletalMuscleMass, undefined, text);
+  }
+  for (const text of ['SMM 328', 'SMM 32.B', 'SMM 32.8 33.0', 'SMM 0.0', 'SMM 200.1', 'Muscle 32.8']) {
+    assert.equal(graphReport(mutateMuscle(x => replaceMuscleLine(x, 'SMM 32.8', text))).values.skeletalMuscleMass, undefined, text);
+  }
+  for (const [dx, dy] of [[-220,0],[200,0],[0,-40],[0,30],[0,60]]) {
+    assert.equal(graphReport(mutateMuscle(x => moveGraphLine(muscleRow(x, '(kg)'), dx, dy))).values.skeletalMuscleMass, undefined, `${dx},${dy}`);
+  }
+  for (const split of [false,true]) for (const text of ['(kg)','(%)','(kg) 33.0']) {
+    assert.equal(graphReport([...muscleGraphLayout(split), line(text, 280, 300)]).values.skeletalMuscleMass, undefined, `${split}:${text}`);
+  }
+});
+
+test('SMM unit requires overlap against both heights, strict horizontal gap and finite contained boxes', () => {
+  const atBoundary = mutateMuscle(x => moveGraphLine(muscleRow(x, '(kg)'), 0, -7.2));
+  assert.equal(graphReport(atBoundary).values.skeletalMuscleMass, 32.8);
+  assert.equal(graphReport(mutateMuscle(x => moveGraphLine(muscleRow(x, '(kg)'), 0, -7.201))).values.skeletalMuscleMass, undefined);
+  for (const modify of [
+    (unit: InbodyLayoutLine) => { unit.bbox.y0 -= 30; unit.bbox.y1 += 30; unit.words[0].bbox = {...unit.bbox}; },
+    (unit: InbodyLayoutLine) => { unit.bbox.y0 -= 30; unit.bbox.y1 += 30; },
+    (unit: InbodyLayoutLine) => { unit.bbox.x0 = 54; },
+    (unit: InbodyLayoutLine) => { unit.bbox.x1 = 450; },
+    (unit: InbodyLayoutLine) => { unit.words[0].bbox.x0 = unit.bbox.x0 - 1; },
+  ]) assert.equal(graphReport(mutateMuscle(x => modify(muscleRow(x, '(kg)')))).values.skeletalMuscleMass, undefined);
+  for (const bad of [NaN, Infinity, -1]) for (const key of ['x0','y0','x1','y1'] as const) {
+    assert.equal(graphReport(mutateMuscle(x => { muscleRow(x, '(kg)').bbox[key] = bad; })).values.skeletalMuscleMass, undefined);
+  }
+});
+
+test('SMM graph preserves unknown context, boundary-crossing evidence, duplicated headings and conflicting streams', () => {
+  for (const text of ['Weight Control','Unknown Summary','smm (kg) 40.1','skeletal muscle mass (kg) 40.1','(%)']) {
+    for (const [x,y] of [[0,290],[30,290],[30,360],[670,290]]) {
+      assert.equal(graphReport([...muscleGraphLayout(true),line(text,x,y)]).values.skeletalMuscleMass, undefined, `${text}:${x},${y}`);
+    }
+  }
+  for (const text of ['muscle-fat analysis','2 Muscle-Fat Analysis','obesity analysis','3 Obesity Analysis']) {
+    for (const wordOnly of [false,true]) {
+      const extra=line(text,30,360); if(wordOnly)extra.text='Unknown';
+      assert.equal(graphReport([...muscleGraphLayout(true),extra]).values.skeletalMuscleMass,undefined,text);
+    }
+  }
+  const hidden=mutateMuscle(x=>{const ticks=x.find(l=>l.text.startsWith('70 80'))!;ticks.words=line('Weight Control',320,270).words;});
+  assert.equal(graphReport(hidden).values.skeletalMuscleMass,undefined);
+  const lowTicks=mutateMuscle(x=>{const ticks=x.find(l=>l.text.startsWith('70 80'))!;ticks.confidence=0;ticks.words.forEach(w=>{w.confidence=0;});});
+  assert.equal(graphReport(lowTicks).values.skeletalMuscleMass,32.8);
+});
+
+test('SMM full label remains mandatory, unique, adjacent and separate from all numeric evidence', () => {
+  for (const text of ['Muscle Mass','Skeletal Muscle','Skeletal Muscle Mass 40.1','Skeletal Muscle Mass (kg)','skeletal muscle mass']) {
+    assert.equal(graphReport(mutateMuscle(x=>replaceMuscleLine(x,'Skeletal Muscle Mass',text))).values.skeletalMuscleMass,undefined,text);
+  }
+  for (const [dx,dy] of [[10,0],[0,40],[0,-20]]) {
+    assert.equal(graphReport(mutateMuscle(x=>moveGraphLine(muscleRow(x,'Skeletal Muscle Mass'),dx,dy))).values.skeletalMuscleMass,undefined,`${dx},${dy}`);
+  }
+  assert.equal(graphReport([...muscleGraphLayout(true),line('Skeletal Muscle Mass',30,360)]).values.skeletalMuscleMass,undefined);
+  assert.equal(graphReport([...muscleGraphLayout(true),line('90 100',320,323)]).values.skeletalMuscleMass,undefined);
+});
+
+test('SMM supporting confidence stays at sixty, and each scale independently supplies a complete measurement', () => {
+  for (const text of ['Muscle-Fat Analysis','Obesity Analysis','SMM 32.8','Skeletal Muscle Mass','(kg)']) {
+    for (const confidence of [59.9,NaN,Infinity]) {
+      const items=mutateMuscle(x=>{muscleRow(x,text).confidence=confidence;});
+      assert.equal(graphReport(items).values.skeletalMuscleMass,undefined,text);
+      const word=mutateMuscle(x=>{muscleRow(x,text).words[0].confidence=confidence;});
+      assert.equal(graphReport(word).values.skeletalMuscleMass,undefined,text+' word');
+    }
+  }
+  const boundary=mutateMuscle(x=>{for(const l of x){l.confidence=60;l.words.forEach(w=>{w.confidence=60;});}});
+  assert.equal(graphReport(boundary).values.skeletalMuscleMass,32.8);
+  const a=inbodyLayoutLines(muscleGraphLayout(true)), b=inbodyLayoutLines(mutateMuscle(x=>replaceMuscleLine(x,'SMM 32.8','SMM 33.0')));
+  assert.equal(agreedInbody270sReport([a,b]).values.skeletalMuscleMass,undefined);
+  assert.equal(agreedInbody270sReport([a]).values.skeletalMuscleMass,undefined);
+  const noUnit=inbodyLayoutLines(muscleGraphLayout(true).filter(l=>l.text!=='(kg)'));
+  assert.equal(agreedInbody270sReport([a,noUnit]).values.skeletalMuscleMass,undefined);
+});
+
+test('SMM graph recovery is scale/translation invariant and never borrows history, another row or another read', () => {
+  for (const split of [false,true]) for (const scale of [.5,1,1.75,3]) {
+    const items=muscleGraphLayout(split);
+    for(const item of items) for(const box of [item.bbox,...item.words.map(w=>w.bbox)]) {
+      box.x0=box.x0*scale+100;box.x1=box.x1*scale+100;box.y0=box.y0*scale+50;box.y1=box.y1*scale+50;
+    }
+    assert.equal(graphReport(items).values.skeletalMuscleMass,32.8,`${split}:${scale}`);
+  }
+  for(const text of ['(kg)','(%)']) {
+    const duplicate=line(text,280,300);duplicate.confidence=0;duplicate.words[0].confidence=0;
+    assert.equal(graphReport([...muscleGraphLayout(true),duplicate]).values.skeletalMuscleMass,undefined);
+  }
+  const historical=muscleGraphLayout(true).filter(l=>!['SMM 32.8','Skeletal Muscle Mass','(kg)'].includes(l.text));
+  historical.push(graphRow(['SMM','(kg)','40.1'],[30,250,450],800),line('Skeletal Muscle Mass',30,830));
+  assert.equal(graphReport(historical).values.skeletalMuscleMass,undefined);
+  const fromWrongRow=muscleGraphLayout(true).filter(l=>l.text!=='(kg)');
+  fromWrongRow.push(line('Weight (kg) 40.1',250,300));
+  assert.equal(graphReport(fromWrongRow).values.skeletalMuscleMass,undefined);
+  const unsupportedUnit=muscleGraphLayout(false);const row=muscleRow(unsupportedUnit,'SMM (kg) 32.8');
+  row.text='SMM (lb) 32.8';row.words[1].text='(lb)';
+  assert.equal(agreedInbody270sReport([inbodyLayoutLines(muscleGraphLayout(false)),inbodyLayoutLines(unsupportedUnit)]).values.skeletalMuscleMass,undefined);
+  const crossing=muscleGraphLayout(true);const unit=muscleRow(crossing,'(kg)');
+  unit.bbox.y0=240;unit.words[0].bbox.y0=240;
+  assert.equal(graphReport(crossing).values.skeletalMuscleMass,undefined);
+});
