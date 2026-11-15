@@ -45,13 +45,16 @@ test('workout evidence links only saved dates and next-day condition without inf
  await page.setViewportSize({width:320,height:844});await login(page,qa.account);await synced(page);await page.getByRole('navigation',{name:'AI 연이 공통 메뉴'}).getByRole('link',{name:'운동',exact:true}).click();const panel=page.getByRole('region',{name:'운동 수행·다음 날 컨디션'});await expect(panel).toContainText('일부 1');await panel.getByText('날짜별 수행·컨디션 근거',{exact:true}).click();await expect(panel).toContainText('RPE 7/10');await expect(panel).toContainText('선택한 불편 신호 없음');await expect(panel).toContainText('피로 미응답');await noOverflow(page);await synced(page);const saved=await qa.read();await page.reload({waitUntil:'domcontentloaded'});await expect(panel).toContainText('일부 1');await synced(page);expect((await qa.read())['ai-fitness-workout-completed-days']).toEqual(saved['ai-fitness-workout-completed-days']);
 });
 
-test('typing saves measured mistakes once and recovers a lost response without a duplicate session',async({page,qa})=>{
- const routine={id:randomUUID(),user_id:qa.account.id,category:'typing',title:'검증 타자',target_minutes:15,enabled:true};expect((await qa.account.client.from('growth_routines').insert(routine)).error).toBeNull();await page.setViewportSize({width:320,height:844});await login(page,qa.account);await synced(page);const before=await qa.read();await page.goto('/growth/typing',{waitUntil:'domcontentloaded'});await page.getByLabel('입력 칸').fill('xx');await expect(page.getByRole('region',{name:'타자 오류와 변화'})).toContainText('천 2회');
- const pattern='**/rest/v1/growth_sessions*',drain=new RouteDrain();let posts=0;
- await page.route(pattern,route=>drain.run(async()=>{if(route.request().method()==='POST'){posts++;await route.fetch();await route.fulfill({status:503,contentType:'application/json',body:'{"message":"lost"}'});}else await route.fallback();}));
- try{await page.getByRole('button',{name:'진행 기록 저장'}).click();await expect(page.getByRole('button',{name:'저장 완료',exact:true})).toBeDisabled();expect(posts).toBe(1);}finally{await drain.wait();await page.unroute(pattern);}
- const sessions=await qa.account.client.from('growth_sessions').select('*');expect(sessions.data).toHaveLength(1);expect(sessions.data![0]).toMatchObject({status:'partial',source:'typing',metrics:{characters:2,correctCharacters:0,mistakeCharacters:[{character:'천',count:2}]}});
- await page.reload({waitUntil:'domcontentloaded'});await expect(page.getByRole('region',{name:'타자 오류와 변화'})).toContainText('1회 · 정확도 0%');expect(await qa.read()).toEqual(before);await noOverflow(page);
+test('retired typing preserves original mistake history without duplicate sessions or browser writes',async({page,qa})=>{
+ const routine={id:randomUUID(),user_id:qa.account.id,category:'typing',title:'QA historical typing',target_minutes:15,enabled:true};
+ expect((await qa.account.client.from('growth_routines').insert(routine)).error).toBeNull();
+ const session={id:randomUUID(),user_id:qa.account.id,routine_id:routine.id,session_date:'2001-01-02',status:'partial',source:'typing',planned_minutes:15,actual_minutes:1,memo:'QA original mistake history',metrics:{characters:2,correctCharacters:0,mistakeCharacters:[{character:'천',count:2}],legacyUnknown:{keep:true}}};
+ expect((await qa.account.client.from('growth_sessions').insert(session)).error).toBeNull();
+ const snapshot=async()=>{const routines=await qa.account.client.from('growth_routines').select('*').order('id'),sessions=await qa.account.client.from('growth_sessions').select('*').order('id');expect(routines.error).toBeNull();expect(sessions.error).toBeNull();return {routines:routines.data,sessions:sessions.data};};
+ const originalRows=await snapshot();expect(originalRows.sessions).toHaveLength(1);expect(originalRows.routines).toHaveLength(1);
+ await page.setViewportSize({width:320,height:844});await login(page,qa.account);await synced(page);const before=await qa.read();
+ const observer=observeRetiredRequests(page);
+ try{await visitRetiredPractice(page,'/growth/typing');await visitRetiredPractice(page,'/growth/typing/basics');expect(await snapshot()).toEqual(originalRows);expect(await qa.read()).toEqual(before);await noOverflow(page);observer.assertQuiet();}finally{observer.dispose();}
 });
 
 test('handwriting measures remaining strokes, saves private image and actual time, and survives reload',async({page,qa})=>{
@@ -81,3 +84,5 @@ test('handwriting measures remaining strokes, saves private image and actual tim
 test('language focus links due work mistakes and opens the new drawing and quality lessons',async({page,qa})=>{
  const lesson=CURRICULUM.find(row=>row.id==='w21')!;const item={id:'w21:0',lessonId:'w21',lessonTitle:lesson.title,prompt:lesson.quiz[0].prompt,explanation:lesson.quiz[0].explanation,createdAt:'2001-01-01',wrongCount:3,lastNeededHelp:true};expect((await qa.account.client.from('language_user_state').update({state:{...originalLanguage,japaneseCurriculumReviewV1:JSON.stringify([item])}}).eq('user_id',qa.account.id)).error).toBeNull();await page.setViewportSize({width:320,height:844});await login(page,qa.account,'/language/settings');await expect(page.getByText('학습 기록 · 서버 저장 확인',{exact:true})).toBeVisible();await page.goto('/language/review',{waitUntil:'domcontentloaded'});const panel=page.getByRole('region',{name:'집중 복습 추천'});await panel.getByLabel('관심 복습 분야').selectOption('work');await expect(panel).toContainText('누적 오답 3회 · 최근 힌트 사용');await panel.getByRole('button',{name:'이 문제 먼저 복습'}).click();await noOverflow(page);await panel.getByRole('link',{name:'도면·공차 수업'}).click();await expect(page.getByRole('heading',{name:lesson.title,exact:true})).toBeVisible();await page.goto('/language/learn?lesson=w22',{waitUntil:'domcontentloaded'});await expect(page.getByRole('heading',{name:'측정 결과와 품질 확인',exact:true})).toBeVisible();await noOverflow(page);
 });
+
+import { observeRetiredRequests, visitRetiredPractice } from './drawing-tools';
