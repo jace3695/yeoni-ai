@@ -278,7 +278,11 @@ test('bulk category memory, full history, preview, save and undo survive reload 
   await panel.getByRole('button', { name: '교통 2건 변경 전후 보기' }).click();
   await expect(panel.getByText('스타벅스 · 기타 → 교통', { exact: true })).toHaveCount(2);
   await menu(page).getByRole('button', { name: '기록', exact: true }).click();
-  await page.getByText('문장으로 입력하기 · 기존 방식', { exact: true }).click();
+  const sentenceEntry = page.getByRole('group', { name: '기록 입력 방법', exact: true }).getByRole('button', { name: '문장으로 입력', exact: true });
+  await sentenceEntry.click();
+  await expect(sentenceEntry).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('기록할 내용', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('기록할 내용', { exact: true })).toBeEditable();
   await page.getByLabel('기록할 내용').fill('오늘 스타벅스 7000원 체크카드');
   await page.getByRole('button', { name: '내용 확인하기', exact: true }).click();
   await expect(page.getByLabel('카테고리', { exact: false })).toHaveValue('교통');

@@ -5,7 +5,7 @@ import { test, expect, login, synced, original, originalLanguage, assertOriginal
 const daysAgo = (days: number) => { const date = new Date(`${today()}T12:00:00Z`); date.setUTCDate(date.getUTCDate() - days); return date.toISOString().slice(0, 10); };
 const noOverflow = async (page: Parameters<typeof synced>[0]) => { await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true); };
 
-test('free mode keeps paid routes blocked and provides a clearly labelled conversation exercise', async ({ page, qa }) => {
+test('free mode keeps paid routes blocked and preserves records on the retired conversation page', async ({ page, qa }) => {
   for (const endpoint of ['/api/tts', '/api/language/tts', '/api/claude']) {
     const anonymous = await page.request.post(endpoint, { data: { text: '합성 검증' } });
     expect(anonymous.status()).toBe(401);
@@ -16,27 +16,25 @@ test('free mode keeps paid routes blocked and provides a clearly labelled conver
   await page.setViewportSize({ width: 320, height: 844 });
   await login(page, qa.account);
   await page.goto('/language/conversation');
-  await expect(page.getByRole('heading', { name: '상황별 회화 연습', exact: true })).toBeVisible();
-  await page.getByLabel('상황', { exact: true }).selectOption('카페');
-  const practice = page.getByRole('region', { name: '상황별 고정 회화', exact: true });
-  await expect(practice).toContainText('자유 생성 대화·문장 자동 교정·발음 채점은 하지 않아요.');
-  await practice.getByRole('button', { name: '이 예문으로 시작', exact: true }).click();
-  await expect(practice.getByRole('article', { name: '상대방의 말', exact: true })).toContainText('ホットとアイス、どちらになさいますか？');
-  const choices = practice.getByRole('group', { name: '어떻게 답할까요? 뜻을 보고 골라요.', exact: true });
-  await expect(choices.getByRole('button')).toHaveCount(2);
-  await choices.getByRole('button', { name: 'ホットでお願いします。 · 따뜻한 것으로 부탁드려요.', exact: true }).click();
-  await expect(practice.getByRole('article', { name: '내가 고른 답', exact: true })).toContainText('ホットでお願いします。');
-  await expect(practice.getByRole('article', { name: '상대방의 마무리', exact: true })).toContainText('かしこまりました。少々お待ちください。');
-  await expect(practice).toContainText('자동 점수나 학습 완료 기록은 만들지 않아요.');
-  await practice.getByRole('button', { name: '처음부터 다시 연습', exact: true }).click();
-  await practice.getByLabel('예문 직접 입력', { exact: true }).fill('コーヒーを一つください。');
-  await practice.getByRole('button', { name: '준비된 예문 확인', exact: true }).click();
-  await expect(practice.getByRole('article', { name: '상대방의 말', exact: true })).toContainText('ホットとアイス、どちらになさいますか？');
-  await noOverflow(page);
-  expect(await page.evaluate(() => ({ saved: localStorage.getItem('savedSentences'), wrong: localStorage.getItem('wrongSentences') }))).toEqual({ saved: null, wrong: null });
-  expect(await qa.read()).toEqual(original);
-  expect(await qa.readLanguage()).toEqual(originalLanguage);
-  expect(qa.traffic.entries.filter(entry => entry.table === 'language_user_state' && entry.method !== 'GET'), 'Local conversation practice never writes learning records automatically').toEqual([]);
+  for (const revisit of [false, true]) {
+    if (revisit) await page.reload();
+    await expect(page.getByRole('heading', { name: '이 연습은 종료했어요', exact: true })).toBeVisible();
+    await expect(page.getByText('기존 기록은 삭제하지 않고 보관합니다.', { exact: true })).toBeVisible();
+    const backToLearning = page.getByRole('link', { name: '일본어 학습으로', exact: true });
+    await expect(backToLearning).toBeVisible();
+    await expect(backToLearning).toHaveAttribute('href', '/language');
+    await expect(page.getByRole('heading', { name: '상황별 회화 연습', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: '상황별 고정 회화', exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('상황', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('예문 직접 입력', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '이 예문으로 시작', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '준비된 예문 확인', exact: true })).toHaveCount(0);
+    await noOverflow(page);
+    expect(await page.evaluate(() => ({ saved: localStorage.getItem('savedSentences'), wrong: localStorage.getItem('wrongSentences') }))).toEqual({ saved: null, wrong: null });
+    expect(await qa.read()).toEqual(original);
+    expect(await qa.readLanguage()).toEqual(originalLanguage);
+    expect(qa.traffic.entries.filter(entry => entry.table === 'language_user_state' && entry.method !== 'GET'), 'The retired conversation page never writes learning records, including after reload').toEqual([]);
+  }
 });
 
 test('meal reuse previews before applying, preserves other inputs, and saves weekly context to the actual DB', async ({ page, qa }) => {
