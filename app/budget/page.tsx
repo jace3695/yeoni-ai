@@ -190,6 +190,7 @@ function BudgetDashboard() {
   const [parsedItems, setParsedItems] = useState<any[]>([])
   const [showConfirm, setShowConfirm] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
+  const adviceRequestRef = useRef<{ owner: string; epoch: number } | null>(null)
   const parseRequestRef = useRef<{ owner: string; epoch: number } | null>(null)
   const voiceInputEpoch = useRef(0)
   useEffect(() => () => { voiceInputEpoch.current += 1 }, [user?.id, tab, input, showConfirm, aiLoading])
@@ -204,6 +205,11 @@ function BudgetDashboard() {
     reviewWasManual.current = false
     savingRecordsRef.current = false; setIsSavingRecords(false)
     setAiLoading(false)
+    adviceRequestRef.current = null
+    setAnalyzing(false)
+    setQuestion('')
+    setAiAnswer('')
+    setAiFollowUpQuestions([])
     pendingSaveRef.current = null
     setHasPendingSave(false)
     setParsedItems([])
@@ -1716,35 +1722,36 @@ function BudgetDashboard() {
     }
   }
 
-  const handleAnalyze = async () => {
-    if (!question.trim()) return
+  const runBudgetAdvice = async (q: string, updateQuestion = false) => {
+    const owner = user?.id, epoch = budgetEpoch.current
+    if (!q.trim() || !budgetMounted.current || !owner || liveBudgetOwner.current !== owner) return
+    const active = adviceRequestRef.current
+    if (active && active.owner === owner && active.epoch === epoch) return
+    const request = { owner, epoch }
+    adviceRequestRef.current = request
+    const boundary: AuthenticatedFetchBoundary = {
+      ownerId: owner,
+      isCurrent: () => budgetMounted.current && liveBudgetOwner.current === owner
+        && budgetEpoch.current === epoch && adviceRequestRef.current === request,
+    }
+    if (updateQuestion) setQuestion(q)
     setAnalyzing(true)
-
     try {
-      await buildExpenseAnswer(question)
+      await buildExpenseAnswer(q, boundary)
     } catch (error) {
-      console.error('AI 질문 처리 오류:', error)
-      setAiAnswer('연이의 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
+      if (!boundary.isCurrent()) return
+      setAiAnswer(error instanceof AuthenticatedFetchBoundaryError ? error.message : '연이의 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
       setAiFollowUpQuestions([])
     } finally {
-      setAnalyzing(false)
+      if (adviceRequestRef.current === request) {
+        adviceRequestRef.current = null
+        if (budgetMounted.current && liveBudgetOwner.current === owner && budgetEpoch.current === epoch) setAnalyzing(false)
+      }
     }
   }
 
-  const handleSuggestedQuestion = async (q: string) => {
-    setQuestion(q)
-    setAnalyzing(true)
-
-    try {
-      await buildExpenseAnswer(q)
-    } catch (error) {
-      console.error('AI 추천 질문 처리 오류:', error)
-      setAiAnswer('연이의 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.')
-      setAiFollowUpQuestions([])
-    } finally {
-      setAnalyzing(false)
-    }
-  }
+  const handleAnalyze = async () => { await runBudgetAdvice(question) }
+  const handleSuggestedQuestion = async (q: string) => { await runBudgetAdvice(q, true) }
 
   useEffect(() => {
     if (tab !== 'analysis' || analysisView !== 'ai') return
@@ -1851,15 +1858,11 @@ function BudgetDashboard() {
   }
 
   const handleQuestionVoiceInput = async () => {
+    const owner = user?.id, epoch = budgetEpoch.current
+    if (!owner || !budgetMounted.current || liveBudgetOwner.current !== owner) return
     const onText = async (text: string) => {
-      setQuestion(text)
-      setAnalyzing(true)
-
-      try {
-        await buildExpenseAnswer(text)
-      } finally {
-        setAnalyzing(false)
-      }
+      if (!budgetMounted.current || liveBudgetOwner.current !== owner || budgetEpoch.current !== epoch) return
+      await runBudgetAdvice(text, true)
     }
 
     if (Capacitor.isNativePlatform()) {
@@ -2440,11 +2443,13 @@ function BudgetDashboard() {
     })
   }
 
-  const buildExpenseAnswer = async (rawQuestion?: string) => {
+  const buildExpenseAnswer = async (rawQuestion: string, boundary: AuthenticatedFetchBoundary) => {
+    if (!boundary.isCurrent()) return
     const q = (rawQuestion || question).trim()
     if (!q) return
 
     const finishAiAnswer = (answer: string, followUps = getContextualFollowUps(q)) => {
+      if (!boundary.isCurrent()) return
       setAiAnswer(answer)
       setAiFollowUpQuestions(followUps.slice(0, 3))
     }
@@ -2725,9 +2730,10 @@ function BudgetDashboard() {
           aiStyleDetail
         }
       })
-    })
+    }, boundary)
 
     const data = await res.json().catch(() => null)
+    if (!boundary.isCurrent()) return
     if (!res.ok || !data?.answer) {
       const errorAnswer = data?.error || '연이의 답변을 불러오지 못했어요. 잠시 후 다시 질문해주세요.'
       finishAiAnswer(errorAnswer, ['선택 월 지출을 요약해줘', '가장 많이 쓴 항목은?', '예산 사용률을 알려줘'])

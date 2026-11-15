@@ -299,3 +299,77 @@ test('manual review is excluded while category lookup retains the parse lock', a
   resolveRules({ data: [], error: null, count: 0 }); await pending;
   assert.equal(f.state.confirms, 1);
 });
+
+// Exact advice/transport AST with fake deferred session, fetch, JSON and voice callbacks.
+// No actual account/React remount, API, storage, DOM or speech verification.
+test('budget advice boundary: 35 deferred request, token and voice regressions', async () => {
+  const regressionModuleSource = String.raw`'use strict';
+// Synthetic-only regression export. No file writes, SDK, browser, network, or real speech.
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+module.exports = async function verifyBudgetAdviceBoundary(page, helper, ts) {
+const parse=(file,s)=>ts.createSourceFile(file,s,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+function extract(s,name){const a=parse(name,s),out=[];function visit(n){if((ts.isFunctionDeclaration(n)||ts.isClassDeclaration(n))&&n.name?.text===name)out.push(n.getText(a).replace(/^export /,''));if(ts.isVariableDeclaration(n)&&n.name.getText(a)===name)out.push('const '+n.getText(a)+';');ts.forEachChild(n,visit)}visit(a);assert.equal(out.length,1,name);return out[0]}
+const a=parse('page',page),effects=[];function visit(n){if(ts.isCallExpression(n)&&n.expression.getText(a)==='useEffect'&&n.arguments[0]?.getText(a).includes('adviceRequestRef.current = null'))effects.push(n.arguments[0].getText(a));ts.forEachChild(n,visit)}visit(a);assert.equal(effects.length,1);
+const names=['buildExpenseAnswer','runBudgetAdvice','handleAnalyze','handleSuggestedQuestion','handleQuestionVoiceInput'];
+const exact=[extract(helper,'AuthenticatedFetchBoundaryError'),extract(helper,'authenticatedFetch'),...names.map(n=>extract(page,n)),'const applyOwnerEffect = '+effects[0]+';'].join('\n');
+const compiled=ts.transpileModule(exact,{compilerOptions:{target:99,module:ts.ModuleKind.CommonJS}}).outputText;
+const defer=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return{promise,resolve,reject}};const tick=async()=>{for(let i=0;i<10;i++)await Promise.resolve()};const json=x=>JSON.parse(JSON.stringify(x));
+function harness({manualFetch=false,manualJson=false,native=false}={}){
+ const state={question:'SYNTHETIC_QUESTION_A',answer:'prior answer',followups:['prior'],busy:false},changes=[],sessions=[],fetches=[],voice=[],reads=[];
+ const refs={budgetMounted:{current:true},liveBudgetOwner:{current:'fake-A'},budgetEpoch:{current:1},adviceRequestRef:{current:null},reviewOwner:{current:null},reviewWasManual:{current:false},savingRecordsRef:{current:false},pendingSaveRef:{current:null}};
+ const responses=[];
+ function render(owner='A'){
+  const c={Headers,console,Date,Promise,user:owner?{id:'fake-'+owner}:null,...refs,API_BASE_URL:'',question:state.question,selectedMonth:'2026-11',transactions:[],selectedTransactions:[{category:'SYNTHETIC_'+owner+'_CATEGORY',amount:123,payment:'synthetic',transaction_type:'일반 지출'}],confirmedRecurringExpenses:[],fixedExpenseCandidates:[],budgetConfigured:false,
+   getContextualFollowUps:()=>['synthetic followup'],getPeriodFilter:()=>null,getQuestionCategory:()=>'',getQuestionPayment:()=>'',getQuestionPlaceKeyword:()=>'',filterTransactionsByQuestion:()=>[],
+   setAiAnswer:v=>{state.answer=v;changes.push(['answer',v])},setAiFollowUpQuestions:v=>{state.followups=v;changes.push(['followups',v])},setAnalyzing:v=>{state.busy=v;changes.push(['busy',v])},setQuestion:v=>{state.question=v;changes.push(['question',v])},
+   window:{localStorage:{}},readPendingBudgetSave:()=>null,fetchTransactions:()=>{reads.push('expense');return Promise.resolve()},fetchSavings:()=>{reads.push('saving');return Promise.resolve()},fetchIncome:()=>{reads.push('income');return Promise.resolve()},
+   Capacitor:{isNativePlatform:()=>native},runWebSpeechRecognition:cb=>{voice.push(cb)},runNativeSpeechRecognition:async cb=>{voice.push(cb)},
+   createClient:()=>({auth:{getSession:()=>{const d=defer();sessions.push(d);return d.promise}}}),
+   fetch:(url,init)=>{const f=defer(),j=defer();const response={ok:true,json:()=>manualJson?j.promise:Promise.resolve({answer:'SYNTHETIC_RESPONSE_'+owner,followUpQuestions:['one','two','three','four',8]})};fetches.push({url,init,owner,resolve:f.resolve,reject:f.reject,response,jsonResolve:j.resolve,jsonReject:j.reject});responses.push(response);return manualFetch?f.promise:Promise.resolve(response)},
+  };
+  for(const n of ['setIsSavingRecords','setAiLoading','setHasPendingSave','setParsedItems','setInput','setShowConfirm','setFeedback','setTab'])c[n]=v=>changes.push([n,v]);
+  for(const n of ['previousYear','previousMonth','total','incomeTotal','savingsRecordedTotal','savingsRate','topCategoryName','topCategoryAmount','estimatedFixedTotal','mobileMicroTotal','prepaidTopupTotal','prepaidSpendTotal','estimatedPrepaidBalance','telecomTotal','actualTelecomExpense','currentMonthExpenses','currentMonthIncome','currentMonthSavings','previousMonthExpenses','previousMonthIncome','previousMonthSavings','monthlyBudget','budgetRiskLabel','budgetRiskText','aiStyle','aiStyleDetail'])c[n]=0;
+  return vm.runInNewContext(compiled+';({'+names.join(',')+',applyOwnerEffect})',c,{timeout:1000});
+ }
+ let api=render();
+ return{state,changes,sessions,fetches,voice,refs,render,get api(){return api},transition(owner){refs.liveBudgetOwner.current=owner?'fake-'+owner:null;api=render(owner);api.applyOwnerEffect();return api},session(i,owner='A',overrides={}){sessions[i].resolve({data:{session:owner?{user:{id:'fake-'+owner},access_token:'NOT_A_REAL_TOKEN_'+owner,...overrides}:null}})},unmount(){refs.budgetMounted.current=false;refs.budgetEpoch.current++},clearChanges(){changes.length=0},reads};
+}
+const rows=[];async function scenario(name,fn){try { await fn(); } catch (error) { error.message = name + ': ' + error.message; throw error; } rows.push({name,pass:true})}
+for(const entry of ['handleAnalyze','handleSuggestedQuestion'])for(const mode of ['normal','switch-B','logout','unmount','ABA','session-mismatch'])await scenario(entry+':auth-await:'+mode,async()=>{
+ const h=harness(),p=h.api[entry]('SYNTHETIC_QUESTION_A');assert.equal(h.sessions.length,1);if(mode==='switch-B')h.transition('B');if(mode==='logout')h.transition(null);if(mode==='unmount')h.unmount();if(mode==='ABA'){h.transition('B');h.transition('A')}h.clearChanges();h.session(0,mode==='session-mismatch'?'B':'A');await p;
+ assert.equal(h.fetches.length,mode==='normal'?1:0);if(mode==='normal'){assert.equal(h.state.answer,'SYNTHETIC_RESPONSE_A');assert.equal(h.state.followups.length,3);assert.equal(h.state.busy,false);const req=h.fetches[0];assert.equal(req.init.headers.get('Authorization'),'Bearer NOT_A_REAL_TOKEN_A');assert.equal(req.init.boundary,undefined);assert.equal(JSON.parse(req.init.body).categorySummary.SYNTHETIC_A_CATEGORY,123);}else if(mode==='session-mismatch'){assert.match(h.state.answer,/요청 계정/);assert.equal(h.state.busy,false);}else assert.equal(h.changes.length,0);
+});
+await scenario('same-render direct and suggested duplicate dispatch only once, no question replacement',async()=>{const h=harness(),p=h.api.handleAnalyze(),token=h.refs.adviceRequestRef.current;await h.api.handleSuggestedQuestion('SECOND');assert.equal(h.sessions.length,1);assert.equal(h.state.question,'SYNTHETIC_QUESTION_A');assert.equal(h.refs.adviceRequestRef.current,token);h.session(0);await p;const next=h.render().handleSuggestedQuestion('AFTER_SUCCESS');assert.equal(h.sessions.length,2);h.session(1);await next;assert.equal(h.fetches.length,2)});
+for(const stage of ['auth','fetch-error','json-answer','json-error'])await scenario('old completion cannot replace or unlock new owner request:'+stage,async()=>{
+ const h=harness({manualFetch:stage==='fetch-error',manualJson:stage.startsWith('json')}),old=h.api.handleAnalyze();if(stage!=='auth'){h.session(0);await tick();assert.equal(h.fetches.length,1)}
+ const nextApi=h.transition('B'),next=nextApi.handleSuggestedQuestion('QUESTION_B'),token=h.refs.adviceRequestRef.current;h.clearChanges();
+ if(stage==='auth')h.session(0);else if(stage==='fetch-error')h.fetches[0].reject(new Error('OLD ERROR'));else if(stage==='json-answer')h.fetches[0].jsonResolve({answer:'OLD ANSWER'});else h.fetches[0].jsonReject(new Error('OLD JSON ERROR'));
+ await old;assert.equal(h.changes.length,0);assert.equal(h.refs.adviceRequestRef.current,token);assert.equal(h.state.busy,true);h.session(1,'B');await tick();const f=h.fetches.at(-1);if(stage==='fetch-error')f.resolve(f.response);else if(stage.startsWith('json'))f.jsonResolve({answer:'NEW ANSWER'});await next;assert.equal(h.state.busy,false);assert.equal(h.refs.adviceRequestRef.current,null);assert.ok(!String(h.state.answer).includes('OLD'));
+});
+await scenario('network failure releases current token and permits retry',async()=>{const h=harness({manualFetch:true}),p=h.api.handleAnalyze();h.session(0);await tick();h.fetches[0].reject(new Error('SYNTHETIC_NETWORK_ERROR'));await p;assert.match(h.state.answer,/불러오지 못/);assert.equal(h.state.busy,false);assert.equal(h.refs.adviceRequestRef.current,null);const p2=h.render().handleAnalyze();h.session(1);await tick();h.fetches[1].resolve(h.fetches[1].response);await p2;assert.equal(h.fetches.length,2)});
+await scenario('same owner effect new epoch preserves new token against old finally',async()=>{const h=harness(),old=h.api.handleAnalyze();const api=h.transition('A'),next=api.handleSuggestedQuestion('NEW_EPOCH');const token=h.refs.adviceRequestRef.current;h.clearChanges();h.session(0);await old;assert.equal(h.changes.length,0);assert.equal(h.refs.adviceRequestRef.current,token);h.session(1);await next;assert.equal(h.state.busy,false)});
+for(const native of [false,true])for(const mode of ['normal','B','ABA','unmount','already-busy'])await scenario('voice callback synthetic '+(native?'native':'web')+':'+mode,async()=>{const h=harness({native});await h.api.handleQuestionVoiceInput();assert.equal(h.voice.length,1);let existing;
+ if(mode==='B')h.transition('B');if(mode==='ABA'){h.transition('B');h.transition('A')}if(mode==='unmount')h.unmount();if(mode==='already-busy')existing=h.api.handleAnalyze();h.clearChanges();const p=h.voice[0]('VOICE_TEXT'); p.catch(() => {}); // Observe rejection immediately even when a count assertion fails first.
+ if(mode==='normal'){assert.equal(h.state.question,'VOICE_TEXT');assert.equal(h.sessions.length,1);h.session(0);await p;assert.equal(h.fetches.length,1)}else if(mode==='already-busy'){await p;assert.equal(h.sessions.length,1);assert.equal(h.changes.length,0);h.session(0);await existing;}else{await p;assert.equal(h.sessions.length,0);assert.equal(h.changes.length,0)}
+});
+for(const mode of ['empty','no-owner','mismatch','unmounted'])await scenario('entry refused before state/request mutation:'+mode,async()=>{const h=harness();let api=h.api;if(mode==='no-owner')api=h.transition(null);if(mode==='mismatch')h.refs.liveBudgetOwner.current='fake-B';if(mode==='unmounted')h.unmount();h.clearChanges();await api.handleSuggestedQuestion(mode==='empty'?'  ':'QUESTION');assert.equal(h.sessions.length,0);assert.equal(h.fetches.length,0);assert.equal(h.changes.length,0)});
+await scenario('actual owner effect clears advice state and token',async()=>{const h=harness();const p=h.api.handleAnalyze();assert.ok(h.refs.adviceRequestRef.current);h.transition('B');assert.equal(h.refs.adviceRequestRef.current,null);assert.equal(h.state.question,'');assert.equal(h.state.answer,'');assert.equal(h.state.busy,false);assert.deepEqual(json(h.state.followups),[]);h.session(0);await p;assert.equal(h.state.answer,'')});
+await scenario('local deterministic max answer does not call auth or endpoint',async()=>{const h=harness();await h.api.handleSuggestedQuestion('가장 많이 쓴 항목은?');assert.equal(h.sessions.length,0);assert.equal(h.fetches.length,0);assert.match(h.state.answer,/조건에 맞는/);assert.equal(h.state.busy,false);assert.equal(h.refs.adviceRequestRef.current,null)});
+return rows;
+};
+`;
+  type AdviceRegressionModule = { exports: (page: string, helper: string, compiler: typeof ts) => Promise<Array<{ name: string; pass: boolean }>> };
+  const regressionModule = { exports: undefined } as unknown as AdviceRegressionModule;
+  vm.runInNewContext(regressionModuleSource, {
+    module: regressionModule, Headers, console,
+    require: (name: string) => {
+      if (name === 'node:vm') return vm;
+      if (name === 'node:assert/strict') return assert;
+      throw new Error(`Unexpected regression dependency: ${name}`);
+    },
+  }, { timeout: 1000 });
+  const cases = await regressionModule.exports(source, transportSource, ts);
+  assert.equal(cases.length, 35);
+  assert.ok(cases.every(entry => entry.pass));
+});

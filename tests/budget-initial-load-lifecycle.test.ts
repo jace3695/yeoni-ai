@@ -37,6 +37,7 @@ const auth = (owner: string | null): Auth => ({ data: { user: owner ? { id: owne
 const ready = { expense: 'ready', income: 'ready', saving: 'ready' };
 function fixture(options: { immediateCommit?: boolean; holdSettings?: boolean; pending?: 'none' | 'present' | 'throw' } = {}) {
   const state = {
+    adviceBusy: false, adviceQuestion: '', adviceAnswer: '', adviceFollowUps: [] as string[],
     owner: null as string | null, pendingOwner: null as string | null, mounted: true,
     appReady: false, loading: true, expense: [] as Row[], income: [] as Row[], saving: [] as Row[],
     loads: {} as Record<string, string>, parsedItems: [] as unknown[], showConfirm: false, feedback: '', recurringReads: 0,
@@ -53,6 +54,11 @@ function fixture(options: { immediateCommit?: boolean; holdSettings?: boolean; p
   const noop = () => {};
   const pending = { items: [{ name: 'synthetic pending draft' }] };
   const context = {
+    adviceRequestRef: { current: null as { owner: string; epoch: number } | null },
+    setAnalyzing: (value: boolean) => { state.adviceBusy = value; },
+    setQuestion: (value: string) => { state.adviceQuestion = value; },
+    setAiAnswer: (value: string) => { state.adviceAnswer = value; },
+    setAiFollowUpQuestions: (value: string[]) => { state.adviceFollowUps = value; },
     user: null as { id: string } | null,
     recordReadVersions: { current: { expense: 0, income: 0, saving: 0 } },
     budgetEpoch: { current: 0 }, liveBudgetOwner: { current: null as string | null },
