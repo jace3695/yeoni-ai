@@ -20,7 +20,7 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { SpeechRecognition } from '@capacitor-community/speech-recognition'
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
-import { authenticatedFetch, createClient } from '@/lib/supabase'
+import { authenticatedFetch, AuthenticatedFetchBoundaryError, createClient, type AuthenticatedFetchBoundary } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowRight, ChevronDown, ChevronUp, CircleDollarSign, PiggyBank, ReceiptText } from 'lucide-react'
@@ -148,6 +148,11 @@ function BudgetDashboard() {
   const reviewWasManual = useRef(false)
   const budgetEpoch = useRef(0)
   const recordReadVersions = useRef<Record<BudgetRecordKind, number>>({ expense: 0, income: 0, saving: 0 })
+  const budgetMounted = useRef(false)
+  useEffect(() => {
+    budgetMounted.current = true
+    return () => { budgetMounted.current = false }
+  }, [])
   useEffect(() => () => { budgetEpoch.current += 1 }, [])
   const [manualReset, setManualReset] = useState(0)
   const manualEntry = useManualBudgetDraft(user?.id ?? null)
@@ -185,6 +190,7 @@ function BudgetDashboard() {
   const [parsedItems, setParsedItems] = useState<any[]>([])
   const [showConfirm, setShowConfirm] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
+  const parseRequestRef = useRef<{ owner: string; epoch: number } | null>(null)
   const voiceInputEpoch = useRef(0)
   useEffect(() => () => { voiceInputEpoch.current += 1 }, [user?.id, tab, input, showConfirm, aiLoading])
   const [isSavingRecords, setIsSavingRecords] = useState(false)
@@ -1396,7 +1402,7 @@ function BudgetDashboard() {
     }
   }
 
-  const parseInput = async (text: string) => {
+  const parseInput = async (text: string, boundary: AuthenticatedFetchBoundary) => {
     const normalizeItems = (rawItems: any[]) => {
       const items = rawItems
         .filter((item: any) => item && item.amount)
@@ -1441,7 +1447,7 @@ function BudgetDashboard() {
           messages: [{ role: 'user', content: text }],
           system
         })
-      })
+      }, boundary)
 
       const data = await res.json()
       const raw = data.content?.[0]?.text || ''
@@ -1459,7 +1465,9 @@ function BudgetDashboard() {
       }
 
       return normalizeItems(items)
-    } catch {
+    } catch (error) {
+      if (error instanceof AuthenticatedFetchBoundaryError || !boundary.isCurrent()
+        || (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError')) throw new AuthenticatedFetchBoundaryError()
       const fallbackItems = parseInputLocally(text)
       return normalizeItems(fallbackItems)
     }
@@ -1473,33 +1481,47 @@ function BudgetDashboard() {
   }
 
   const handleAddTransaction = async () => {
-    if (!input.trim() || savingRecordsRef.current || pendingSaveRef.current) return
+    if (!budgetMounted.current || !input.trim() || savingRecordsRef.current || pendingSaveRef.current) return
     const startedOwner = user?.id, startedEpoch = budgetEpoch.current
+    if (!startedOwner || liveBudgetOwner.current !== startedOwner) return
+    const activeRequest = parseRequestRef.current
+    if (activeRequest && activeRequest.owner === startedOwner && activeRequest.epoch === startedEpoch) return
+    const request = { owner: startedOwner, epoch: startedEpoch }
+    parseRequestRef.current = request
+    const boundary: AuthenticatedFetchBoundary = {
+      ownerId: startedOwner,
+      isCurrent: () => budgetMounted.current && liveBudgetOwner.current === startedOwner
+        && budgetEpoch.current === startedEpoch && parseRequestRef.current === request,
+    }
     setAiLoading(true)
     setFeedback('')
 
     try {
-      const parsed = await parseInput(input)
-      if (!startedOwner || liveBudgetOwner.current !== startedOwner || budgetEpoch.current !== startedEpoch) return
+      const parsed = await parseInput(input, boundary)
+      if (!boundary.isCurrent()) return
       const { data: rules, error: rulesError, count } = await supabase.from('budget_category_rules')
-        .select('merchant_key,category,revision', { count: 'exact' }).eq('user_id', user.id).order('merchant_key').limit(1000)
-      if (!startedOwner || liveBudgetOwner.current !== startedOwner || budgetEpoch.current !== startedEpoch) return
+        .select('merchant_key,category,revision', { count: 'exact' }).eq('user_id', startedOwner).order('merchant_key').limit(1000)
+      if (!boundary.isCurrent()) return
       if (rulesError || count !== rules?.length) {
         setFeedback('기억한 분류를 읽지 못했어요. 연결을 확인한 뒤 다시 해석해 주세요.')
-        setAiLoading(false)
         return
       }
-      if (!startedOwner || liveBudgetOwner.current !== startedOwner || budgetEpoch.current !== startedEpoch) return
+      if (!boundary.isCurrent()) return
       reviewOwner.current = startedOwner
       reviewWasManual.current = false
       setParsedItems(applyCategoryMemory(parsed, rules || []))
       setShowConfirm(true)
-    } catch {
-      if (liveBudgetOwner.current !== startedOwner || budgetEpoch.current !== startedEpoch) return
+    } catch (error) {
+      if (!boundary.isCurrent()) return
+      if (error instanceof AuthenticatedFetchBoundaryError) { setFeedback(error.message); return }
       setFeedback('입력 내용을 완전히 해석하지 못했어요. 내용을 조금만 다듬어서 다시 해석해보세요.')
+    } finally {
+      // A stale completion must never unlock a newer account-generation request.
+      if (parseRequestRef.current === request) {
+        parseRequestRef.current = null
+        if (liveBudgetOwner.current === startedOwner && budgetEpoch.current === startedEpoch) setAiLoading(false)
+      }
     }
-
-    if (liveBudgetOwner.current === startedOwner && budgetEpoch.current === startedEpoch) setAiLoading(false)
   }
 
   const updateParsedItem = (index: number, patch: Record<string, unknown>) => {

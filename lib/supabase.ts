@@ -25,13 +25,43 @@ export function createClient() {
   return browserClient
 }
 
-export async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-  const { data: { session } } = await createClient().auth.getSession()
-  const headers = new Headers(init.headers)
+export type AuthenticatedFetchBoundary = {
+  ownerId: string
+  isCurrent: () => boolean
+}
 
-  if (session?.access_token) {
-    headers.set('Authorization', `Bearer ${session.access_token}`)
+export class AuthenticatedFetchBoundaryError extends Error {
+  constructor() {
+    super('요청 계정이 바뀌었거나 인증을 확인하지 못했어요. 다시 로그인한 뒤 시도해 주세요.')
+    this.name = 'AuthenticatedFetchBoundaryError'
   }
+}
 
-  return fetch(input, { ...init, headers })
+export async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = {}, boundary?: AuthenticatedFetchBoundary) {
+  const assertCurrent = () => {
+    if (!boundary) return
+    let current = false
+    try { current = typeof boundary.ownerId === 'string' && boundary.ownerId.trim().length > 0 && boundary.isCurrent() && !init.signal?.aborted } catch { /* fail closed */ }
+    if (!current) throw new AuthenticatedFetchBoundaryError()
+  }
+  assertCurrent()
+  const auth = await (async () => {
+    try { return await createClient().auth.getSession() }
+    catch (error) { if (boundary) throw new AuthenticatedFetchBoundaryError(); throw error }
+  })()
+  assertCurrent()
+  if (boundary && !auth?.data) throw new AuthenticatedFetchBoundaryError()
+  const session = auth.data.session
+  if (boundary && (auth.error || session?.user?.id !== boundary.ownerId
+    || typeof session?.access_token !== 'string' || !/^\S+$/.test(session.access_token)
+    || (session.expires_at !== undefined && (!Number.isFinite(session.expires_at) || session.expires_at <= Date.now() / 1000)))) {
+    throw new AuthenticatedFetchBoundaryError()
+  }
+  const headers = new Headers(init.headers)
+  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
+  // No await between the final caller-boundary check and dispatch. Metadata is
+  // deliberately separate from RequestInit and is never sent to the endpoint.
+  const requestInit = { ...init, headers }
+  assertCurrent()
+  return fetch(input, requestInit)
 }
