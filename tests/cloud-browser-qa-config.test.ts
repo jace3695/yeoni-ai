@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import vm from 'node:vm';
+import { buildSync } from 'esbuild';
 
 test('automatic Vercel deployment suppression is limited to the two exact unpublished QA branches', () => {
   const config = JSON.parse(readFileSync('vercel.json', 'utf8'));
@@ -47,6 +49,8 @@ test('standalone practice bundle explicitly isolates environment without replaci
     __NEXT_MANUAL_CLIENT_BASE_PATH: 'false',
     __NEXT_MANUAL_TRAILING_SLASH: 'false',
     __NEXT_TRAILING_SLASH: 'false',
+    NEXT_PRIVATE_DEBUG_RUNTIME_DATA: 'false',
+    __NEXT_CACHE_COMPONENTS: 'false',
   };
   for (const [key, value] of Object.entries(expected)) assert.ok(build.includes(`'process.env.${key}': '${value}'`), key);
   assert.equal(build.match(/'process\.env\./g)?.length, Object.keys(expected).length);
@@ -59,6 +63,50 @@ test('standalone practice bundle explicitly isolates environment without replaci
   const isolation = readFileSync('tests/browser-cloud/fixture.ts', 'utf8');
   assert.match(isolation, /url\.origin === 'http:\/\/127\.0\.0\.1:3107'/);
   assert.match(isolation, /route\.abort\('blockedbyclient'\)/);
+});
+
+test('the actual standalone bundle reaches its root without a Node process global, and missing flags fail closed', () => {
+  const builder = readFileSync('scripts/browser-qa/cloud/build.mjs', 'utf8');
+  const block = builder.match(/jsx: 'automatic', define: \{([\s\S]*?)\n    \},\n    tsconfig:/)?.[1];
+  assert.ok(block, 'Read only the actual explicit fixture define block');
+  const definitions = Object.fromEntries([...block.matchAll(/'(process\.env\.[A-Z0-9_]+)': '([^']+)'/g)].map(match => [match[1], match[2]]));
+  assert.equal(Object.keys(definitions).length, 12);
+  const bootstrap = (define: Record<string, string>) => {
+    const bundle = buildSync({ entryPoints: ['scripts/browser-qa/cloud/entry.tsx'], bundle: true,
+      outdir: '.e2e/component-browser/bootstrap-unit', entryNames: 'fixture', write: false,
+      platform: 'browser', format: 'iife', external: ['/yeoni-cat-sprite-v1.webp'],
+      jsx: 'automatic', define, tsconfig: 'tsconfig.json', logLevel: 'silent' });
+    const code = bundle.outputFiles.find(file => file.path.endsWith('/fixture.js'))?.text;
+    assert.ok(code);
+    let roots = 0, networkCalls = 0;
+    const sentinel = new Error('Synthetic root reached before rendering');
+    const denyNetwork = function () { networkCalls++; throw new Error('Network forbidden in bootstrap test'); };
+    const document = { createElement: () => ({ style: {}, setAttribute() {}, removeAttribute() {}, addEventListener() {}, removeEventListener() {} }),
+      addEventListener() {}, removeEventListener() {}, documentElement: { style: {} }, body: { style: {} },
+      getElementById() { roots++; throw sentinel; } };
+    const location = { href: 'http://127.0.0.1:3107/?case=assessment', protocol: 'http:', hostname: '127.0.0.1', search: '?case=assessment', hash: '' };
+    const window = { document, location, addEventListener() {}, removeEventListener() {} };
+    const context = { window, document, self: window, location, navigator: { userAgent: 'Synthetic bootstrap only' },
+      URL, URLSearchParams, TextEncoder, TextDecoder, Headers, Request, Response, AbortController, AbortSignal, Blob,
+      console: { log() {}, warn() {}, error() {} }, performance: { now: () => 0 },
+      setTimeout() { throw new Error('Scheduled work forbidden before root'); }, clearTimeout() {},
+      fetch: denyNetwork, WebSocket: denyNetwork, XMLHttpRequest: denyNetwork };
+    let error: unknown;
+    try { vm.runInNewContext(code, context, { filename: 'standalone-bootstrap.js', timeout: 1000 }); }
+    catch (caught) { error = caught; }
+    assert.equal(networkCalls, 0);
+    return { roots, error, sentinel };
+  };
+  const current = bootstrap(definitions);
+  assert.equal(current.error, current.sentinel);
+  assert.equal(current.roots, 1);
+  for (const flag of ['process.env.NEXT_PRIVATE_DEBUG_RUNTIME_DATA', 'process.env.__NEXT_CACHE_COMPONENTS']) {
+    const missing = { ...definitions }; delete missing[flag];
+    const rejected = bootstrap(missing);
+    assert.equal(rejected.roots, 0);
+    assert.equal((rejected.error as Error)?.name, 'ReferenceError');
+    assert.match((rejected.error as Error)?.message, /process is not defined/);
+  }
 });
 
 test('CI preserves private manual lanes and the exact full suite commands without deployment authority', () => {

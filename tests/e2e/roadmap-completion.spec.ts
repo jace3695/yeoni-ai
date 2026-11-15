@@ -55,8 +55,25 @@ test('typing saves measured mistakes once and recovers a lost response without a
 });
 
 test('handwriting measures remaining strokes, saves private image and actual time, and survives reload',async({page,qa})=>{
- const routine={id:randomUUID(),user_id:qa.account.id,category:'handwriting',title:'검증 손글씨',target_minutes:20,enabled:true};expect((await qa.account.client.from('growth_routines').insert(routine)).error).toBeNull();await page.setViewportSize({width:320,height:844});await login(page,qa.account);await synced(page);const before=await qa.read();await page.goto('/growth/handwriting/free',{waitUntil:'domcontentloaded'});const canvas=page.getByLabel('손글씨 연습장');await expect(canvas).toBeVisible();await expect(page.getByRole('button',{name:'손글씨와 완료 기록 저장'})).toBeDisabled();const box=(await canvas.boundingBox())!;
- for(let i=0;i<2;i++){await page.mouse.move(box.x+30,box.y+30+i*20);await page.mouse.down();await page.mouse.move(box.x+130,box.y+45+i*20,{steps:5});await page.mouse.up();}
+ const routine={id:randomUUID(),user_id:qa.account.id,category:'handwriting',title:'검증 손글씨',target_minutes:20,enabled:true};expect((await qa.account.client.from('growth_routines').insert(routine)).error).toBeNull();await page.setViewportSize({width:320,height:844});await login(page,qa.account);await synced(page);const before=await qa.read();await page.goto('/growth/handwriting/free',{waitUntil:'domcontentloaded'});const canvas=page.getByLabel('손글씨 연습장');await expect(canvas).toBeVisible();await expect(page.getByRole('button',{name:'손글씨와 완료 기록 저장'})).toBeDisabled();await expect(page.getByText(/불러온 최근 30일 손글씨 기록은 \d+개예요\./)).toBeVisible();
+ await canvas.scrollIntoViewIfNeeded();
+ const box=(await canvas.boundingBox())!;
+ const geometry=await canvas.evaluate((element,box)=>{
+  const rect=element.getBoundingClientRect();
+  const visibleRects=(selector:string)=>Array.from(document.querySelectorAll<HTMLElement>(selector)).map(node=>({rect:node.getBoundingClientRect(),style:getComputedStyle(node)})).filter(({rect,style})=>rect.width>0&&rect.height>0&&style.display!=='none'&&style.visibility!=='hidden').map(({rect})=>rect);
+  const safeTop=Math.max(0,...visibleRects('.app-module-header').map(rect=>rect.bottom));
+  const safeBottom=Math.min(innerHeight,...visibleRects('.hub-bottom-nav-inner').map(rect=>rect.top));
+  const drawY=Math.max(box.y,safeTop)+30;
+  const points=Array.from({length:2},(_,stroke)=>Array.from({length:6},(_,step)=>({x:box.x+30+step*20,y:drawY+stroke*20+step*3}))).flat();
+  return {
+   drawY,points,safeTop,safeBottom,
+   sameRect:Math.abs(rect.x-box.x)<0.5&&Math.abs(rect.y-box.y)<0.5&&Math.abs(rect.width-box.width)<0.5&&Math.abs(rect.height-box.height)<0.5,
+   pathFits:points.every(({x,y})=>x>Math.max(0,rect.left)&&x<Math.min(innerWidth,rect.right)&&y>Math.max(safeTop,rect.top)&&y<Math.min(safeBottom,rect.bottom)),
+   hits:points.map(({x,y})=>document.elementFromPoint(x,y)===element),
+  };
+ },box);
+ expect(geometry,'Both original stroke paths must remain inside the ready, unobscured canvas').toMatchObject({sameRect:true,pathFits:true,hits:Array(12).fill(true)});
+ for(let i=0;i<2;i++){await page.mouse.move(box.x+30,geometry.drawY+i*20);await page.mouse.down();await page.mouse.move(box.x+130,geometry.drawY+15+i*20,{steps:5});await page.mouse.up();await expect(page.getByRole('region',{name:'손글씨 측정 기록'})).toContainText(`획 ${i+1}개`);}
  const metrics=page.getByRole('region',{name:'손글씨 측정 기록'});await expect(metrics).toContainText('획 2개');await page.getByRole('button',{name:'되돌리기',exact:true}).click();await expect(metrics).toContainText('획 1개');await expect(metrics).toContainText('변화가 있는 펜 압력 미측정');await page.getByRole('button',{name:'손글씨와 완료 기록 저장'}).click();await expect(page.getByRole('button',{name:'저장 완료',exact:true})).toBeDisabled();
  const session=(await qa.account.client.from('growth_sessions').select('*').single()).data!;expect(session.actual_minutes).toBeLessThan(20);expect(session.metrics).toMatchObject({strokes:1,pressureRange:null});expect(session.metrics.activeSeconds).toBeGreaterThanOrEqual(0);const resource=(await qa.account.client.from('growth_resources').select('*').single()).data!;expect(resource.id).toBe(session.metrics.resourceId);expect((await qa.account.client.storage.from('growth-resources').download(resource.storage_path)).error).toBeNull();const other=await qa.createAccount();expect((await other.client.storage.from('growth-resources').download(resource.storage_path)).error).not.toBeNull();await noOverflow(page);await page.reload({waitUntil:'domcontentloaded'});expect((await qa.account.client.from('growth_sessions').select('*')).data).toHaveLength(1);expect(await qa.read()).toEqual(before);
 });

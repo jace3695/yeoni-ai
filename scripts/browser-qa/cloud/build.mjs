@@ -24,6 +24,9 @@ export async function buildComponentSite() {
       'process.env.__NEXT_MANUAL_CLIENT_BASE_PATH': 'false',
       'process.env.__NEXT_MANUAL_TRAILING_SLASH': 'false',
       'process.env.__NEXT_TRAILING_SLASH': 'false',
+      // Next 16 module bootstrap reads these optional flags outside a Next build.
+      'process.env.NEXT_PRIVATE_DEBUG_RUNTIME_DATA': 'false',
+      'process.env.__NEXT_CACHE_COMPONENTS': 'false',
     },
     tsconfig: 'tsconfig.json', logLevel: 'warning' });
   const styles = await postcss([tailwindcss({ content: [
