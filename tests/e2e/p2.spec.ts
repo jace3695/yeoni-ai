@@ -314,19 +314,40 @@ test('growth weekday patterns count recorded days, survive reload and preserve r
 });
 
 test('growth pattern loading failure is distinct from no records and retry recovers', async ({ page, qa }) => {
+  const routine = await qa.account.client.from('growth_routines').insert({ user_id: qa.account.id, title: 'Synthetic pattern retry', category: 'custom', target_minutes: 10, enabled: true, sort_order: 999, preferred_days: [1, 2, 3, 4, 5, 6, 7], target_sessions_per_week: 7 }).select('*').single();
+  expect(routine.error).toBeNull(); expect(routine.data).toBeTruthy();
+  const readRoutines = async () => { const result = await qa.account.client.from('growth_routines').select('*').order('id'); expect(result.error).toBeNull(); return result.data!; };
+  const routinesBefore = await readRoutines(); expect(routinesBefore).toEqual([routine.data]);
+  const sessionsBefore = await qa.account.client.from('growth_sessions').select('*').order('id');
+  expect(sessionsBefore.error).toBeNull(); expect(sessionsBefore.data).toEqual([]);
   await login(page, qa.account); await synced(page);
-  await page.goto('/growth', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: '나의 루틴', exact: true })).toBeVisible();
-  await page.route('**/rest/v1/growth_sessions?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({message:'Synthetic unavailable'}) }));
-  await page.goto('/growth/review', { waitUntil: 'domcontentloaded' });
-  const panel = page.getByRole('region', { name: '루틴 요일별 실행 패턴' });
-  await expect(panel.getByRole('alert')).toContainText('실행 기록을 모두 확인하지 못했어요');
-  await expect(panel).not.toContainText('이 기간에는 실행 기록이 없어요');
-  await expect(page.getByRole('region', { name: '루틴 시작 시간대별 패턴' })).toHaveCount(0);
-  await page.unroute('**/rest/v1/growth_sessions?*');
-  await panel.getByRole('button', { name: '기록 다시 불러오기' }).click();
-  await expect(panel).toContainText('이 기간에는 실행 기록이 없어요');
-  expect((await qa.account.client.from('growth_sessions').select('id')).data).toHaveLength(0);
+  const stateBefore = await qa.read(), languageBefore = await qa.readLanguage();
+  const pattern = '**/rest/v1/growth_sessions?*';
+  let failedSessionReads = 0;
+  const browserWrites: string[] = [];
+  const observeWrite = (request: { url(): string; method(): string }) => {
+    const pathname = new URL(request.url()).pathname;
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method()) && /^\/rest\/v1\/(growth_sessions|growth_routines)(?:\/|$)/.test(pathname)) browserWrites.push(`${request.method()} ${pathname}`);
+  };
+  page.on('request', observeWrite);
+  await page.route(pattern, route => { if (route.request().method() === 'GET') failedSessionReads++; return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({message:'Synthetic unavailable'}) }); });
+  try {
+    await page.goto('/growth/review', { waitUntil: 'domcontentloaded' });
+    const panel = page.getByRole('region', { name: '루틴 요일별 실행 패턴' });
+    await expect(panel.getByRole('alert')).toContainText('실행 기록을 모두 확인하지 못했어요');
+    expect(failedSessionReads).toBeGreaterThan(0);
+    await expect(panel).not.toContainText('이 기간에는 실행 기록이 없어요');
+    await expect(page.getByRole('region', { name: '루틴 시작 시간대별 패턴' })).toHaveCount(0);
+    await page.unroute(pattern);
+    await panel.getByRole('button', { name: '기록 다시 불러오기' }).click();
+    await expect(panel).toContainText('이 기간에는 실행 기록이 없어요');
+    expect((await qa.account.client.from('growth_sessions').select('id')).data).toHaveLength(0);
+    const sessionsAfter = await qa.account.client.from('growth_sessions').select('*').order('id');
+    expect(sessionsAfter.error).toBeNull(); expect(sessionsAfter.data).toEqual(sessionsBefore.data);
+    expect(await readRoutines()).toEqual(routinesBefore);
+    expect(await qa.read()).toEqual(stateBefore); expect(await qa.readLanguage()).toEqual(languageBefore);
+    expect(browserWrites).toEqual([]);
+  } finally { await page.unroute(pattern); page.off('request', observeWrite); }
 });
 
 test('growth start times compare Korean slots at 320px without inventing clocks or changing original records', async ({ page, qa }) => {
