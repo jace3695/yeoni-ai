@@ -1,3 +1,4 @@
+import { BUDGET_SUMMARY_HELP, isBudgetSummaryIntent, parseBudgetSummaryQuery, loadBudgetExpenseSummary } from '@/lib/assistant-budget-summary';
 import { detectAdviceScope, detectShortTaskOperation } from '@/lib/assistant-advice-intent';
 import { buildReplyPlan } from '@/lib/yeoni/reply-plan';
 import type { FreeAdviceScope } from '@/lib/free-advice-context';
@@ -33,10 +34,6 @@ type ChatHistoryItem = AssistantConversationMessage;
 function seoulDate(offsetDays = 0) {
   const date = new Date(Date.now() + offsetDays * 86_400_000);
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
-}
-
-function won(value: number) {
-  return `${Math.round(value).toLocaleString("ko-KR")}원`;
 }
 
 function taskTitle(message: string) {
@@ -211,16 +208,26 @@ async function processSingleCommand(
   rawMessage: string,
   history: ChatHistoryItem[],
 ): Promise<AssistantReply> {
-  const message = resolveContextualMessage(rawMessage, history);
   const today = seoulDate();
+  const rawBudgetQuery = parseBudgetSummaryQuery(rawMessage, today);
+  const message = rawBudgetQuery ? rawMessage : resolveContextualMessage(rawMessage, history);
   const monthStart = `${today.slice(0, 7)}-01`;
   let result: AssistantReply;
+  const budgetQuery = rawBudgetQuery ?? parseBudgetSummaryQuery(message, today);
+  if (budgetQuery) return {
+    reply: await loadBudgetExpenseSummary(supabase, userId, budgetQuery),
+    action: { label: '가계부 자세히 보기', href: '/budget' },
+  };
   const shortTaskOperation = detectShortTaskOperation(message);
   const adviceScope = detectAdviceScope(message);
   if (adviceScope) return {
     reply: '기록을 보고 함께 생각해 볼게요. 아래에서 보낼 기록을 확인하면 무료 AI 조언을 받을 수 있어요.',
     adviceRequest: { scope: adviceScope, question: message },
     action: { label: '연이와 조언 이어가기', href: `/assistant?advice=${adviceScope}#yeoni-chat` },
+  };
+  if (!shortTaskOperation && isBudgetSummaryIntent(message)) return {
+    reply: BUDGET_SUMMARY_HELP,
+    action: { label: '가계부 자세히 보기', href: '/budget' },
   };
 
   if (!shortTaskOperation && isDietRecordIntent(message)) {
@@ -275,14 +282,14 @@ async function processSingleCommand(
     const end = `${today}T23:59:59+09:00`;
     const [taskResult, budgetResult, fitnessResult, languageResult, growthRoutineResult, growthSessionResult] = await Promise.all([
       supabase.from("assistant_items").select("title").eq("user_id", userId).not("status", "in", "(completed,cancelled)").gte("due_at", start).lte("due_at", end).order("priority", { ascending: false }).limit(5),
-      supabase.from("budget_transactions").select("amount").eq("user_id", userId).gte("date", monthStart).lte("date", today),
+      loadBudgetExpenseSummary(supabase, userId, { startDate: monthStart, endDate: today, filter: null })
+        .then(reply => ({ reply, error: false })).catch(() => ({ reply: '', error: true })),
       supabase.from("user_app_state").select("state").eq("user_id", userId).maybeSingle(),
       supabase.from("language_user_state").select("state").eq("user_id", userId).maybeSingle(),
       supabase.from("growth_routines").select("id,title").eq("user_id", userId).eq("enabled", true),
       supabase.from("growth_sessions").select("routine_id,actual_minutes,status").eq("user_id", userId).eq("session_date", today),
     ]);
     const failures = [taskResult.error&&'할 일',budgetResult.error&&'가계부',fitnessResult.error&&'운동·식단',languageResult.error&&'언어학습',(growthRoutineResult.error||growthSessionResult.error)&&'자기계발'].filter(Boolean);
-    const spent = (budgetResult.data ?? []).reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const workoutInfo = getTodayWorkout(parseState(fitnessResult.data?.state), today);
     const workoutText = !workoutInfo ? "운동 계획 확인 필요" : workoutInfo.group.category === "rest" ? "오늘은 회복일" : workoutInfo.completed ? `${workoutInfo.group.name} 완료` : `${workoutInfo.group.name} 예정`;
     const language = getLanguageSnapshot(parseState(languageResult.data?.state), today);
@@ -294,20 +301,12 @@ async function processSingleCommand(
     const taskText = taskResult.data?.length ? taskResult.data.map((item, index) => `${index + 1}. ${item.title}`).join(" · ") : "오늘 마감 할 일 없음";
     const sections = [
       !taskResult.error && `할 일: ${taskText}.`,
-      !budgetResult.error && `이번 달 지출은 ${won(spent)}입니다.`,
+      !budgetResult.error && budgetResult.reply,
       !fitnessResult.error && `운동: ${workoutText}.`,
       !languageResult.error && `언어 학습은 ${language.completedIds.length}/${LANGUAGE_ROUTINES.length}개 완료했고 복습 대기는 ${language.totalReview}개입니다.`,
       !growthRoutineResult.error && !growthSessionResult.error && `자기계발은 활성 루틴 중 ${growthCompleted}개 완료, ${growthMinutes}분 기록했습니다.`,
     ].filter(Boolean);
     result = { reply: `${/저녁/.test(message)?'저녁':/아침/.test(message)?'아침':'오늘'} 브리핑입니다. ${sections.join(' ')}${failures.length?` 조회 실패: ${failures.join(' · ')}. 해당 영역은 미기록으로 판단하지 않았습니다.`:''}`, action: { label: "통합 브리핑 자세히 보기", href: "/assistant" } };
-  } else if (!shortTaskOperation && /(이번\s*달|월).*(지출|소비)|(지출|소비).*(이번\s*달|월)/.test(message)) {
-    const { data, error } = await supabase.from("budget_transactions").select("amount,type,category").eq("user_id", userId).gte("date", monthStart).lte("date", today);
-    if (error) throw new Error("가계부 데이터를 불러오지 못했습니다.");
-    const rows = data ?? [];
-    const total = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-    const categories = rows.reduce<Record<string, number>>((acc, row) => { const key = row.category || "기타"; acc[key] = (acc[key] || 0) + Number(row.amount || 0); return acc; }, {});
-    const top = Object.entries(categories).sort((a, b) => b[1] - a[1])[0];
-    result = { reply: `이번 달 지출은 ${won(total)}, 총 ${rows.length}건입니다.${top ? ` 가장 큰 항목은 ${top[0]} ${won(top[1])}이에요.` : ""}`, action: { label: "가계부 자세히 보기", href: "/budget" } };
   } else if (shortTaskOperation === 'create' || (!shortTaskOperation && /(할\s*일|일정).*(추가|등록|기록)|(추가|등록|기록).*(할\s*일|일정)/.test(message))) {
     const title = taskTitle(message);
     if (!title || /^(추가|등록|기록)$/.test(title)) {
@@ -424,7 +423,7 @@ export async function POST(request: NextRequest) {
     if (historyLoadError) throw new Error("지난 대화를 불러오지 못했습니다.");
     const history = selectConversationHistory([...(storedMessages ?? [])].reverse(), body?.history);
     const replies: AssistantReply[] = [];
-    const commands = detectAdviceScope(message) ? [message] : splitCompoundCommands(message);
+    const commands = parseBudgetSummaryQuery(message, seoulDate()) || detectAdviceScope(message) ? [message] : splitCompoundCommands(message);
     if (commands.length > 3 || commands.length > 1 && /(추가|등록|기록|수정|변경|완료|끝|마쳤|했어|했어요|삭제)/.test(message)) {
       const reply = '기록을 바꾸는 명령은 한 번에 하나씩 말씀해 주세요. 변경 내용을 확인한 뒤 다음 명령을 진행할 수 있어요.';
       return NextResponse.json({ reply, changed: false, performance: buildReplyPlan(reply, crypto.randomUUID(), true) });

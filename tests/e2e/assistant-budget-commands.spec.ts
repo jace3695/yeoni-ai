@@ -63,6 +63,77 @@ test('budget command reviews one original, survives lost response and reload, th
   await page.reload(); await expect(receipt.getByText(/되돌리기 완료/)).toBeVisible();
   await page.getByRole('navigation', { name: '실행 이력 영역' }).getByRole('link', { name: '할 일', exact: true }).click();
   await expect(page.getByText('아직 확인하고 실행한 명령이 없습니다.')).toBeVisible();
+
+  // The existing stage-13 case now also verifies the corrected read-only chat
+  // path in the genuine app. No workflow, selector, guard or timeout is changed.
+  await test.step('monthly chat totals keep period, category and topups exact without financial writes', async () => {
+    const date = today(), month = date.slice(0, 7), prior = new Date(`${month}-01T12:00:00Z`);
+    prior.setUTCMonth(prior.getUTCMonth() - 1);
+    const previous = prior.toISOString().slice(0, 10), previousMonth = previous.slice(0, 7);
+    const added = [
+      { ...expense(qa.account.id, '브리핑'), date, amount: 4500 },
+      { ...expense(qa.account.id, '합성 식사'), date, amount: 8000, category: '식비' },
+      { ...expense(qa.account.id, '합성 충전'), date, amount: 10000, category: '교통', transaction_type: '충전카드 충전' },
+      { ...expense(qa.account.id, '합성 사용'), date, amount: 2000, category: '교통', transaction_type: '충전카드 사용' },
+      { ...expense(qa.account.id, '합성 지난달'), date: previous, amount: 9000 },
+    ];
+    expect((await qa.account.client.from('budget_transactions').insert(added)).error).toBeNull();
+    const readExpenses = async () => {
+      const first = await qa.account.client.from('budget_transactions').select('*', { count: 'exact' }).order('id').range(0, 999);
+      expect(first.error).toBeNull(); expect(typeof first.count).toBe('number');
+      const second = first.count! > 1000
+        ? await qa.account.client.from('budget_transactions').select('*', { count: 'exact' }).order('id').range(1000, 1999)
+        : { data: [], error: null, count: first.count };
+      expect(second.error).toBeNull(); expect(second.count).toBe(first.count);
+      const rows = [...first.data!, ...second.data!]; expect(rows).toHaveLength(first.count!);
+      return canonical(rows);
+    };
+    const before = await readExpenses();
+    const historyBefore = await qa.account.client.from('budget_category_changes').select('*').order('id');
+    expect(historyBefore.error).toBeNull();
+    let disallowedRequests = 0;
+    const blockedApi = /\/api\/(?:ai\/|claude(?:\?|$)|yeoni\/(?:record-reply|tts)|tts(?:\/|\?|$))/;
+    await page.route(blockedApi, async route => { disallowedRequests++; await route.abort('blockedbyclient'); });
+    try {
+      await page.goto('/assistant'); await expect(input).toBeEnabled();
+      const answers = page.locator('[data-chat-message][data-chat-role="assistant"]');
+      const ask = async (message: string, expectedStatus = 200) => {
+        const beforeCount = await answers.count();
+        const received = page.waitForResponse(response => new URL(response.url()).pathname === '/api/assistant/chat'
+          && response.request().method() === 'POST' && response.request().postDataJSON().message === message);
+        await input.fill(message); await input.press('Enter');
+        const response = await received; expect(response.status()).toBe(expectedStatus);
+        const body = await response.json(); const text = expectedStatus === 200 ? body.reply : body.error;
+        expect(typeof text).toBe('string');
+        await expect(answers).toHaveCount(beforeCount + 1); await expect(answers.last()).toContainText(text);
+        if (expectedStatus === 200) { expect(body.changed).toBe(false); expect(body.proposal).toBeUndefined(); expect(body.adviceRequest).toBeUndefined(); }
+        return text as string;
+      };
+      expect(await ask(`${previousMonth} 지출 알려줘`)).toContain(`${previousMonth}-01~`);
+      await expect(answers.last()).toContainText('9,000원, 1건');
+      expect(await ask('이번 달 카페 지출 알려줘')).toContain('9,500원, 2건');
+      await expect(answers.last()).toContainText('저장 분류 ‘카페’ 정확히 일치');
+      expect(await ask('이번 달 지출 알려줘')).toContain('19,500원, 4건');
+      await expect(answers.last()).toContainText('충전카드 충전 1건은 소비 합계에서 제외');
+      expect(await ask('이번 달 사용처 "브리핑" 지출 알려줘')).toContain('4,500원, 1건');
+      expect(await ask('이번 달 카페 빼고 지출 알려줘')).toContain('조회할 월과 조건을 정확히');
+      expect(await readExpenses()).toBe(before);
+
+      // Browser interception cannot truncate a server-side Supabase query.
+      // Seed genuine disposable rows so exact count exceeds the real 1000 limit.
+      const many = Array.from({ length: 1001 }, (_, index) => ({ ...expense(qa.account.id, `합성 잘림 ${index}`), date, category: '합성 잘림', amount: 1 }));
+      expect((await qa.account.client.from('budget_transactions').insert(many)).error).toBeNull();
+      const beforePartial = await readExpenses();
+      expect(await ask('이번 달 분류 "합성 잘림" 지출 알려줘', 500)).toContain('합계를 확정하지 않았어요');
+      await expect(answers.last()).not.toContainText('원,');
+      expect(await readExpenses()).toBe(beforePartial);
+      const historyAfter = await qa.account.client.from('budget_category_changes').select('*').order('id');
+      expect(historyAfter.error).toBeNull(); expect(canonical(historyAfter.data)).toBe(canonical(historyBefore.data));
+      expect(disallowedRequests).toBe(0); expect(qa.traffic.blockedOrigins.size).toBe(0);
+      expect(today()).toBe(date);
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    } finally { await page.unroute(blockedApi); }
+  });
 });
 
 test('independent sessions reject stale budget confirmation and common undo refuses later memo edits', async ({ page, qa, browser }) => {
