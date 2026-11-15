@@ -177,6 +177,7 @@ function createDevice(server, seed = {}) {
   const events = load('app/data/storageTransaction.ts');
   const ownership = load('app/data/storageOwnership.ts');
   const body = load('app/data/bodyRecordSave.ts');
+  const records = load('app/data/recordStorage.ts');
   ownership.beginStorageAccess();
   assert.equal(ownership.getStorageAccessStatus(), 'ready');
   const panelPath = 'app/components/CloudSyncPanel.tsx';
@@ -274,9 +275,10 @@ function createDevice(server, seed = {}) {
         calendar[name] = vm.runInContext(originalFunction('app/data/bodyRecordSave.ts', name), calendar);
       }
       calendar.calendarScope.current = calendar.readBodySaveScope(storage);
-      for (const name of ['writeJson', 'readJson']) {
-        calendar[name] = vm.runInContext(originalFunction('app/data/recordStorage.ts', name), calendar);
-      }
+      // Keep the real module closure and its workout-store, ownership and
+      // recovery dependencies. Extracting only these functions loses imports.
+      calendar.readJson = records.readJson;
+      calendar.writeJson = records.writeJson;
       for (const name of ['canEditCalendar', 'writeWorkoutStore', 'saveNewWorkoutRecord']) {
         calendar[name] = vm.runInContext(originalFunction('app/components/RecordCalendarView.tsx', name), calendar);
       }
