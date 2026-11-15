@@ -259,13 +259,8 @@ function assessCompletedPeriod(
   baseline: WorkoutOutcomeMetrics,
   current: WorkoutOutcomeMetrics,
 ): Omit<FitnessAiOutcomeAssessment, "periodDays" | "label" | "remainingDays" | "baseline" | "current"> {
-  if (current.workoutDays === 0 && current.completedSets === 0) {
-    return {
-      status: "insufficient",
-      statusLabel: "기록 부족",
-      detail: "비교 기간에 완료한 운동 기록이 없어 효과를 판단하지 않았습니다.",
-    };
-  }
+  // Stopping before a first completed set is still a recorded safety signal.
+  // Do not let missing completion data hide an increase in those signals.
   if (
     current.painDays > baseline.painDays ||
     current.highFatigueDays > baseline.highFatigueDays ||
@@ -275,6 +270,13 @@ function assessCompletedPeriod(
       status: "caution",
       statusLabel: "회복 확인",
       detail: "통증·높은 피로·중단 기록이 기준 기간보다 늘었습니다. 강도를 올리지 말고 회복 상태를 먼저 확인하세요.",
+    };
+  }
+  if (current.workoutDays === 0 && current.completedSets === 0) {
+    return {
+      status: "insufficient",
+      statusLabel: "기록 부족",
+      detail: "비교 기간에 완료한 운동 기록이 없어 효과를 판단하지 않았습니다.",
     };
   }
   const completionImproved =

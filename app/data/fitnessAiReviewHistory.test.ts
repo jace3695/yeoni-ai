@@ -163,3 +163,83 @@ test("Supabase 행을 화면에서 쓰는 안전한 형식으로 변환한다", 
   assert.deepEqual(review?.decisionSelection.dayIds, ["mon"]);
   assert.equal(review?.source, "recovered");
 });
+
+const unfinishedExercise = {
+  exerciseName: "버드독",
+  status: "partial" as const,
+  sets: [{ setNumber: 1, completed: false, reps: 0 }],
+};
+const increasedSafetyCases = [
+  { name: "통증", feedback: { workoutPain: true }, metric: "painDays" },
+  { name: "높은 피로", feedback: { workoutFatigue: 5 }, metric: "highFatigueDays" },
+  { name: "운동 중단", feedback: { workoutStatus: "stopped" as const }, metric: "stoppedDays" },
+  { name: "통증·피로·중단", feedback: { workoutPain: true, workoutFatigue: 5, workoutStatus: "stopped" as const }, metric: "stoppedDays" },
+] as const;
+
+for (const periodDays of [7, 28] as const) {
+  const outcomeIndex = periodDays === 7 ? 0 : 1;
+  const now = new Date("2026-09-29T12:00:00.000Z");
+  for (const scenario of increasedSafetyCases) {
+    test(`${periodDays}일 효과는 완료 운동·세트가 0이어도 ${scenario.name} 증가를 먼저 알린다`, () => {
+      const workouts: WorkoutCompletionStore = {
+        "2026-09-03": {
+          workoutDone: false,
+          workoutExerciseRecords: [unfinishedExercise],
+          ...scenario.feedback,
+        },
+      };
+      const outcome = evaluateFitnessAiReviewOutcomes(baseReview, workouts, now)[outcomeIndex];
+      assert.equal(outcome.current?.workoutDays, 0);
+      assert.equal(outcome.current?.completedSets, 0);
+      assert.equal(outcome.current?.[scenario.metric], 1);
+      assert.equal(outcome.status, "caution");
+      assert.equal(outcome.statusLabel, "회복 확인");
+      assert.match(outcome.detail, /강도를 올리지/);
+    });
+  }
+
+  test(`${periodDays}일 효과는 안전 신호도 완료 기록도 없으면 기록 부족을 유지한다`, () => {
+    const scenarios: WorkoutCompletionStore[] = [{}, {
+      "2026-09-03": { workoutDone: false, workoutExerciseRecords: [unfinishedExercise] },
+    }];
+    for (const workouts of scenarios) {
+      const outcome = evaluateFitnessAiReviewOutcomes(baseReview, workouts, now)[outcomeIndex];
+      assert.equal(outcome.status, "insufficient");
+      assert.equal(outcome.current?.workoutDays, 0);
+      assert.equal(outcome.current?.completedSets, 0);
+      assert.equal(outcome.current?.painDays, 0);
+      assert.equal(outcome.current?.highFatigueDays, 0);
+      assert.equal(outcome.current?.stoppedDays, 0);
+    }
+  });
+
+  test(`${periodDays}일 효과는 기준보다 늘지 않은 안전 신호의 기존 정책을 바꾸지 않는다`, () => {
+    const review: FitnessAiReviewRecord = {
+      ...baseReview,
+      baseline: {
+        oneWeek: { ...baseReview.baseline.oneWeek, painDays: 1, highFatigueDays: 1, stoppedDays: 1 },
+        fourWeeks: { ...baseReview.baseline.fourWeeks, painDays: 1, highFatigueDays: 1, stoppedDays: 1 },
+      },
+    };
+    const workouts: WorkoutCompletionStore = {
+      "2026-09-03": {
+        workoutDone: false, workoutPain: true, workoutFatigue: 5, workoutStatus: "stopped",
+        workoutExerciseRecords: [unfinishedExercise],
+      },
+    };
+    const outcome = evaluateFitnessAiReviewOutcomes(review, workouts, now)[outcomeIndex];
+    assert.equal(outcome.status, "insufficient");
+  });
+}
+
+test("비교 기간 전에는 미완료 안전 기록이 있어도 기간 대기 정책을 유지한다", () => {
+  const outcomes = evaluateFitnessAiReviewOutcomes(baseReview, {
+    "2026-09-03": {
+      workoutDone: false, workoutPain: true, workoutFatigue: 5, workoutStatus: "stopped",
+      workoutExerciseRecords: [unfinishedExercise],
+    },
+  }, new Date("2026-09-05T12:00:00.000Z"));
+  assert.deepEqual(outcomes.map(outcome => outcome.status), ["pending", "pending"]);
+  assert.deepEqual(outcomes.map(outcome => outcome.remainingDays), [3, 24]);
+  assert.ok(outcomes.every(outcome => outcome.current === undefined));
+});
