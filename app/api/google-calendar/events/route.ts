@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   buildGoogleEventResource,
+  buildGoogleEventPatch,
+  matchesGoogleEventPatchResult,
+  validGoogleEventEtag,
   getCalendarMonthBounds,
   isSameGoogleCalendarEvent,
   mapGoogleCalendarEvent,
@@ -114,11 +117,37 @@ export async function PATCH(request: NextRequest) {
     if (!id || id.length > 1_024) return NextResponse.json({ error: "수정할 일정을 선택해주세요." }, { status: 400 });
     const parsed = parseGoogleCalendarEventInput(body);
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
-    const updated = await googleRequest(request, "PATCH", `/calendars/primary/events/${encodeURIComponent(id)}?sendUpdates=none`, buildGoogleEventResource(parsed.value));
-    if (updated.response instanceof NextResponse) return updated.response;
-    const data = await updated.response.json().catch(() => ({})) as GoogleEventResource;
-    if (!updated.response.ok) throw new GoogleCalendarConnectionError("Google 일정을 수정하지 못했습니다.", 502);
-    return NextResponse.json({ event: mapGoogleCalendarEvent(data) });
+    const expectedEtag = body?.expectedEtag;
+    if (!validGoogleEventEtag(expectedEtag) || (parsed.value.allDay && typeof body?.endDate !== "string")) {
+      return NextResponse.json({ error: "기간과 일정 버전을 확인해야 합니다. 초안을 보관하고 목록을 새로고침한 뒤 다시 수정해 주세요." }, { status: 409 });
+    }
+    // One authenticated account/context for both the original read and conditional write.
+    const { supabase, user } = await authenticate();
+    if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    const config = getGoogleCalendarConfig(request.nextUrl.origin);
+    const path = `/calendars/primary/events/${encodeURIComponent(id)}`;
+    const originalResponse = await googleCalendarApiRequest(supabase, user.id, config.clientSecret, path, { method: "GET" });
+    if (!originalResponse.ok) return NextResponse.json({ error: "원본 일정을 읽지 못했습니다. 초안을 유지하고 목록을 새로고침해 주세요." }, { status: 502 });
+    const original = await originalResponse.json().catch(() => null) as GoogleEventResource | null;
+    if (!original || original.id !== id || !validGoogleEventEtag(original.etag) || original.etag !== expectedEtag) {
+      return NextResponse.json({ error: "일정이 바뀌었거나 버전을 확인할 수 없습니다. 초안을 보관하고 목록을 새로고침한 뒤 다시 수정해 주세요." }, { status: 409 });
+    }
+    const mapped = mapGoogleCalendarEvent(original);
+    if (!mapped || mapped.editBlockedReason || mapped.allDay !== parsed.value.allDay) {
+      return NextResponse.json({ error: mapped?.editBlockedReason || "이 일정 형태는 Google Calendar에서 수정해 주세요." }, { status: 409 });
+    }
+    const patch = buildGoogleEventPatch(original, parsed.value);
+    if (Object.keys(patch).length === 0) return NextResponse.json({ event: mapped });
+    const updated = await googleCalendarApiRequest(supabase, user.id, config.clientSecret, `${path}?sendUpdates=none`, {
+      method: "PATCH", headers: { "Content-Type": "application/json", "If-Match": original.etag }, body: JSON.stringify(patch),
+    });
+    if (updated.status === 412) return NextResponse.json({ error: "다른 곳에서 일정이 변경되어 저장하지 않았습니다. 초안을 보관하고 목록을 새로고침한 뒤 다시 수정해 주세요." }, { status: 409 });
+    if (!updated.ok) throw new GoogleCalendarConnectionError("Google 일정을 수정하지 못했습니다. 초안을 유지하고 목록을 확인해 주세요.", 502);
+    const data = await updated.json().catch(() => null) as GoogleEventResource | null;
+    if (!matchesGoogleEventPatchResult(original, patch, data)) {
+      return NextResponse.json({ error: "저장 결과를 확인하지 못했습니다. 이미 저장됐을 수 있으니 바로 다시 저장하지 말고, 초안을 보관한 뒤 목록을 새로고침해 결과를 확인해 주세요.", saveOutcomeUnknown: true }, { status: 502 });
+    }
+    return NextResponse.json({ event: mapGoogleCalendarEvent(data!) });
   } catch (error) {
     return errorResponse(error);
   }

@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ExternalLink, Link2, Loader2, Pencil, Plus, Trash2, Unlink } from "lucide-react";
 import { authenticatedFetch } from "@/lib/supabase";
 import type { GoogleCalendarEvent } from "@/lib/google-calendar";
 
 type ConnectionStatus = { loading: boolean; configured: boolean; connected: boolean; email?: string | null };
-type EventForm = { title: string; date: string; allDay: boolean; startTime: string; endTime: string; description: string };
+type EventForm = { title: string; date: string; endDate: string; allDay: boolean; startTime: string; endTime: string; description: string };
 
 const inputClass = "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
 
@@ -19,6 +19,7 @@ function defaultForm(monthKey: string): EventForm {
   return {
     title: "",
     date: today.startsWith(monthKey) ? today : `${monthKey}-01`,
+    endDate: today.startsWith(monthKey) ? today : `${monthKey}-01`,
     allDay: false,
     startTime: "09:00",
     endTime: "10:00",
@@ -31,6 +32,8 @@ export default function GoogleCalendarPanel({ monthKey, onEvents }: { monthKey: 
   const [events, setEvents] = useState<GoogleCalendarEvent[]>([]);
   const [form, setForm] = useState<EventForm>(() => defaultForm(monthKey));
   const [editingId, setEditingId] = useState("");
+  const [expectedEtag, setExpectedEtag] = useState("");
+  const saveInFlight = useRef(false);
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
@@ -119,13 +122,16 @@ export default function GoogleCalendarPanel({ monthKey, onEvents }: { monthKey: 
 
   const saveEvent = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (saveInFlight.current || busy) return;
+    if (editingId && !expectedEtag) { setMessage("일정 버전을 확인해야 합니다. 초안을 보관하고 목록을 새로고침한 뒤 다시 수정해 주세요."); return; }
+    saveInFlight.current = true;
     setBusy("save");
     setMessage("");
     try {
       const response = await authenticatedFetch("/api/google-calendar/events", {
         method: editingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, ...(editingId ? { id: editingId } : {}) }),
+        body: JSON.stringify({ ...form, ...(editingId ? { id: editingId, expectedEtag } : {}) }),
       });
       const data = await responseJson(response);
       if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "일정을 저장하지 못했습니다.");
@@ -137,15 +143,21 @@ export default function GoogleCalendarPanel({ monthKey, onEvents }: { monthKey: 
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "일정을 저장하지 못했습니다.");
     } finally {
+      saveInFlight.current = false;
       setBusy("");
     }
   };
 
   const editEvent = (item: GoogleCalendarEvent) => {
+    if (busy || saveInFlight.current) return;
+    if (item.editBlockedReason || !item.etag || !item.endDate) { setMessage(item.editBlockedReason || "일정 기간과 버전을 확인한 뒤 수정해 주세요."); return; }
+    if (showForm && !window.confirm("현재 초안 대신 선택한 일정의 최신 내용을 불러올까요? 필요한 초안은 먼저 복사해 주세요.")) return;
+    setExpectedEtag(item.etag);
     setEditingId(item.id);
     setForm({
       title: item.title,
       date: item.date,
+      endDate: item.endDate,
       allDay: item.allDay,
       startTime: item.startTime || "09:00",
       endTime: item.endTime || "10:00",
@@ -177,7 +189,7 @@ export default function GoogleCalendarPanel({ monthKey, onEvents }: { monthKey: 
     <div className="flex flex-wrap items-center gap-3">
       <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600"><CalendarDays size={22} /></span>
       <div className="min-w-0 flex-1"><h2 className="font-bold">Google Calendar</h2><p className="text-xs text-gray-500">한 번 연결하면 이곳에서 일정 확인·추가·수정·삭제가 가능합니다.</p></div>
-      {status.loading ? <span className="flex items-center gap-1 text-xs text-gray-500"><Loader2 size={14} className="animate-spin" /> 확인 중</span> : status.connected ? <div className="flex gap-2"><button type="button" onClick={() => { setEditingId(""); setForm(defaultForm(monthKey)); setShowForm((value) => !value); }} className="flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white"><Plus size={14} />일정 추가</button><button type="button" onClick={disconnect} disabled={Boolean(busy)} className="flex items-center gap-1 rounded-xl bg-gray-100 px-3 py-2 text-xs font-bold disabled:opacity-50"><Unlink size={14} />해제</button></div> : <button type="button" onClick={connect} disabled={!status.configured || Boolean(busy)} className="flex items-center gap-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:bg-gray-300">{busy === "connect" ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={15} />}Google 계정 연결</button>}
+      {status.loading ? <span className="flex items-center gap-1 text-xs text-gray-500"><Loader2 size={14} className="animate-spin" /> 확인 중</span> : status.connected ? <div className="flex gap-2"><button type="button" disabled={Boolean(busy)} onClick={() => { setExpectedEtag(""); setEditingId(""); setForm(defaultForm(monthKey)); setShowForm((value) => !value); }} className="flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white"><Plus size={14} />일정 추가</button><button type="button" onClick={disconnect} disabled={Boolean(busy)} className="flex items-center gap-1 rounded-xl bg-gray-100 px-3 py-2 text-xs font-bold disabled:opacity-50"><Unlink size={14} />해제</button></div> : <button type="button" onClick={connect} disabled={!status.configured || Boolean(busy)} className="flex items-center gap-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:bg-gray-300">{busy === "connect" ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={15} />}Google 계정 연결</button>}
     </div>
 
     {!status.configured ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">운영 서버의 Google OAuth 설정을 마치면 연결 버튼이 활성화됩니다.</p> : null}
@@ -185,17 +197,19 @@ export default function GoogleCalendarPanel({ monthKey, onEvents }: { monthKey: 
     {message ? <p role="status" className={`mt-3 rounded-xl px-3 py-2 text-xs ${message.includes("못") || message.includes("필요") || message.includes("만료") ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{message}</p> : null}
 
     {showForm && status.connected ? <form onSubmit={saveEvent} className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
-      <div className="flex items-center justify-between"><b className="text-sm">{editingId ? "Google 일정 수정" : "새 Google 일정"}</b><button type="button" onClick={() => { setShowForm(false); setEditingId(""); }} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-500">닫기</button></div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="flex items-center justify-between"><b className="text-sm">{editingId ? "Google 일정 수정" : "새 Google 일정"}</b><button type="button" disabled={Boolean(busy)} onClick={() => { setShowForm(false); setEditingId(""); }} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-500">닫기</button></div>
+      <fieldset disabled={Boolean(busy)} className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="sm:col-span-2"><span className="mb-1 block text-xs font-bold text-gray-600">무슨 일정인가요?</span><input required maxLength={120} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 저녁 운동" className={inputClass} /></label>
-        <label><span className="mb-1 block text-xs font-bold text-gray-600">날짜</span><input required type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={inputClass} /></label>
-        <label className="flex items-end"><span className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm"><input type="checkbox" checked={form.allDay} onChange={(e) => setForm({ ...form, allDay: e.target.checked })} className="h-4 w-4" />하루 종일</span></label>
+        <label><span className="mb-1 block text-xs font-bold text-gray-600">날짜</span><input required type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, endDate: form.endDate === form.date ? e.target.value : form.endDate })} className={inputClass} /></label>
+        <label className="flex items-end"><span className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm"><input type="checkbox" disabled={Boolean(editingId)} checked={form.allDay} onChange={(e) => setForm({ ...form, allDay: e.target.checked })} className="h-4 w-4" />하루 종일</span></label>
+        {form.allDay ? <label><span className="mb-1 block text-xs font-bold text-gray-600">마지막 날짜 (이 날까지 포함)</span><input required type="date" min={form.date} value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} className={inputClass} /></label> : null}
         {!form.allDay ? <><label><span className="mb-1 block text-xs font-bold text-gray-600">시작</span><input required type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} className={inputClass} /></label><label><span className="mb-1 block text-xs font-bold text-gray-600">끝</span><input required type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} className={inputClass} /></label></> : null}
         <label className="sm:col-span-2"><span className="mb-1 block text-xs font-bold text-gray-600">메모 (선택)</span><textarea maxLength={1000} rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputClass} /></label>
-      </div>
-      <button disabled={busy === "save"} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:bg-gray-300">{busy === "save" ? <Loader2 size={16} className="animate-spin" /> : null}{editingId ? "수정 저장" : "Google Calendar에 추가"}</button>
+      </fieldset>
+      <p className="mt-2 text-xs text-gray-600">저장 오류가 나도 초안은 유지돼요. 필요한 내용을 복사한 뒤 목록 새로고침 → 수정 버튼으로 최신 일정을 다시 불러오세요.</p>
+      <button disabled={Boolean(busy)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:bg-gray-300">{busy === "save" ? <Loader2 size={16} className="animate-spin" /> : null}{editingId ? "수정 저장" : "Google Calendar에 추가"}</button>
     </form> : null}
 
-    {status.connected ? <div className="mt-4"><div className="flex items-center justify-between"><b className="text-sm">{monthKey} 일정</b>{busy === "load" ? <Loader2 size={15} className="animate-spin text-blue-600" /> : null}</div>{sortedEvents.length ? <div className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">{sortedEvents.map((item) => <article key={item.id} className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{item.title}</p><p className="mt-0.5 text-xs text-gray-500">{item.date} · {item.allDay ? "종일" : `${item.startLabel}${item.endLabel ? `–${item.endLabel}` : ""}`}</p></div>{item.htmlLink ? <a href={item.htmlLink} target="_blank" rel="noreferrer" aria-label="Google Calendar에서 열기" className="grid h-8 w-8 place-items-center rounded-lg bg-white text-gray-500"><ExternalLink size={14} /></a> : null}<button type="button" onClick={() => editEvent(item)} aria-label={`${item.title} 수정`} className="grid h-8 w-8 place-items-center rounded-lg bg-white text-blue-600"><Pencil size={14} /></button><button type="button" onClick={() => deleteEvent(item)} disabled={busy === `delete:${item.id}`} aria-label={`${item.title} 삭제`} className="grid h-8 w-8 place-items-center rounded-lg bg-white text-red-600 disabled:opacity-40">{busy === `delete:${item.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}</button></article>)}</div> : busy !== "load" ? <p className="mt-2 rounded-2xl bg-gray-50 p-4 text-sm text-gray-500">이 달에는 Google 일정이 없습니다.</p> : null}</div> : null}
+    {status.connected ? <div className="mt-4"><div className="flex items-center justify-between"><b className="text-sm">{monthKey} 일정</b><button type="button" disabled={Boolean(busy)} onClick={() => void loadEvents()} className="rounded-lg border px-2 py-1 text-xs">목록 새로고침</button>{busy === "load" ? <Loader2 size={15} className="animate-spin text-blue-600" /> : null}</div>{sortedEvents.length ? <div className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">{sortedEvents.map((item) => <article key={item.id} className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{item.title}</p><p className="mt-0.5 text-xs text-gray-500">{item.date}{item.endDate && item.endDate !== item.date ? ` ~ ${item.endDate}` : ""} · {item.allDay ? "종일" : `${item.startLabel}${item.endLabel ? `–${item.endLabel}` : ""}`}</p>{item.editBlockedReason ? <p className="mt-1 text-xs text-amber-800">{item.editBlockedReason}</p> : null}</div>{item.htmlLink ? <a href={item.htmlLink} target="_blank" rel="noreferrer" aria-label="Google Calendar에서 열기" className="grid h-8 w-8 place-items-center rounded-lg bg-white text-gray-500"><ExternalLink size={14} /></a> : null}<button type="button" onClick={() => editEvent(item)} disabled={Boolean(busy) || Boolean(item.editBlockedReason)} title={item.editBlockedReason} aria-label={`${item.title} 수정`} className="grid h-8 w-8 place-items-center rounded-lg bg-white text-blue-600"><Pencil size={14} /></button><button type="button" onClick={() => deleteEvent(item)} disabled={busy === `delete:${item.id}`} aria-label={`${item.title} 삭제`} className="grid h-8 w-8 place-items-center rounded-lg bg-white text-red-600 disabled:opacity-40">{busy === `delete:${item.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}</button></article>)}</div> : busy !== "load" ? <p className="mt-2 rounded-2xl bg-gray-50 p-4 text-sm text-gray-500">이 달에는 Google 일정이 없습니다.</p> : null}</div> : null}
   </section>;
 }
