@@ -249,3 +249,164 @@ test('date layout rejects duplicate label occurrences in one OCR line and compet
   const split = [...layout(), line('Print', 400, 80), line('Date:', 450, 80)];
   assert.equal(run(split), undefined);
 });
+
+function graphRow(texts: string[], xs: number[], y: number): InbodyLayoutLine {
+  const words = texts.map((text, index) => ({ text, confidence: 95, bbox: { x0: xs[index], x1: xs[index] + text.length * 8, y0: y, y1: y + 18 } }));
+  return { text: texts.join(' '), confidence: 95,
+    bbox: { x0: words[0].bbox.x0, x1: words.at(-1)!.bbox.x1, y0: y, y1: y + 18 }, words };
+}
+function percentGraphLayout(): InbodyLayoutLine[] {
+  return [line('[InBody270S]', 300, 20), line('Body Composition Analysis', 20, 100), line('Weight (kg) 79.6', 30, 150),
+    line('Muscle-Fat Analysis', 20, 250), line('Obesity Analysis', 20, 400),
+    graphRow(['BMI', '(kg/m2)', '25.7'], [30, 250, 450], 430), line('Body Mass Index', 30, 460),
+    line('8.0 13.0 18.0 23.0 28.0 33.0', 320, 490),
+    graphRow(['PBF', '(%)', '21.9'], [30, 250, 450], 530), line('Percent Body Fat', 30, 560),
+    line('Body Composition History', 20, 700), line('PBF (%) 30.0', 30, 740), line('Percent Body Fat', 30, 770),
+    line('Research Parameters', 700, 800), line('Fat Free Mass 62.2 kg', 700, 850)];
+}
+const graphReport = (items: InbodyLayoutLine[]) => {
+  const normalized = inbodyLayoutLines(items); return agreedInbody270sReport([normalized, normalized]);
+};
+const mutateGraph = (edit: (items: InbodyLayoutLine[]) => void) => { const items = percentGraphLayout(); edit(items); return items; };
+const moveGraphLine = (item: InbodyLayoutLine, dx: number, dy: number) => {
+  for (const box of [item.bbox, ...item.words.map(word => word.bbox)]) { box.x0 += dx; box.x1 += dx; box.y0 += dy; box.y1 += dy; }
+};
+
+test('complete PBF OCR row pairs only with its immediate full label inside verified graph boundaries', () => {
+  const input = percentGraphLayout(), before = structuredClone(input), result = graphReport(input);
+  assert.equal(result.values.bodyFatPercent, 21.9);
+  assert.equal(result.values.bmi, undefined, 'other graph fields are not broadened by this exception');
+  assert.equal(result.values.skeletalMuscleMass, undefined);
+  assert.equal(result.metricSources?.bodyFatPercent?.originalText, 'PBF Percent Body Fat (%) 21.9');
+  assert.equal(result.values.weight, 79.6); assert.equal(result.values.fatFreeMass, 62.2);
+  assert.deepEqual(input, before);
+  assert.equal(graphReport([...input].reverse()).values.bodyFatPercent, 21.9, 'OCR block order is not the row order');
+  const plain = input.map(({ text, confidence }) => ({ text, confidence }));
+  assert.equal(agreedInbody270sReport([plain, plain]).values.bodyFatPercent, undefined, 'text-only tick barrier unchanged');
+});
+
+test('PBF graph recovery never supplies a missing unit, decimal, value or label and does not correct OCR', () => {
+  for (const tokens of [['PBF', '21.9'], ['PBF', '(kg)', '21.9'], ['PBF', '(%)', '21'], ['PBF', '(%)', '2I.9'],
+    ['PBF', '(%)', '21.9', '28.0'], ['PBF', '(%)', '21.9', '(10.0~30.0)'], ['PBF', '(%)', '0.0'], ['PBF', '(%)', '200.0']]) {
+    const items = mutateGraph(x => { x[8] = graphRow(tokens, tokens.map((_, i) => 30 + i * 150), 530); });
+    assert.equal(graphReport(items).values.bodyFatPercent, undefined, tokens.join(' '));
+  }
+  for (const label of ['Body Mass Index', 'Percent Body', 'Percent Body Fat 21.9', 'Percent body fat']) {
+    assert.equal(graphReport(mutateGraph(x => { x[9] = line(label, 30, 560); })).values.bodyFatPercent, undefined, label);
+  }
+  const separatedUnit = mutateGraph(x => { x[8] = graphRow(['PBF', '21.9'], [30, 450], 530); x.push(line('(%)', 250, 530)); });
+  assert.equal(graphReport(separatedUnit).values.bodyFatPercent, undefined, 'no arbitrary same-row unit assembly');
+});
+
+test('PBF graph duplicate and conflicting raw evidence is retained rather than overwritten', () => {
+  for (const duplicate of [graphRow(['PBF', '(%)', '21.9'], [30, 250, 450], 600), graphRow(['PBF', '(%)', '25.0'], [30, 250, 450], 600),
+    line('PBF (kg) 21.9', 30, 600), line('Percent Body Fat', 30, 600), line('Percent Body Fat (%) 21.9', 30, 600)]) {
+    assert.equal(graphReport([...percentGraphLayout(), duplicate]).values.bodyFatPercent, undefined, duplicate.text);
+  }
+  const lowDuplicate = line('PBF (%) 21.9', 30, 600); lowDuplicate.confidence = 0;
+  assert.equal(graphReport([...percentGraphLayout(), lowDuplicate]).values.bodyFatPercent, undefined);
+  assert.equal(graphReport(mutateGraph(x => { x[8].words[2].text = '22.0'; })).values.bodyFatPercent, undefined, 'line and word streams must agree');
+});
+
+test('PBF graph recovery rejects intervening text or ticks, mismatched columns and section boundaries', () => {
+  for (const text of ['22.0', '18.0 23.0 28.0', 'Weight Control', 'Unexpected Summary']) {
+    assert.equal(graphReport([...percentGraphLayout(), line(text, 320, 550)]).values.bodyFatPercent, undefined, text);
+  }
+  assert.equal(graphReport([...percentGraphLayout(), line('Unknown Summary', 30, 420)]).values.bodyFatPercent, undefined);
+  for (const edit of [
+    (x: InbodyLayoutLine[]) => { x[4] = line('Weight Control', 20, 400); },
+    (x: InbodyLayoutLine[]) => { x[10] = line('Unknown History', 20, 700); },
+    (x: InbodyLayoutLine[]) => { x.push(line('Obesity Analysis', 20, 390)); },
+    (x: InbodyLayoutLine[]) => { moveGraphLine(x[9], 400, 0); },
+    (x: InbodyLayoutLine[]) => { moveGraphLine(x[9], 0, -50); },
+    (x: InbodyLayoutLine[]) => { moveGraphLine(x[9], 0, 60); },
+    (x: InbodyLayoutLine[]) => { moveGraphLine(x[8], 0, 200); moveGraphLine(x[9], 0, 200); },
+    (x: InbodyLayoutLine[]) => { x[8].words[1].bbox.y0 += 20; x[8].words[1].bbox.y1 += 20; x[8].bbox.y1 += 20; },
+  ]) assert.equal(graphReport(mutateGraph(edit)).values.bodyFatPercent, undefined);
+});
+
+test('PBF graph confidence and finite bounded geometry are required for every supporting row and word', () => {
+  for (const index of [4, 8, 9, 10]) for (const confidence of [59.9, NaN, Infinity]) {
+    assert.equal(graphReport(mutateGraph(x => { x[index].confidence = confidence; })).values.bodyFatPercent, undefined);
+    assert.equal(graphReport(mutateGraph(x => { x[index].words[0].confidence = confidence; })).values.bodyFatPercent, undefined);
+  }
+  const boundary = mutateGraph(x => { for (const i of [4, 8, 9, 10]) { x[i].confidence = 60; x[i].words.forEach(w => { w.confidence = 60; }); } });
+  assert.equal(graphReport(boundary).values.bodyFatPercent, 21.9);
+  for (const bad of [NaN, Infinity, -1]) {
+    assert.equal(graphReport(mutateGraph(x => { x[8].bbox.x0 = bad; })).values.bodyFatPercent, undefined);
+    assert.equal(graphReport(mutateGraph(x => { x[8].words[1].bbox.x0 = bad; })).values.bodyFatPercent, undefined);
+  }
+  assert.equal(graphReport(mutateGraph(x => { x[8].bbox.y1 = x[8].bbox.y0; })).values.bodyFatPercent, undefined);
+  assert.equal(graphReport(mutateGraph(x => { x[8].words[1].bbox.x1 = 900; })).values.bodyFatPercent, undefined);
+});
+
+test('PBF graph geometric limits are scale-relative and reject just-outside alignments and gaps', () => {
+  for (const scale of [.5, 1, 1.75, 3]) {
+    const items = percentGraphLayout();
+    for (const item of items) for (const box of [item.bbox, ...item.words.map(w => w.bbox)]) for (const key of ['x0', 'x1', 'y0', 'y1'] as const) box[key] *= scale;
+    assert.equal(graphReport(items).values.bodyFatPercent, 21.9, String(scale));
+  }
+  assert.equal(graphReport(mutateGraph(x => moveGraphLine(x[9], 9, 0))).values.bodyFatPercent, 21.9);
+  assert.equal(graphReport(mutateGraph(x => moveGraphLine(x[9], 9.01, 0))).values.bodyFatPercent, undefined);
+  assert.equal(graphReport(mutateGraph(x => moveGraphLine(x[9], 0, 15))).values.bodyFatPercent, 21.9);
+  assert.equal(graphReport(mutateGraph(x => moveGraphLine(x[9], 0, 15.01))).values.bodyFatPercent, undefined);
+});
+
+test('PBF graph value still needs independent agreement at both scales', () => {
+  const good = inbodyLayoutLines(percentGraphLayout());
+  const changed = inbodyLayoutLines(mutateGraph(x => { x[8] = graphRow(['PBF', '(%)', '22.0'], [30, 250, 450], 530); }));
+  const missing = inbodyLayoutLines(mutateGraph(x => { x.splice(9, 1); }));
+  assert.equal(agreedInbody270sReport([good, changed]).values.bodyFatPercent, undefined);
+  assert.equal(agreedInbody270sReport([good, missing]).values.bodyFatPercent, undefined);
+  assert.equal(agreedInbody270sReport([good]).values.bodyFatPercent, undefined);
+});
+
+
+test('PBF graph recovery retains ambiguity from rows crossing either horizontal boundary', () => {
+  for (const text of ['Weight Control', 'Unknown Summary', 'PBF (%) 28.0', 'Percent Body Fat']) {
+    for (const y of [505, 600]) {
+      const crossing = percentGraphLayout();
+      crossing.push(line(text, 0, y)); // leftEdge is 2; x0 alone must not exclude this row.
+      assert.equal(graphReport(crossing).values.bodyFatPercent, undefined, `${text} at ${y}`);
+    }
+  }
+  for (const x of [2, 670]) {
+    const crossing = percentGraphLayout();
+    crossing.push(line('Unknown Summary', x, 505));
+    assert.equal(graphReport(crossing).values.bodyFatPercent, undefined, `x=${x}`);
+  }
+});
+
+
+test('PBF graph ambiguity checks include case and word-stream variants without relaxing accepted rows', () => {
+  for (const text of ['percent body fat (%) 28.0', 'Percent body Fat (%) 28.0', 'pbf (%) 28.0',
+    'obesity analysis', '2 Obesity Analysis', 'body composition history', '3 Body Composition History']) {
+    for (const onlyWords of [false, true]) {
+      const items = percentGraphLayout(); const duplicate = line(text, 30, 600);
+      if (onlyWords) duplicate.text = 'Uncertain OCR text';
+      items.push(duplicate);
+      assert.equal(graphReport(items).values.bodyFatPercent, undefined, `${text} wordsOnly=${onlyWords}`);
+    }
+  }
+  for (const index of [4, 8, 9, 10]) {
+    const items = percentGraphLayout(); items[index].text = items[index].text.toLowerCase();
+    items[index].words.forEach(word => { word.text = word.text.toLowerCase(); });
+    assert.equal(graphReport(items).values.bodyFatPercent, undefined, `supporting row ${index}`);
+  }
+});
+
+
+test('PBF prior graph context cannot hide excluded text or detached words behind a known line label', () => {
+  for (const text of ['Body Mass Index', 'BMI (kg/m2) 25.7', '8.0 13.0 18.0']) {
+    const items = percentGraphLayout(); const hidden = line('Weight Control', 320, 505);
+    hidden.text = text; items.push(hidden);
+    assert.equal(graphReport(items).values.bodyFatPercent, undefined, text);
+  }
+  for (const index of [5, 6, 7]) {
+    const items = percentGraphLayout(); items[index].words[0].bbox.x0 = items[index].bbox.x0 - 1;
+    assert.equal(graphReport(items).values.bodyFatPercent, undefined, `prior geometry ${index}`);
+  }
+  const lowTicks = percentGraphLayout(); lowTicks[7].confidence = 0;
+  lowTicks[7].words.forEach(word => { word.confidence = 0; });
+  assert.equal(graphReport(lowTicks).values.bodyFatPercent, 21.9, 'tick values are not measurement evidence');
+});

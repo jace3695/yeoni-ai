@@ -105,6 +105,77 @@ function headerDateLine(lines: readonly InbodyLayoutLine[], bodyTop: number): In
   return [{ text, confidence: Math.min(label.confidence, ...heading.map(word => word.confidence), ...below.map(word => word.confidence)) }];
 }
 
+/** A narrow graph exception: one real OCR row already contains PBF, its unit
+ * and a single current value. The immediately lower full label verifies only
+ * the meaning, never supplies a unit/number. Keep original rows (and therefore
+ * duplicate/conflict evidence); do not relax the ordinary text parser. */
+function verifiedBodyFatPercentGraphRow(lines: readonly InbodyLayoutLine[], leftEdge: number, rightEdge: number): InbodyOcrLine[] {
+  const boxIsValid = (box: Box) => Object.values(box).every(value => Number.isFinite(value) && value >= 0)
+    && box.x1 > box.x0 && box.y1 > box.y0;
+  if (lines.some(line => !boxIsValid(line.bbox))) return [];
+  const coherentLine = (line: InbodyLayoutLine) => line.words.length > 0
+    && normalize(line.words.map(word => word.text).join(' ')) === normalize(line.text)
+    && line.words.every((word, index) => boxIsValid(word.bbox)
+      && word.bbox.x0 >= line.bbox.x0 && word.bbox.x1 <= line.bbox.x1
+      && word.bbox.y0 >= line.bbox.y0 && word.bbox.y1 <= line.bbox.y1
+      && (index === 0 || word.bbox.x0 >= line.words[index - 1].bbox.x1));
+  const exactLine = (line: InbodyLayoutLine) => coherentLine(line) && confident(line.confidence)
+    && line.words.every(word => confident(word.confidence));
+  const heading = (text: string) => {
+    // A second uncertain occurrence is still ambiguous, not discarded evidence.
+    const pattern = new RegExp(`^(?:\\d+\\s+)?${text}$`, 'i');
+    const matches = lines.filter(line => pattern.test(normalize(line.text))
+      || pattern.test(normalize(line.words.map(word => word.text).join(' '))));
+    return matches.length === 1 && normalize(matches[0].text) === text && exactLine(matches[0]) ? matches[0] : undefined;
+  };
+  const start = heading('Obesity Analysis'), end = heading('Body Composition History');
+  if (!start || !end || end.bbox.y0 <= start.bbox.y1
+    || Math.abs(start.bbox.x0 - end.bbox.x0) > Math.min(start.bbox.y1 - start.bbox.y0, end.bbox.y1 - end.bbox.y0)
+    || [start, end].some(line => line.bbox.x0 < leftEdge || line.bbox.x1 >= rightEdge)) return [];
+  // Include any horizontal overlap: crossing a boundary is ambiguity, not
+  // permission to discard an excluded heading or conflicting PBF observation.
+  const leftLines = lines.filter(line => line.bbox.x1 > leftEdge && line.bbox.x0 < rightEdge);
+  const overlapsSection = (line: InbodyLayoutLine) => line.bbox.y1 > start.bbox.y1 && line.bbox.y0 < end.bbox.y0;
+  const inSection = (line: InbodyLayoutLine) => line.bbox.y0 >= start.bbox.y1 && line.bbox.y1 <= end.bbox.y0 && line.bbox.x0 >= leftEdge && line.bbox.x1 < rightEdge;
+  if (leftLines.some(line => overlapsSection(line) && !inSection(line))) return [];
+  const section = leftLines.filter(inSection);
+  const abbreviations = section.filter(line => /\bPBF\b/i.test(line.text) || /\bPBF\b/i.test(line.words.map(word => word.text).join(' ')));
+  const labels = section.filter(line => /\bPercent Body Fat\b/i.test(normalize(line.text))
+    || /\bPercent Body Fat\b/i.test(normalize(line.words.map(word => word.text).join(' '))));
+  if (abbreviations.length !== 1 || labels.length !== 1) return [];
+  const row = abbreviations[0], label = labels[0];
+  if (!exactLine(row) || !exactLine(label) || normalize(label.text) !== 'Percent Body Fat'
+    || row.words.length !== 3 || !/^PBF \(%\) \d+\.\d+$/.test(normalize(row.text))) return [];
+  const [abbreviation, unit, value] = row.words;
+  if (abbreviation.text !== 'PBF' || unit.text !== '(%)' || !/^\d+\.\d+$/.test(value.text)) return [];
+  const rowHeight = row.bbox.y1 - row.bbox.y0, labelHeight = label.bbox.y1 - label.bbox.y0;
+  if (label.bbox.y0 < row.bbox.y1 || label.bbox.y0 - row.bbox.y1 > rowHeight * 1.5
+    || Math.abs(label.bbox.x0 - abbreviation.bbox.x0) > Math.min(rowHeight, labelHeight) * .5
+    || label.bbox.x1 >= unit.bbox.x0
+    || Math.abs(abbreviation.bbox.x0 - start.bbox.x0) > start.bbox.y1 - start.bbox.y0) return [];
+  const overlap = Math.min(...row.words.map(word => word.bbox.y1)) - Math.max(...row.words.map(word => word.bbox.y0));
+  if (overlap < Math.min(...row.words.map(word => word.bbox.y1 - word.bbox.y0)) * .6) return [];
+  // No intervening/overlapping text, number or separately recognized unit can
+  // be borrowed or silently consumed between the paired rows.
+  if (section.some(line => line !== row && line !== label
+    && line.bbox.y1 > row.bbox.y0 && line.bbox.y0 < label.bbox.y1)) return [];
+  // Unknown headings remain barriers. Only identifiable preceding BMI graph
+  // annotations and right-hand numeric tick runs may occur in this narrow zone.
+  const prior = section.filter(line => line.bbox.y1 <= row.bbox.y0);
+  if (prior.some(line => {
+    // Non-measurement ticks may have low confidence, but contradictory text
+    // streams or detached word geometry cannot establish harmless context.
+    if (!coherentLine(line)) return true;
+    const text = normalize(line.text);
+    if (text === 'Body Mass Index' || /^BMI(?:\s+[\d().?/%mkg²]+)+$/.test(text)) return false;
+    return !(line.bbox.x0 >= unit.bbox.x0 && /^\d+(?:\.\d+)*(?:\s+\d+(?:\.\d+)*)+$/.test(text));
+  })) return [];
+  return [{ text: start.text, confidence: start.confidence }, {
+    text: `PBF ${normalize(label.text)} ${unit.text} ${value.text}`,
+    confidence: Math.min(row.confidence, label.confidence, ...row.words.map(word => word.confidence), ...label.words.map(word => word.confidence)),
+  }];
+}
+
 /** Tesseract may split table columns into separate blocks. Rejoin only words
  * on the same visible row inside three independently identified headings.
  * Never concatenate the next text line or scrape the first available number. */
@@ -138,7 +209,8 @@ export function inbodyLayoutLines(lines: readonly InbodyLayoutLine[]): InbodyOcr
     confidence: Math.min(...row.words.map(word => word.confidence)) }));
   const ordered = [...lines].sort((a, b) => Number(a.bbox.x0 >= rightEdge) - Number(b.bbox.x0 >= rightEdge) || a.bbox.y0 - b.bbox.y0 || a.bbox.x0 - b.bbox.x0);
   return [...headerDateLine(lines, start.bbox.y0), ...ordered.filter(line => !DATE_LABEL.test(line.text)).flatMap(line => line === start ? [{ text: line.text, confidence: line.confidence }, ...assembled]
-    : inTable(line.bbox) ? [] : [{ text: line.text, confidence: line.confidence }])];
+    : inTable(line.bbox) ? [] : [{ text: line.text, confidence: line.confidence }]),
+    ...verifiedBodyFatPercentGraphRow(lines, leftEdge, rightEdge)];
 }
 
 function measurement(text: string, field: Field) {

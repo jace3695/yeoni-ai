@@ -41,7 +41,7 @@ async function expectMixedSourceLabels(page: Page) {
   }
 }
 
-test('actual PNG and local best_int worker recognize four clear rows, reject graphs and preserve review save reload boundaries', async ({ page, context }, testInfo) => {
+test('actual PNG and local best_int worker recognize four clear rows and one verified PBF graph row, reject uncertain graphs and preserve review save reload boundaries', async ({ page, context }, testInfo) => {
   // New real two-scale OCR only; existing mock-reader tests and timeouts are unchanged.
   test.setTimeout(90_000);
   const network = { writes: 0, api: 0, assets: new Set<string>() };
@@ -93,7 +93,7 @@ test('actual PNG and local best_int worker recognize four clear rows, reject gra
   await test.step('b3-real/worker-ocr', async () => {
     await upload.setInputFiles(resolve('scripts/browser-qa/fixtures/inbody-270s-synthetic.png'));
     await expect(page.getByLabel('가져오기 확인', { exact: true })).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByText(/숫자 4개를 읽었어요/)).toBeVisible();
+    await expect(page.getByText(/숫자 5개를 읽었어요/)).toBeVisible();
     expect(await page.evaluate(() => (window as typeof window & { __qaInbodyCanvas: number[][] }).__qaInbodyCanvas)).toEqual([[1800, 2550, 1800, 2550], [2100, 2975, 1800, 2550]]);
     expect(workers).toEqual([`http://127.0.0.1:3107${OCR_ASSET_PREFIX}/worker.min.js`]);
     await expect.poll(() => closedWorkers).toBe(1);
@@ -107,11 +107,11 @@ test('actual PNG and local best_int worker recognize four clear rows, reject gra
     await expect(page.getByLabel('측정 날짜', { exact: true })).toHaveValue('');
     await expect(page.getByRole('button', { name: '확인한 측정일에 저장', exact: true })).toBeDisabled();
     await page.locator('summary').filter({ hasText: 'InBody 지원 항목 대조표' }).click();
-    for (const [key, text] of [['weight', 'Weight: 79.6 kg'], ['bodyFatMass', 'Body Fat Mass: 17.4 kg'], ['fatFreeMass', 'Fat Free Mass: 62.2 kg'], ['basalMetabolicRate', 'Basal Metabolic Rate: 1623 kcal']]) {
+    for (const [key, text] of [['weight', 'Weight: 79.6 kg'], ['bodyFatMass', 'Body Fat Mass: 17.4 kg'], ['bodyFatPercent', 'Percent Body Fat: 21.9 %'], ['fatFreeMass', 'Fat Free Mass: 62.2 kg'], ['basalMetabolicRate', 'Basal Metabolic Rate: 1623 kcal']]) {
       await expect(page.locator(`[data-oa-field="${key}"]`)).toContainText(text);
       await expect(page.locator(`[data-oa-field="${key}"]`)).toContainText('사진 원문 출처 있음');
     }
-    for (const key of ['skeletalMuscleMass', 'bodyFatPercent', 'bmi']) await expect(page.locator(`[data-oa-field="${key}"]`)).toContainText('미인식 · 직접 확인 필요');
+    for (const key of ['skeletalMuscleMass', 'bmi']) await expect(page.locator(`[data-oa-field="${key}"]`)).toContainText('미인식 · 직접 확인 필요');
     await page.getByLabel('측정 날짜', { exact: true }).fill('2099-01-01');
     await page.getByRole('checkbox', { name: reviewName, exact: true }).check();
     await expect(page.getByRole('button', { name: '확인한 측정일에 저장', exact: true })).toBeDisabled();
@@ -120,7 +120,7 @@ test('actual PNG and local best_int worker recognize four clear rows, reject gra
     await expect(page.getByRole('button', { name: '확인한 측정일에 저장', exact: true })).toBeDisabled();
     await page.getByRole('checkbox', { name: reviewName, exact: true }).check();
     await expectMixedSourceLabels(page);
-    await captureFullPageEvidence(page, `.e2e/component-browser/evidence/inbody-real-ocr-four-row-review-${testInfo.project.name}.png`);
+    await captureFullPageEvidence(page, `.e2e/component-browser/evidence/inbody-real-ocr-five-row-review-${testInfo.project.name}.png`);
     expect(await snapshot(page)).toEqual(before);
   });
   await test.step('b3-real/save-reload', async () => {
@@ -133,12 +133,12 @@ test('actual PNG and local best_int worker recognize four clear rows, reject gra
     await expect(page.getByLabel('가져오기 확인', { exact: true })).toHaveCount(0);
     await page.reload(); const saved = await snapshot(page);
     expect(saved.weights[day].weight).toBe(79.6);
-    expect(saved.inbody[day]).toMatchObject({ ...before.inbody[day], bodyFatMass: 17.4, fatFreeMass: 62.2, basalMetabolicRate: 1623 });
-    for (const [key, label, unit] of [['weight', 'Weight', 'kg'], ['bodyFatMass', 'Body Fat Mass', 'kg'], ['fatFreeMass', 'Fat Free Mass', 'kg'], ['basalMetabolicRate', 'Basal Metabolic Rate', 'kcal']]) {
+    expect(saved.inbody[day]).toMatchObject({ ...before.inbody[day], bodyFatMass: 17.4, bodyFatPercent: 21.9, fatFreeMass: 62.2, basalMetabolicRate: 1623 });
+    for (const [key, label, unit] of [['weight', 'Weight', 'kg'], ['bodyFatMass', 'Body Fat Mass', 'kg'], ['bodyFatPercent', 'Percent Body Fat', '%'], ['fatFreeMass', 'Fat Free Mass', 'kg'], ['basalMetabolicRate', 'Basal Metabolic Rate', 'kcal']]) {
       expect(saved.inbody[day].metricSources[key]).toMatchObject({ device: 'InBody 270S English report', originalLabel: label, originalUnit: unit, method: 'ocr', mappingVersion: 'inbody-270s-en-v1' });
       expect(saved.inbody[day].metricSources[key].originalText).toContain(label);
     }
-    expect(Object.keys(saved.inbody[day].metricSources).sort()).toEqual(['basalMetabolicRate', 'bodyFatMass', 'fatFreeMass', 'weight']);
+    expect(Object.keys(saved.inbody[day].metricSources).sort()).toEqual(['basalMetabolicRate', 'bodyFatMass', 'bodyFatPercent', 'fatFreeMass', 'weight']);
     expect(saved.weights['2025-04-06']).toEqual(before.weights['2025-04-06']);
     expect(saved.inbody['2025-04-06']).toEqual(before.inbody['2025-04-06']);
     await page.locator('summary').filter({ hasText: '사진 항목 출처·원문 보기' }).click();
