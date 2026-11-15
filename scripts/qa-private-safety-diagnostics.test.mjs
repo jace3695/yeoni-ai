@@ -40,15 +40,15 @@ test('safety observation is enabled only by the explicit exact stage command and
   assert.equal(stages[0].command, safetyCommand); assert.equal(isSafetyStage(stages[0]), true);
   for (const stage of [{ ...stages[0], id: 'stage-02' }, ...['', ' --list', ' --test-name-pattern=x', '\n', ' '].slice(1).map(suffix => ({ ...stages[0], command: safetyCommand + suffix })),
     { ...stages[0], command: 'node --test scripts/isolated-chromium-smoke/safety.test.mjs' }, { ...stages[0], command: 'exit 0' }]) assert.equal(isSafetyStage(stage), false);
-  assert.deepEqual(stages.map(item => item.timeoutMs), [120000, 240000, 405000]); assert.equal(totalTimeoutMs, 775000); assert.equal(inventory.length, 20);
+  assert.deepEqual(stages.map(item => item.timeoutMs), [120000, 240000, 405000]); assert.equal(totalTimeoutMs, 775000); assert.equal(inventory.length, 21);
 });
 
-test('fixed original declaration multiplicities retain all 274 prior controls and separate source identities', () => {
-  assert.deepEqual([1, 2, 3, 4].map(source => safetyInventory.filter(item => item.source === source).reduce((sum, item) => sum + item.count, 0)), [11, 12, 210, 41]);
-  assert.equal(safetyInventory.filter(item => item.source <= 4).length, 95);
+test('fixed declaration multiplicities retain all 274 prior controls plus two resource controls', () => {
+  assert.deepEqual([1, 2, 3, 4].map(source => safetyInventory.filter(item => item.source === source).reduce((sum, item) => sum + item.count, 0)), [11, 12, 210, 43]);
+  assert.equal(safetyInventory.filter(item => item.source <= 4).length, 97);
   assert.equal(new Set(safetyInventory.map(item => `${item.source}:${item.line}:${item.column}`)).size, safetyInventory.length);
   assert.equal(Object.isFrozen(safetyInventory), true); assert.ok(safetyInventory.every(Object.isFrozen));
-  assert.ok(safetyCount > 274 && safetyCount < 500);
+  assert.equal(safetyCount, 294); assert.equal(safetyInventory.filter(item => item.source === 4 && item.line < 1940).length, 41);
 });
 
 test('complete native outcome inventory and final global summary are both required for success', () => {

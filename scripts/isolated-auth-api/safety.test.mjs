@@ -245,7 +245,7 @@ test('supervisor timeout cannot become success or expose raw output', async () =
 test('workflow differs only by two default-only private steps and dependency pin remains unchanged', async () => {
   const workflow = await readFile(new URL('../../.github/workflows/japanese-candidate-ci.yml', import.meta.url), 'utf8');
   const addition = "      - name: Verify disposable Auth and API persistence privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-auth-api/supervisor.mjs\n";
-  const browserAddition = "      - name: Verify twenty authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
+  const browserAddition = "      - name: Verify twenty-one authenticated app flows in PINNED PLAYWRIGHT CHROMIUM privately\n        if: matrix.compiler == 'default'\n        run: node scripts/isolated-chromium-smoke/supervisor.mjs\n";
   assert.equal(workflow.split(addition).length, 2);
   const dietAddition = "      - name: Verify seven diet lesson and safety UX regressions in isolated Chromium\n        if: matrix.compiler == 'webpack'\n        run: node scripts/isolated-diet-regression/supervisor.mjs\n";
   assert.equal(workflow.split(dietAddition).length, 2);

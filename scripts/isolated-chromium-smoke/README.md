@@ -500,3 +500,37 @@ Source preparation is not a first17-case success: no browser/native/DB execution
 The eighteenth case reuses source41 at its actual declaration37; no registry entry is added or renumbered (still58). The workout test/helper remain provisional pending independent source review. Existing17 and common20 diagnostics remain. Primary three-day workout history is synthetic direct seed, not UI-recorded exercise; real UI collapse/consent/apply/readback/reload checks are prepared, not executed. Full-state checks include the one load step, required historical override and decision record.
 
 Current strict inventory18, planned21 disposable accounts. Case90s/stage465s/total775s/worker1/retry0/privacy20 unchanged. Safety292 unchanged: no new native subprocess or large control. Runtime fit and actual18 success unverified. Remote publication remains blocked; this local packet is not a deployment or workaround. Historical17 notes above describe the previous stage.
+
+
+## Resource upload recovery: explicit 21st-case preparation (source 59)
+
+This append preserves the original twenty selected test bodies and coordinates,
+fixture, reporter, owner-isolated Storage/Auth teardown and external-origin gate.
+The only new selector is `resource-upload-recovery.spec.ts:3` (source59/project5).
+It adds one generated disposable owner and two tiny in-memory synthetic text files.
+No uploaded user file, real account, production service or paid API is used.
+
+The real resource page uploads and confirms the first file, including a genuinely
+empty File MIME normalized by the application. For the second file the real local
+Storage write and actual PostgREST insert must succeed before the route replaces
+only its delivered response with503. Only matching owner/ID confirmation GETs
+then receive503. The test asserts original IDs/paths, both actual file bytes and
+metadata, pending journal and disabled new upload. Same-tab reload and the real
+read-only confirmation button must clear the journal without another upload,
+insert or delete. Existing unrelated app/language states remain unchanged. Fault
+routes drain and unregister before the unchanged fixture deletes only its own
+synthetic Storage prefix, verifies emptiness, deletes Auth owners and checks rows.
+
+No source/data result is manufactured by application-state writes or save-helper
+calls. Successful Storage/DB responses are never mocked. A 320 CSS-pixel overflow
+assertion is virtual viewport coverage, not a physical-mobile test. RetryMissing,
+wrong-file reselection, owner changes, tab closure and all other legacy/parallel
+record-repair boundaries remain outside this minimal new browser case.
+
+The strict plan/config/diagnostic acceptance and success label now require exactly
+21 identities. Existing 359 unit paths, case90s, browser405s, supervisor775s,
+worker1/retry0/repeat1, pinned browser/image/ref and private diagnostics remain.
+The privacy detail cap stays20. Source pins, list-only collection and synthetic
+failure/cleanup rejection tests do not prove UI execution or timing fit. Only a
+source-matched automatic isolated CI run can establish actual21 execution and
+fixture cleanup. No manual workflow invocation or alternative access is added.
