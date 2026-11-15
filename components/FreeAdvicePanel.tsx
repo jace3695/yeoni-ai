@@ -10,40 +10,61 @@ import ZephyrReadButton from './ZephyrReadButton';
 type Preview = { context: FreeAdviceContext; fingerprint: string; configured: boolean };
 type ApiBody = Partial<Preview> & { advice?: FreeAdvice; performance?: ReplyPlan; error?: string; code?: string };
 
-export default function FreeAdvicePanel({ scope, initialQuestion = "", onComplete, onBusyChange }: {
-  scope: FreeAdviceScope; initialQuestion?: string;
+export default function FreeAdvicePanel({ scope, initialQuestion = "", sourceOwnerId, onComplete, onBusyChange }: {
+  scope: FreeAdviceScope; initialQuestion?: string; sourceOwnerId?: string | null;
   onComplete?: (advice: FreeAdvice, source: FreeAdviceContext["recordSource"], performance?: ReplyPlan) => Promise<void>;
   onBusyChange?: (busy: boolean) => void;
 }) {
   const id = useId();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [question, setQuestion] = useState(initialQuestion);
+  // The optional owner accompanies private initial text; public fixed examples omit it.
+  const questionOriginOwner = useRef(sourceOwnerId);
   const [acknowledged, setAcknowledged] = useState(false);
   const [advice, setAdvice] = useState<FreeAdvice | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [accountScope, setAccountScope] = useState<{ owner: string | null; epoch: number } | null>(null);
+  const accountEpoch = useRef(0);
+  const mounted = useRef(false);
   const requestNumber = useRef(0);
   const inFlight = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const identity = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
+    mounted.current = true;
+    let active = true;
     const { data: { subscription } } = createClient().auth.onAuthStateChange((_event, session) => {
+      if (!active || !mounted.current) return;
       const next = session?.user.id ?? null;
+      if (identity.current !== next) accountEpoch.current += 1;
       if (identity.current !== undefined && identity.current !== next) {
         requestNumber.current += 1;
         controller.current?.abort(); inFlight.current = false;
         setPreview(null); setAdvice(null); setQuestion(""); setAcknowledged(false); setNotice(""); setBusy(false);
       }
       identity.current = next;
+      setAccountScope({ owner: next, epoch: accountEpoch.current });
     });
-    return () => { subscription.unsubscribe(); requestNumber.current += 1; controller.current?.abort(); inFlight.current = false; };
+    return () => { active = false; mounted.current = false; accountEpoch.current += 1; subscription.unsubscribe(); requestNumber.current += 1; controller.current?.abort(); inFlight.current = false; };
   }, [scope]);
 
   async function requestAdvice(action: "preview" | "analyze", recordSource: FreeAdviceContext["recordSource"] = "user-records") {
+    const owner = accountScope?.owner, epoch = accountScope?.epoch;
+    if (!mounted.current) return;
+    if (!accountScope) {
+      if (identity.current === undefined && accountEpoch.current === 0) setNotice("로그인 계정을 확인한 뒤 다시 요청해 주세요.");
+      return;
+    }
+    if (identity.current !== owner || accountEpoch.current !== epoch) return;
+    if ((sourceOwnerId !== undefined && sourceOwnerId !== owner)
+      || (questionOriginOwner.current !== undefined && questionOriginOwner.current !== owner)) return;
+    if (typeof owner !== "string" || !owner.trim()) { setNotice("로그인 계정을 확인한 뒤 다시 요청해 주세요."); return; }
     if (inFlight.current || action === "analyze" && (!preview || !acknowledged || !preview.configured)) return;
     inFlight.current = true; setBusy(true); onBusyChange?.(true); setNotice(""); setAdvice(null);
     const currentRequest = ++requestNumber.current;
+    const isCurrent = () => mounted.current && identity.current === owner && accountEpoch.current === epoch && currentRequest === requestNumber.current;
     const abort = new AbortController(); controller.current = abort;
     const timeout = window.setTimeout(() => abort.abort("timeout"), 45_000);
     if (action === "preview") { setPreview(null); setAcknowledged(false); }
@@ -51,9 +72,10 @@ export default function FreeAdvicePanel({ scope, initialQuestion = "", onComplet
       const response = await authenticatedFetch("/api/ai/free-advice", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: abort.signal,
         body: JSON.stringify({ scope, action, question, recordSource: action === "analyze" ? preview!.context.recordSource : recordSource, ...(action === "analyze" ? { fingerprint: preview!.fingerprint, freeDataUseAcknowledged: acknowledged } : {}) }),
-      });
+      }, { ownerId: owner, isCurrent });
       const body: ApiBody = await response.json().catch(() => ({}));
-      if (currentRequest !== requestNumber.current) return;
+      if (!isCurrent()) return;
+      if (abort.signal.aborted) throw new Error("조언 요청이 중단됐어요.");
       if (!response.ok) {
         if (body.code === "FREE_ADVICE_RECORDS_CHANGED") { setPreview(null); setAcknowledged(false); }
         throw new Error(body.error || "조언을 준비하지 못했어요. 나중에 다시 이용해 주세요.");
@@ -67,10 +89,10 @@ export default function FreeAdvicePanel({ scope, initialQuestion = "", onComplet
         else setAdvice(body.advice);
       }
     } catch (error) {
-      if (currentRequest === requestNumber.current) setNotice(abort.signal.reason === "timeout" ? "기록 확인에 시간이 오래 걸려 중단했어요. 나중에 다시 요청해 주세요." : error instanceof Error ? error.message : "연결을 확인한 뒤 다시 이용해 주세요.");
+      if (isCurrent()) setNotice(abort.signal.reason === "timeout" ? "기록 확인에 시간이 오래 걸려 중단했어요. 나중에 다시 요청해 주세요." : error instanceof Error ? error.message : "연결을 확인한 뒤 다시 이용해 주세요.");
     } finally {
       window.clearTimeout(timeout);
-      if (currentRequest === requestNumber.current) { inFlight.current = false; setBusy(false); onBusyChange?.(false); }
+      if (isCurrent()) { inFlight.current = false; setBusy(false); onBusyChange?.(false); }
     }
   }
 

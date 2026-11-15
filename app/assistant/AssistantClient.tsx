@@ -159,7 +159,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
     if (chatDraftLease.current) updateAssistantChatInputDraft(chatDraftLease.current, value, userEdit);
   }, []);
   const [chatSending, setChatSending] = useState(false);
-  const [activeAdvice, setActiveAdvice] = useState<{ id: string; scope: FreeAdviceScope; question: string } | null>(null);
+  const [activeAdvice, setActiveAdvice] = useState<{ id: string; scope: FreeAdviceScope; question: string; ownerId: string | null } | null>(null);
   const [adviceBusy, setAdviceBusy] = useState(false);
   const chatLock = useRef(false);
   const [chatHistoryLoading, setChatHistoryLoading] = useState(true);
@@ -380,7 +380,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
       if (!isCurrent()) return;
       if (!response.ok) throw new Error(data.error || "응답을 받지 못했습니다.");
       if (!isLocalBodyQuestion(String(data.reply ?? '')) && data.adviceRequest && isFreeAdviceScope(data.adviceRequest.scope)) {
-        setActiveAdvice({ id: crypto.randomUUID(), scope: data.adviceRequest.scope, question: value });
+        setActiveAdvice({ id: crypto.randomUUID(), scope: data.adviceRequest.scope, question: value, ownerId: replyOwner });
       }
       if (data.proposal) await pending.add(data.proposal, sessionData.session!.user.id);
       const protectedReply = isLocalBodyQuestion(String(data.reply ?? ''));
@@ -741,7 +741,7 @@ export default function AssistantClient({ characterAudio = null }: { characterAu
           incoming={characterReply?.ownerId === pending.ownerId ? characterReply : null} busy={chatSending || adviceBusy} />
           : <AppCompanion compact embedded quiet={chatSending}>{welcomeText}</AppCompanion>}</div>
         {activeAdvice && <div aria-label="대화 중 조언 확인">
-          <FreeAdvicePanel key={activeAdvice.id} scope={activeAdvice.scope} initialQuestion={activeAdvice.question} onComplete={finishAdvice} onBusyChange={changeAdviceBusy} />
+          <FreeAdvicePanel key={activeAdvice.id} scope={activeAdvice.scope} initialQuestion={activeAdvice.question} sourceOwnerId={activeAdvice.ownerId} onComplete={finishAdvice} onBusyChange={changeAdviceBusy} />
           <button type="button" disabled={adviceBusy} onClick={() => { clearCharacter(); setActiveAdvice(null); }} className="min-h-11 rounded-xl px-4 py-2 text-sm font-bold text-gray-600 disabled:opacity-40">조언 취소</button>
         </div>}
         {chatHistoryNotice && <p role="status" className="mt-2 text-xs font-semibold text-amber-700">{chatHistoryNotice}</p>}
