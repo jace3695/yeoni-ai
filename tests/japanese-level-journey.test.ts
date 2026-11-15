@@ -119,3 +119,71 @@ test('new UI has no text entry, microphone, recorder or voice-chat integration',
     assert.match(readFileSync(new URL(`../app/language/${path}/page.tsx`, import.meta.url), 'utf8'), /RetiredPractice/);
   }
 });
+
+
+test('early independent reading practice preserves the scheduled interval and recall evidence', () => {
+  let state = rememberUpperAnswer(emptyLevelJourney(), answer('initial'), new Date('2026-01-01T12:00:00Z'));
+  state = rememberUpperAnswer(state, answer('first-due'), new Date('2026-01-02T12:00:00Z'));
+  const scheduled = state.answers['upper-01-q1'];
+  assert.equal(scheduled.intervalDays, 3);
+  const before = JSON.stringify(state);
+  const early = rememberUpperAnswer(state, answer('early'), new Date('2026-01-03T12:00:00Z'));
+  const item = early.answers['upper-01-q1'];
+  assert.equal(JSON.stringify(state), before, 'the previous snapshot remains unchanged');
+  assert.equal(item.intervalDays, 3);
+  assert.equal(item.nextReviewAt, scheduled.nextReviewAt);
+  assert.deepEqual(item.successDates, scheduled.successDates);
+  assert.equal(upperAnswerStable(item), false);
+  assert.equal(item.lastAttemptId, 'early'); assert.equal(item.attempts, 3);
+  assert.equal(item.lastAnsweredAt, '2026-01-03T12:00:00.000Z');
+  assert.equal(dueUpperAnswers(early, Date.parse('2026-01-05T12:00:00Z')).length, 1);
+  assert.equal(rememberUpperAnswer(early, answer('early'), new Date('2026-01-20T12:00:00Z')), early);
+  const due = rememberUpperAnswer(early, answer('second-due'), new Date('2026-01-05T12:00:00Z'));
+  assert.equal(due.answers['upper-01-q1'].intervalDays, 7);
+  assert.equal(due.answers['upper-01-q1'].nextReviewAt, '2026-01-12T12:00:00.000Z');
+  assert.equal(upperAnswerStable(due.answers['upper-01-q1']), true);
+});
+
+test('early practice across midnight does not turn a few minutes into spaced recall', () => {
+  const first = rememberUpperAnswer(emptyLevelJourney(), answer('night'), new Date(2026, 0, 1, 23, 59));
+  const early = rememberUpperAnswer(first, answer('midnight'), new Date(2026, 0, 2, 0, 1));
+  assert.equal(early.answers['upper-01-q1'].intervalDays, 1);
+  assert.equal(early.answers['upper-01-q1'].nextReviewAt, first.answers['upper-01-q1'].nextReviewAt);
+  assert.deepEqual(early.answers['upper-01-q1'].successDates, first.answers['upper-01-q1'].successDates);
+});
+
+for (const neededHelp of [false, true]) test(`early wrong or helped practice still shortens review (help ${neededHelp})`, () => {
+  let state = emptyLevelJourney();
+  for (const [i, stamp] of ['2026-01-01T12:00:00Z', '2026-01-02T12:00:00Z', '2026-01-05T12:00:00Z'].entries()) {
+    state = rememberUpperAnswer(state, answer(`due-${i}`), new Date(stamp));
+  }
+  assert.equal(state.answers['upper-01-q1'].intervalDays, 7);
+  const early = rememberUpperAnswer(state, answer('needs-practice', neededHelp, neededHelp), new Date('2026-01-06T12:00:00Z'));
+  assert.equal(early.answers['upper-01-q1'].intervalDays, 1);
+  assert.equal(early.answers['upper-01-q1'].nextReviewAt, '2026-01-07T12:00:00.000Z');
+  assert.deepEqual(early.answers['upper-01-q1'].successDates, []);
+  assert.equal(upperAnswerStable(early.answers['upper-01-q1']), false);
+});
+
+
+test('a pre-deadline answer does not block the actual due answer later the same day', () => {
+  let state = rememberUpperAnswer(emptyLevelJourney(), answer('initial'), new Date('2026-01-01T12:00:00Z'));
+  state = rememberUpperAnswer(state, answer('first-due'), new Date('2026-01-02T12:00:00Z'));
+  for (const [attemptId, stamp] of [['early-morning', '2026-01-05T09:00:00Z'], ['last-millisecond', '2026-01-05T11:59:59.999Z']]) {
+    state = rememberUpperAnswer(state, answer(attemptId), new Date(stamp));
+    assert.equal(state.answers['upper-01-q1'].intervalDays, 3);
+    assert.equal(state.answers['upper-01-q1'].nextReviewAt, '2026-01-05T12:00:00.000Z');
+    assert.equal(state.answers['upper-01-q1'].successDates.length, 2);
+  }
+  state = rememberUpperAnswer(state, answer('exact-deadline'), new Date('2026-01-05T12:00:00Z'));
+  const due = state.answers['upper-01-q1'];
+  assert.equal(due.intervalDays, 7);
+  assert.equal(due.nextReviewAt, '2026-01-12T12:00:00.000Z');
+  assert.equal(due.successDates.length, 3);
+  assert.equal(upperAnswerStable(due), true);
+  assert.equal(dueUpperAnswers(state, Date.parse('2026-01-05T12:00:00Z')).length, 0);
+  const repeat = rememberUpperAnswer(state, answer('after-deadline-repeat'), new Date('2026-01-05T12:00:00.001Z'));
+  assert.equal(repeat.answers['upper-01-q1'].intervalDays, 7);
+  assert.equal(repeat.answers['upper-01-q1'].nextReviewAt, due.nextReviewAt);
+  assert.deepEqual(repeat.answers['upper-01-q1'].successDates, due.successDates);
+});

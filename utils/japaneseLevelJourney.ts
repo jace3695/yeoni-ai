@@ -66,13 +66,15 @@ export function rememberUpperAnswer(state: LevelJourney, input: {
   if (previous?.lastAttemptId === input.attemptId) return state;
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const independent = input.correct && !input.neededHelp;
-  const sameDay = previous && new Date(previous.lastAnsweredAt).toDateString() === now.toDateString();
-  const intervalDays = !independent ? 1 : sameDay ? Math.max(1, previous.intervalDays) : reviewInterval(previous?.intervalDays, true, { neededHelp: false, modality: 'meaning' });
-  const nextReviewAt = sameDay && independent && previous.correct && !previous.neededHelp ? previous.nextReviewAt : new Date(now.getTime() + intervalDays * 86_400_000).toISOString();
+  // Extra practice before the scheduled recall is an observation, not a spaced success.
+  // Wrong/helped answers still shorten the interval immediately.
+  const earlyIndependent = independent && previous && now.getTime() < Date.parse(previous.nextReviewAt);
+  const intervalDays = earlyIndependent ? previous.intervalDays : !independent ? 1 : reviewInterval(previous?.intervalDays, true, { neededHelp: false, modality: 'meaning' });
+  const nextReviewAt = earlyIndependent ? previous.nextReviewAt : new Date(now.getTime() + intervalDays * 86_400_000).toISOString();
   const answer: UpperAnswerRecord = {
     lessonId: input.lessonId, questionId: input.questionId, lastAttemptId: input.attemptId, lastAnsweredAt: now.toISOString(),
     correct: input.correct, neededHelp: input.neededHelp, attempts: Math.min(10_000, (previous?.attempts ?? 0) + 1), intervalDays, nextReviewAt,
-    successDates: independent ? [...new Set([...(previous?.successDates ?? []), day])].slice(-30) : [],
+    successDates: earlyIndependent ? [...previous.successDates] : independent ? [...new Set([...(previous?.successDates ?? []), day])].slice(-30) : [],
   };
   return { ...state, answers: { ...state.answers, [input.questionId]: answer } };
 }
