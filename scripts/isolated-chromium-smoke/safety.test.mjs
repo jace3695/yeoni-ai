@@ -728,7 +728,7 @@ test('reviewed curriculum repair and bounded real-UI scenarios retain exact sour
   "components/language/FocusedLesson.tsx": "638447ef4f8592a5571ea1656f079d8b5a8488a001ebcff222048a207739e8e6",
   "components/language/KanaStarter.tsx": "5bf3defa4650c2ad80f0318402bb2a9308ea3e22e72b2f6e966585175aaf2e62",
   "components/language/LearningWelcome.tsx": "c695eb46ce075faceb1d9298593863dc8195bde8f2bd8a746ee93aa63085aa4e",
-  "components/language/LevelLearningWorkspace.tsx": "3c725ef37d35b10c17d8962897f25ee756cb0b9090000706a6b1b366bbf412b2",
+  "components/language/LevelLearningWorkspace.tsx": "e7b8e2bdcce9cfd0b50f029a1cb744f0daf6aee1bc34c64b2303e69236aa4ddc",
   "tests/fixtures/curriculumUiHarness.ts": "cc0b1bedc39e32cf82232e6a630f85cd9e87aa8e17e9ee0ff5774e4df0a521ce",
   "tests/language-storage-compatibility-ui.test.ts": "bf9db8fc45832aafb8c1480fab71a7bab6ef530625a35dca1ef30ccdb9aa83c5",
   "utils/curriculumProgress.ts": "c9ce21e1c5e3be1deb15fe97f681169fc6a5a1364c766cc44c1940514b1912ef",

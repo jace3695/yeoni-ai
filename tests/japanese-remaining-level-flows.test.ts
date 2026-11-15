@@ -1,3 +1,4 @@
+import { watchJapaneseReviewClock } from '../utils/japaneseReviewClock.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequire } from 'node:module';
@@ -90,7 +91,7 @@ function store(initial = seed(), deferred = false) {
   };
   return { value: () => value, replace: (next: journeys.LevelJourney) => { value = next; }, update, calls: () => calls, commits: () => commits, proposals, failNext: () => { fail = true; }, release: () => { const next = releases.shift(); assert.ok(next, 'No pending synthetic save'); next(); } };
 }
-function workspace(storage = store(), requestedLevel?: string) {
+function workspace(storage = store(), requestedLevel?: string, watch: typeof watchJapaneseReviewClock = () => () => {}) {
   const runtime = hooks(); let props: Record<string, unknown> = { requestedLevel }, owner = 'synthetic-A:epoch1:reset1', readError = '', loading = false;
   let hookState = { owner, value: storage.value() };
   const readHook = () => { if (hookState.owner !== owner || hookState.value !== storage.value()) hookState = { owner, value: storage.value() }; return { state: loading ? undefined : hookState, readError, update: storage.update, reload() {} }; };
@@ -99,7 +100,7 @@ function workspace(storage = store(), requestedLevel?: string) {
     react: runtime.api, 'next/link': Link, '@/data/japaneseLevels': levels, '@/data/japaneseReadingLessons': readings,
     '@/utils/curriculumProgress': { loadCurriculumProgress: () => ({ completedLessonIds: ['f01', 'f12', 'f20'] }) },
     '@/utils/japaneseLevelJourney': journeys, './UpperReadingLesson': Reading,
-    './useLevelJourney': { useLevelJourney: readHook },
+    './useLevelJourney': { useLevelJourney: readHook }, '@/utils/japaneseReviewClock': { watchJapaneseReviewClock: watch },
   }).default;
   const render = () => runtime.render(() => component(props));
   return { ...actions(render), render, storage, unmount: runtime.unmount,
@@ -221,4 +222,73 @@ test('opening, backing from and reopening a reading lesson without an answer mak
   (flow.link('← 중급 단원으로').props.onNavigate as () => void)(); flow.unmount();
   const reopened = reading(storage, false); assert.match(reopened.html(), /무엇을 찾으며 읽을까요/); assert.doesNotMatch(reopened.html(), /내 선택:|정답:/);
   assert.deepEqual(storage.value(), before); assert.equal(storage.calls(), 0);
+});
+
+// Actual workspace TSX and existing clock utility with controlled time/hooks.
+// This is deterministic regression coverage, not a real-browser visibility test.
+function reviewClockHarness(start: number) {
+  let time = start, hidden = false, serial = 0, ticks = 0;
+  const timers = new Map<number, { callback: () => void; delay: number }>();
+  const listeners = new Set<() => void>();
+  const watch: typeof watchJapaneseReviewClock = (deadlines, refresh) => watchJapaneseReviewClock(deadlines, () => { ticks++; refresh(); }, {
+    now: () => time, hidden: () => hidden,
+    schedule(callback, delay) { const id = ++serial; timers.set(id, { callback, delay }); return id; },
+    cancel(id) { timers.delete(id); }, listen(callback) { listeners.add(callback); return () => { listeners.delete(callback); }; },
+  });
+  return { watch, timers, listeners, now: () => time, ticks: () => ticks,
+    advance(milliseconds: number) { time += milliseconds; },
+    fire() { const entry = [...timers.entries()][0]; assert.ok(entry, 'visible review list needs a scheduled refresh'); timers.delete(entry[0]); entry[1].callback(); },
+    visibility(value: boolean) { hidden = value; for (const callback of listeners) callback(); },
+  };
+}
+function deadlineSeed(now: number) {
+  let value = journeys.emptyLevelJourney();
+  for (const [lesson, offset] of [[middle, 1000], [upper, 2000]] as const) {
+    value = journeys.rememberUpperAnswer(value, { lessonId: lesson.id, questionId: lesson.questions[0].id, attemptId: lesson.id, correct: false, neededHelp: false }, new Date(now + offset - 86_400_000));
+  }
+  value = journeys.rememberUpperAnswer(value, { lessonId: 'retired', questionId: 'retired-q', attemptId: 'retired', correct: false, neededHelp: false }, new Date(now - 86_400_000));
+  return value;
+}
+test('reading review deadline refreshes an open level list without storing or changing selected level or scope', () => {
+  const clock = reviewClockHarness(Date.parse('2026-11-15T00:00:00Z')), originalNow = Date.now;
+  Date.now = clock.now;
+  const storage = store(deadlineSeed(clock.now())), before = JSON.stringify(storage.value());
+  const flow = workspace(storage, 'intermediate', clock.watch);
+  try {
+    assert.match(flow.html(), /전체 단계 예정 복습: 0문제 · 전체 0문제/);
+    assert.equal(clock.timers.size, 1); assert.equal([...clock.timers.values()][0].delay, 1000);
+    flow.click('살펴보는 중급만');
+    clock.advance(1000); clock.fire(); assert.equal(clock.ticks(), 1);
+    assert.match(flow.html(), /살펴보는 중급 예정 복습: 1문제 · 전체 1문제/);
+    clock.advance(1000); clock.fire();
+    assert.match(flow.html(), /살펴보는 중급 예정 복습: 1문제 · 전체 2문제/);
+    flow.navigate({ requestedLevel: 'advanced' });
+    assert.match(flow.html(), /살펴보는 고급 예정 복습: 1문제 · 전체 2문제/);
+    assert.match(flow.html(), /내가 선택한 단계: <strong>초급/);
+    assert.equal(storage.calls(), 0); assert.equal(JSON.stringify(storage.value()), before);
+  } finally { flow.unmount(); Date.now = originalNow; }
+  assert.equal(clock.timers.size, 0); assert.equal(clock.listeners.size, 0);
+});
+test('level list clock pauses for reading routes and read errors, resumes on return and leaves the frozen reading queue alone', () => {
+  const clock = reviewClockHarness(Date.parse('2026-11-15T00:00:00Z')), originalNow = Date.now;
+  Date.now = clock.now;
+  const storage = store(deadlineSeed(clock.now())), before = JSON.stringify(storage.value());
+  const flow = workspace(storage, 'intermediate', clock.watch);
+  try {
+    flow.render(); assert.equal(clock.timers.size, 1);
+    flow.navigate({ lessonId: middle.id, reviewOnly: true });
+    assert.equal(clock.timers.size, 0); assert.equal(clock.listeners.size, 0);
+    clock.advance(3000);
+    assert.ok(elements(flow.render()).some(node => node.props.reviewOnly === true && node.props.lesson === middle));
+    assert.equal(clock.ticks(), 0);
+    storage.replace(clone(storage.value())); flow.render(); assert.equal(clock.timers.size, 0);
+    flow.navigate({ requestedLevel: 'intermediate' });
+    assert.match(flow.html(), /전체 단계 예정 복습: 2문제 · 전체 2문제/); assert.equal(clock.timers.size, 1);
+    clock.visibility(true); assert.equal(clock.timers.size, 0);
+    clock.visibility(false); assert.equal(clock.timers.size, 1); assert.equal(clock.ticks(), 1);
+    flow.readError('Synthetic blocked read'); assert.equal(clock.timers.size, 0); assert.equal(clock.listeners.size, 0);
+    flow.readError(''); assert.equal(clock.timers.size, 1);
+    flow.loading(); assert.equal(clock.timers.size, 0); assert.equal(clock.listeners.size, 0);
+    assert.equal(storage.calls(), 0); assert.equal(JSON.stringify(storage.value()), before);
+  } finally { flow.unmount(); Date.now = originalNow; }
 });

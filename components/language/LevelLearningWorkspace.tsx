@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { JAPANESE_LEVELS, JAPANESE_LEVEL_ORDER, getLevelLegacyLessons, isJapaneseLevel } from '@/data/japaneseLevels';
 import { getJapaneseReadingLesson, getLevelReadingLessons, getReadingLessonLevel, isKnownReadingAnswer } from '@/data/japaneseReadingLessons';
 import { curriculumProgressErrorMessage, loadCurriculumProgress } from '@/utils/curriculumProgress';
+import { watchJapaneseReviewClock } from '@/utils/japaneseReviewClock';
 import { chooseJapaneseLevel, dueUpperAnswers, upperAnswerStable } from '@/utils/japaneseLevelJourney';
 import { useLevelJourney } from './useLevelJourney';
 import UpperReadingLesson from './UpperReadingLesson';
@@ -32,6 +33,12 @@ export default function LevelLearningWorkspace({ requestedLevel, lessonId, revie
     catch (error) { setCurriculumError(curriculumProgressErrorMessage(error, '학습 기록을 읽지 못했어요. 다시 읽어 주세요.')); }
   }, [journey.state, readAttempt]);
   useEffect(() => { setMessage(''); setSaveError(''); }, [journey.state?.owner]);
+  const [, refreshReviewClock] = useState(0);
+  useEffect(() => {
+    if (!journey.state || journey.readError || curriculumError || lessonId) return;
+    const deadlines = Object.values(journey.state.value.answers).filter(isKnownReadingAnswer).map(answer => Date.parse(answer.nextReviewAt));
+    return watchJapaneseReviewClock(deadlines, () => refreshReviewClock(tick => tick + 1));
+  }, [journey.state, journey.readError, curriculumError, lessonId]);
   if (curriculumError) return <section className={styles.page}><p role="alert">{curriculumError}</p><button onClick={() => setReadAttempt(value => value + 1)}>기록 다시 읽기</button><Link href="/language">학습 홈으로</Link></section>;
   if (journey.readError) return <section className={styles.page}><h1>단계별 학습 기록 확인</h1><p className={styles.error} role="alert">{journey.readError}</p><button className={styles.button} onClick={journey.reload}>기록 다시 읽기</button><p><Link onNavigate={leave} href="/language">학습 홈으로</Link></p></section>;
   if (!journey.state) return <p className={styles.page} role="status">단계별 학습 기록을 불러오고 있어요.</p>;
