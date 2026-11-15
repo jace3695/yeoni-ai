@@ -9,7 +9,7 @@ async function askAdvice(page: Page, scope: keyof typeof ADVICE_QUESTIONS) {
   await expect(page.getByRole('region', { name: /무료 AI 조언$/ })).toBeVisible();
 }
 async function enterAdvice(page: Page, scope: keyof typeof ADVICE_QUESTIONS) {
-  if (scope !== 'assistant') await page.getByRole('link', { name: '연이에게 물어보기', exact: true }).click();
+  if (scope === 'language') await page.getByRole('navigation', { name: 'AI 연이 공통 메뉴', exact: true }).locator('a[href="/"]').click(); else if (scope !== 'assistant') await page.getByRole('link', { name: '연이에게 물어보기', exact: true }).click();
   await askAdvice(page, scope);
 }
 
@@ -101,18 +101,34 @@ test('free advice previews real owner records across four areas without modifyin
   expect(await qa.read()).toEqual(fitness);
   expect(await qa.readLanguage()).toEqual(language);
   expect((await qa.account.client.from('budget_transactions').select('amount').eq('user_id', qa.account.id)).data).toEqual([{ amount: 12000 }]);
-  // Explicit completion still persists, and a reload no longer rewrites the
-  // learning history timestamp merely because the home page mounted.
-  await page.goto('/language');
-  await page.locator('.routine-details > summary').click();
-  await page.getByRole('button', { name: '직접 완료', exact: true }).first().click();
-  await expect.poll(async () => JSON.parse((await qa.readLanguage()).dailyLearningHistory as string || '{}')?.[day]?.completedIds).toEqual(['kana']);
+  // The current language home is a study index, not the retired routine widget.
+  // A real grammar answer must still persist completion, and mounting/reloading
+  // must not manufacture a second answer or rewrite the saved history timestamp.
+  await page.goto('/language/grammar?lesson=desu');
+  await expect(page.getByText('학습 기록 · 서버 저장 확인', { exact: true })).toBeVisible();
+  const grammar = page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'です 문장', exact: true }) });
+  await expect(grammar).toHaveCount(1);
+  await expect(grammar.getByText('선택 문제: 아직 풀지 않음', { exact: true })).toBeVisible();
+  expect(await qa.readLanguage()).toEqual(language);
+  await grammar.getByRole('button', { name: '3. 연습', exact: true }).click();
+  await grammar.getByRole('button', { name: /^私\s*(?:わたし\s*)?は学生です。$/u }).click();
+  await expect(grammar.getByText('정답이에요!', { exact: true })).toBeVisible();
+  await expect.poll(async () => JSON.parse((await qa.readLanguage()).dailyLearningHistory as string || '{}')?.[day]?.completedIds).toEqual(['grammar']);
+  await expect.poll(async () => JSON.parse((await qa.readLanguage()).grammarProgress as string || '[]')).toEqual([
+    expect.objectContaining({ lessonId: 'desu', correctCount: 1, wrongCount: 0, lastResult: 'correct' }),
+  ]);
   await expect(page.getByText('학습 기록 · 서버 저장 확인', { exact: true })).toBeVisible();
   const savedLanguage = await qa.readLanguage();
-  await page.reload(); await page.locator('.routine-details > summary').click();
-  await expect(page.getByRole('button', { name: '완료 취소', exact: true })).toBeVisible();
+  for (const [key, value] of Object.entries(language)) expect(savedLanguage[key], `preserved language input ${key}`).toEqual(value);
+  qa.traffic.assertLanguageConfirmed(savedLanguage);
+  await page.reload();
   await expect(page.getByText('학습 기록 · 서버 저장 확인', { exact: true })).toBeVisible();
+  await expect(grammar.getByText('선택 문제: 정답 1회 · 오답 0회', { exact: true })).toBeVisible();
   expect(await qa.readLanguage()).toEqual(savedLanguage);
+  expect(await qa.read()).toEqual(fitness);
+  expect((await qa.account.client.from('budget_transactions').select('amount').eq('user_id', qa.account.id)).data).toEqual([{ amount: 12000 }]);
+  expect(chatCalls).toBe(4);
+
 });
 
 test('advice UI requires consent and handles success, quota and changed-record responses (synthetic provider)', async ({ page, qa }) => {
