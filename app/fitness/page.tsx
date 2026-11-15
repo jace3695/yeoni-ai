@@ -4,7 +4,7 @@ import LocalRecordGuidance from "@/components/yeoni/LocalRecordGuidance";
 import CommonCharacterGuide from '@/components/yeoni/CommonCharacterGuide';
 import { notifyRecordsChanged, RECORDS_CHANGED_EVENT } from "../data/storageTransaction";
 import AppCompanion from "@/components/AppCompanion";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { DayWorkout } from "../data/workouts";
 import {
@@ -13,7 +13,6 @@ import {
   getWeeklyWorkoutPlanById,
   getWorkoutGroupForPlanDay,
   dayIdToPlanKey,
-  LEGACY_SELECTED_WEEKLY_WORKOUT_PLAN_KEY,
   SELECTED_WEEKLY_WORKOUT_PLAN_KEY,
   WEEKLY_WORKOUT_PLANS,
 } from "../data/workoutPlans";
@@ -76,15 +75,12 @@ import {
 } from "../data/userWorkoutSettings";
 import { DEFAULT_WORKOUT_METHOD, normalizeWorkoutMethod } from "../data/workoutMethods";
 import {
-  buildCurrentWorkoutSettings,
   CURRENT_PROGRAM_SCHEDULE,
-  CURRENT_WORKOUT_DIRECTION_BACKUP_KEY,
-  CURRENT_WORKOUT_DIRECTION_VERSION,
-  CURRENT_WORKOUT_DIRECTION_VERSION_KEY,
   CURRENT_WEIGHT_BASELINE_KG,
   CURRENT_WEIGHT_BASELINE_DATE,
   CURRENT_WEEKLY_METHODS,
 } from "../data/currentWorkoutDirection";
+import { initializeWorkoutDirection } from "../data/workoutDirectionMigration";
 import { buildAdaptiveCoachAdvice } from "../data/workoutAdaptiveCoach";
 import { buildAdaptiveWorkoutReview } from '../data/workoutAdaptiveReview';
 
@@ -175,9 +171,16 @@ function FitnessApp() {
   const [conditionRecords, setConditionRecords] = useState<DailyConditionStore>({});
   const [directionUpdateNotice, setDirectionUpdateNotice] = useState("");
 
+  const workoutMounted = useRef(false);
+  const workoutAccess = useRef<'pending' | 'ready' | 'failed'>('pending');
+  useEffect(() => {
+    workoutMounted.current = true;
+    return () => { workoutMounted.current = false; };
+  }, []);
   const [completionError, setCompletionError] = useState("");
   const [completionReady, setCompletionReady] = useState(false);
   const commitCompletedStore = (update: (previous: WorkoutCompletionStore) => WorkoutCompletionStore): boolean => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return false;
     try {
       const current = readWorkoutCompletionStore();
       const next = update(current);
@@ -188,6 +191,7 @@ function FitnessApp() {
   };
 
   const refreshWorkoutReview = useCallback(() => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     try {
     const stores = readRecordStores();
     setCompletedStore(stores.workouts);
@@ -223,37 +227,18 @@ function FitnessApp() {
       return;
     }
 
+    if (!workoutMounted.current || workoutAccess.current === 'failed') return;
+    workoutAccess.current = 'pending';
     try {
     const initialCompletions = readWorkoutCompletionStore();
-    const savedWeeklyPlan =
-      window.localStorage.getItem(SELECTED_WEEKLY_WORKOUT_PLAN_KEY) ||
-      window.localStorage.getItem(LEGACY_SELECTED_WEEKLY_WORKOUT_PLAN_KEY) ||
-      DEFAULT_WEEKLY_WORKOUT_PLAN_ID;
-    const needsDirectionUpdate = window.localStorage.getItem(CURRENT_WORKOUT_DIRECTION_VERSION_KEY) !== CURRENT_WORKOUT_DIRECTION_VERSION;
-    let settings = readUserWorkoutSettings();
-    let weeklyPlanId = WEEKLY_WORKOUT_PLANS.some((plan) => plan.id === savedWeeklyPlan)
-      ? savedWeeklyPlan
-      : DEFAULT_WEEKLY_WORKOUT_PLAN_ID;
-    if (needsDirectionUpdate) {
-      if (!window.localStorage.getItem(CURRENT_WORKOUT_DIRECTION_BACKUP_KEY)) {
-        window.localStorage.setItem(CURRENT_WORKOUT_DIRECTION_BACKUP_KEY, JSON.stringify({
-          savedAt: new Date().toISOString(),
-          selectedPlanId: weeklyPlanId,
-          settings,
-        }));
-      }
-      settings = buildCurrentWorkoutSettings(settings);
-      saveUserWorkoutSettings(settings);
-      weeklyPlanId = DEFAULT_WEEKLY_WORKOUT_PLAN_ID;
-      window.localStorage.setItem(CURRENT_WORKOUT_DIRECTION_VERSION_KEY, CURRENT_WORKOUT_DIRECTION_VERSION);
-      setDirectionUpdateNotice("현재 운동 방향에 맞춰 주 5일 근력·회복 교차 계획을 적용했습니다.");
+    const initialized = initializeWorkoutDirection(window.localStorage);
+    const { settings, weeklyPlanId } = initialized;
+    if (initialized.migrated) {
+      setDirectionUpdateNotice(initialized.notified
+        ? "기존 설정 원문을 보관하고 현재 운동 방향에 맞춰 주 5일 근력·회복 교차 계획을 적용했습니다."
+        : "기존 설정 원문과 새 계획을 저장했습니다. 화면 반영을 위해 새로고침해 주세요.");
     }
     setSelectedWeeklyWorkoutPlanId(weeklyPlanId);
-    window.localStorage.setItem(
-      SELECTED_WEEKLY_WORKOUT_PLAN_KEY,
-      weeklyPlanId,
-    );
-    window.localStorage.removeItem(LEGACY_SELECTED_WEEKLY_WORKOUT_PLAN_KEY);
 
     setCompletedStore(initialCompletions);
     setUserWorkoutSettings(settings);
@@ -269,21 +254,25 @@ function FitnessApp() {
           : null,
       ),
     );
-    } catch { setCompletionError(WORKOUT_STORAGE_ERROR); }
+    workoutAccess.current = 'ready';
+    } catch { workoutAccess.current = 'failed'; setCompletionError(WORKOUT_STORAGE_ERROR); }
     finally { setCompletionReady(true); }
   }, [activeTab]);
 
   const handleWeeklyWorkoutPlanChange = (planId: string) => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     setSelectedWeeklyWorkoutPlanId(planId);
     window.localStorage.setItem(SELECTED_WEEKLY_WORKOUT_PLAN_KEY, planId);
   };
 
   const handleUserWorkoutSettingsChange = (settings: UserWorkoutSettings) => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     saveUserWorkoutSettings(settings);
     setUserWorkoutSettings(settings);
   };
 
   const handleConditionSave = (signals: ConditionSignalId[], memo: string) => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const dateKey = getLocalDateKey();
     const condition = saveDailyCondition(dateKey, signals, memo);
     setConditionToday(condition);
@@ -292,6 +281,7 @@ function FitnessApp() {
   };
 
   const handleConditionClear = () => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const dateKey = getLocalDateKey();
     clearDailyCondition(dateKey);
     setConditionToday(undefined);
@@ -300,6 +290,7 @@ function FitnessApp() {
   };
 
   const saveDayWorkout = (dayId: WorkoutDayId, pain: boolean, memo: string, cardioOptionId?: string, exerciseRecords?: ExerciseRecord[], selectedCardioMinutes?: number, feedback?: WorkoutFeedback) => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const dateKey = getDateForWorkoutDay(dayId);
     if (
       recoveryToday?.recoveryMode &&
@@ -391,6 +382,7 @@ function FitnessApp() {
   };
 
   const cancelDayWorkout = (dayId: WorkoutDayId) => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const dateKey = getDateForWorkoutDay(dayId);
     if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
@@ -430,6 +422,7 @@ function FitnessApp() {
   };
 
   const saveDayCardio = (type: string, minutes: number, memo: string) => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const dateKey = getLocalDateKey();
     if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
@@ -449,6 +442,7 @@ function FitnessApp() {
   };
 
   const cancelDayCardio = () => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const dateKey = getLocalDateKey();
     if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
@@ -469,6 +463,7 @@ function FitnessApp() {
 
 
   const saveFoamRoller = (record: Pick<WorkoutDayRecord, "foamRollerTiming" | "foamRollerAreas" | "foamRollerPain" | "foamRollerMemo">) => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const dateKey = getLocalDateKey();
     if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
@@ -490,6 +485,7 @@ function FitnessApp() {
   };
 
   const cancelFoamRoller = () => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const dateKey = getLocalDateKey();
     if (!commitCompletedStore((prev) => {
       const current = getWorkoutRecord(prev[dateKey]);
@@ -510,6 +506,7 @@ function FitnessApp() {
   };
 
   const handleTabChange = (id: string) => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const nextTab = id as TabId;
     window.sessionStorage.setItem(ACTIVE_TAB_SESSION_KEY, nextTab);
     setShowDailyEditor(false);
@@ -519,6 +516,7 @@ function FitnessApp() {
   };
 
   const recordRecoveryPriority = (memo = "") => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const dateKey = getLocalDateKey();
     if (
       getWorkoutRecord(completedStore[dateKey]).workoutDone &&
@@ -575,6 +573,7 @@ function FitnessApp() {
   };
 
   const cancelRecoveryPriority = () => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     const dateKey = getLocalDateKey();
     const store = readJson<RecoveryModeStore>(RECOVERY_MODE_DAYS_KEY, {});
     const current = store[dateKey] || {};
@@ -726,6 +725,7 @@ function FitnessApp() {
   const displayedRecovery = recoveryToday || undefined;
 
   const openDailyEditor = (dayId: WorkoutDayId) => {
+    if (!workoutMounted.current || workoutAccess.current !== 'ready') return;
     handleTabChange(dayId);
     setShowDailyEditor(true);
   };

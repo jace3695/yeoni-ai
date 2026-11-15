@@ -97,7 +97,7 @@ test('recovery conversion removes old exercise totals and preserves independent 
   const end = source.indexOf('  const cancelRecoveryPriority =', start);
   assert.ok(start >= 0 && end > start);
   let records: Record<string, WorkoutDayRecord> = { '2026-11-13': { ...legacy, workoutElapsedMinutes: 2, workoutStatus: 'completed', cardioDone: true, cardioMinutes: 10, pullupDone: true } };
-  const context = { window: { confirm: () => true }, getLocalDateKey: () => '2026-11-13', getWorkoutRecord: (r: WorkoutDayRecord) => r,
+  const context = { workoutMounted: { current: true }, workoutAccess: { current: 'ready' }, window: { confirm: () => true }, getLocalDateKey: () => '2026-11-13', getWorkoutRecord: (r: WorkoutDayRecord) => r,
     completedStore: records, commitCompletedStore: (update: (store: typeof records) => typeof records) => { records = update(records); return true; },
     writeWorkoutCompletionStore: () => {}, saveRecoveryRecord: () => ({}), setRecoveryToday: () => {},
   };
@@ -115,7 +115,7 @@ test('optional rest does not inherit exercises from an earlier workout', () => {
   const end = source.indexOf('  const cancelDayWorkout =', start);
   assert.ok(start >= 0 && end > start);
   let records: Record<string, WorkoutDayRecord> = { '2026-11-13': { ...legacy, workoutElapsedMinutes: 2, pullupDone: true } };
-  const context = { getDateForWorkoutDay: () => '2026-11-13', getWorkoutRecord: (r: WorkoutDayRecord) => r, recoveryToday: undefined,
+  const context = { workoutMounted: { current: true }, workoutAccess: { current: 'ready' }, getDateForWorkoutDay: () => '2026-11-13', getWorkoutRecord: (r: WorkoutDayRecord) => r, recoveryToday: undefined,
     dayWorkout: { optionalCardio: { options: [{ id: 'rest', name: '휴식' }] } }, selectedWorkoutGroup: undefined,
     selectedWeeklyWorkoutPlan: { name: '가상' }, baseDayWorkout: undefined, activeWorkoutMethod: {},
     commitCompletedStore: (update: (store: typeof records) => typeof records) => { records = update(records); return true; },
@@ -126,4 +126,28 @@ test('optional rest does not inherit exercises from an earlier workout', () => {
   assert.equal(records['2026-11-13'].workoutExerciseRecords, undefined);
   assert.equal(records['2026-11-13'].pullupDone, true);
   assert.equal(getWorkoutMinutes(records['2026-11-13']), 0);
+});
+
+// Actual extracted page handlers must not reach any mutation dependency before readiness.
+test('recovery and day-save handlers block pending, failed and unmounted page instances', () => {
+  const source = readFileSync(new URL('../fitness/page.tsx', import.meta.url), 'utf8');
+  for (const [name, next, invocation] of [
+    ['recordRecoveryPriority', 'cancelRecoveryPriority', 'recordRecoveryPriority()'],
+    ['saveDayWorkout', 'cancelDayWorkout', "saveDayWorkout('sat', false, 'QA', 'rest')"],
+  ]) {
+    const start = source.indexOf('  const ' + name + ' =');
+    const end = source.indexOf('  const ' + next + ' =', start);
+    assert.ok(start >= 0 && end > start);
+    const code = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+    for (const [mounted, access] of [[true, 'pending'], [true, 'failed'], [false, 'ready']]) {
+      let calls = 0;
+      const unexpected = () => { calls++; throw Error('blocked handler reached mutation dependencies'); };
+      vm.runInNewContext(code + '\n' + invocation, {
+        workoutMounted: { current: mounted }, workoutAccess: { current: access },
+        commitCompletedStore: unexpected, saveRecoveryRecord: unexpected,
+        writeWorkoutCompletionStore: unexpected, window: { confirm: unexpected },
+      });
+      assert.equal(calls, 0);
+    }
+  }
 });

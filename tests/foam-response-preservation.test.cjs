@@ -12,7 +12,7 @@ const run=(c,ctx)=>vm.runInNewContext(ts.transpileModule(c,{compilerOptions:{tar
 let scenarios=0;
 for(const timing of [undefined,'before','after','both','recovery'])for(const pain of [undefined,false,true]){
  const init={foamRollerTiming:timing,foamRollerPain:pain};const selectedFoamTiming=run(initializers.selectedFoamTiming,init),foamPain=run(initializers.foamPain,init);assert.equal(selectedFoamTiming,timing);assert.equal(foamPain,pain);
- let payload,saved;run('('+callback+')()',{selectedFoamTiming,foamPain,selectedFoamAreas:[],foamMemoDraft:'QA_SYNTHETIC',onSaveFoamRoller:p=>payload=p});run('const save='+saveParent+';save(payload)',{payload,getLocalDateKey:()=> 'SYNTHETIC',commitCompletedStore:f=>Boolean(f({KEEP:{memo:'preserve'}})),getWorkoutRecord:r=>r||{},writeWorkoutCompletionStore:s=>saved=s,notifyRecordsChanged:()=>{}});assert.equal(saved.SYNTHETIC.foamRollerTiming,timing);assert.equal(saved.SYNTHETIC.foamRollerPain,pain);assert.equal(saved.KEEP.memo,'preserve');
+ let payload,saved;run('('+callback+')()',{selectedFoamTiming,foamPain,selectedFoamAreas:[],foamMemoDraft:'QA_SYNTHETIC',onSaveFoamRoller:p=>payload=p});run('const save='+saveParent+';save(payload)',{workoutMounted:{current:true},workoutAccess:{current:'ready'},payload,getLocalDateKey:()=> 'SYNTHETIC',commitCompletedStore:f=>Boolean(f({KEEP:{memo:'preserve'}})),getWorkoutRecord:r=>r||{},writeWorkoutCompletionStore:s=>saved=s,notifyRecordsChanged:()=>{}});assert.equal(saved.SYNTHETIC.foamRollerTiming,timing);assert.equal(saved.SYNTHETIC.foamRollerPain,pain);assert.equal(saved.KEEP.memo,'preserve');
  let edited;run('const edit='+saveEdit+';edit("foam")',{selectedWorkoutRecord:{},foamTimingDraft:timing,foamPainDraft:pain,foamAreasDraft:[],foamMemoDraft:'QA_SYNTHETIC',writeWorkoutStore:f=>{edited=f({future:'keep'});return true},setEditingSecondary:()=>{},setWorkoutNotice:()=>{}});assert.equal(edited.foamRollerTiming,timing);assert.equal(edited.foamRollerPain,pain);assert.equal(edited.future,'keep');
  assert.equal(run(foamDisplay,{selectedWorkoutRecord:{foamRollerPain:pain}}),pain===true?'있음':pain===false?'없음':'미응답');scenarios++;
 }
@@ -31,14 +31,14 @@ const commitHandler=initializer(parent,'commitCompletedStore');
 const recordsHandler=initializer(syncSource,'onRecordsChanged');
 assert.match(syncSource,/window\.setInterval\(\(\) => \{\s*if \(document\.visibilityState === "visible"\) void sync\(\);\s*\}, 30000\)/);
 assert.ok(syncSource.includes('window.addEventListener(RECORDS_CHANGED_EVENT, onRecordsChanged)'));
-function exerciseFoamSave({oldWithoutNotice=false,corrupt=false,quota=false}={}){
+function exerciseFoamSave({oldWithoutNotice=false,corrupt=false,quota=false,mounted=true,access='ready',directCommit=false}={}){
  const key='ai-fitness-workout-completed-days',date='2026-11-13';
  const raw=corrupt?'broken-json':JSON.stringify({'2001-01-02':{workoutMemo:'keep',unknown:{keep:true}}});
  const storage=new Map([[key,raw]]),microtasks=[],timers=[];let writes=0,events=0,error='',published;
  const window={localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>{if(quota)throw Error('synthetic quota');storage.set(k,v);writes++;}},clearTimeout:()=>{},setTimeout:(fn,ms)=>{timers.push(ms);return 1;},dispatchEvent:e=>{events++;listener();}};
  const exports={};const common={exports,require:()=>({getLocalDateKey:()=>date}),window,Date,console};
  vm.runInNewContext(ts.transpileModule(writerSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,common);
- const context={...exports,window,Event,queueMicrotask:f=>microtasks.push(f),getLocalDateKey:()=>date,
+ const context={...exports,workoutMounted:{current:mounted},workoutAccess:{current:access},window,Event,queueMicrotask:f=>microtasks.push(f),getLocalDateKey:()=>date,
    setCompletedStore:v=>published=v,setCompletionError:v=>error=v,active:true,syncing:false,
    userId:'synthetic',epoch:'synthetic',isCurrentCloudSession:()=>true,stop:()=>{},setStatus:()=>{},setMessage:()=>{},sync:()=>{},
    stableState:JSON.stringify,readLocalCloudState:()=>({[key]:JSON.parse(storage.get(key))}),lastSynced:{current:JSON.stringify({[key]:corrupt?{}:JSON.parse(raw)})},
@@ -48,7 +48,7 @@ function exerciseFoamSave({oldWithoutNotice=false,corrupt=false,quota=false}={})
  vm.runInContext(ts.transpileModule(js+'\nlet followUpTimer; const onRecordsChanged='+recordsHandler+'; const commitCompletedStore='+commitHandler+';', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
  const listener=()=>vm.runInContext('onRecordsChanged();',context);
  const handler=oldWithoutNotice?saveParent.replace(/\s*notifyRecordsChanged\(\);/,''):saveParent;
- vm.runInContext(ts.transpileModule('const saveFoamRoller='+handler+';saveFoamRoller(payload);',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+ vm.runInContext(ts.transpileModule(directCommit?'commitCompletedStore(() => { throw Error("blocked update invoked"); });':'const saveFoamRoller='+handler+';saveFoamRoller(payload);',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
  while(microtasks.length)microtasks.shift()();
  return {raw,stored:storage.get(key),writes,events,timers,error,published};
 }
@@ -57,3 +57,12 @@ const successful=exerciseFoamSave();assert.equal(successful.writes,1);assert.equ
 assert.deepEqual(JSON.parse(successful.stored)['2001-01-02'],JSON.parse(successful.raw)['2001-01-02']);
 for(const options of [{corrupt:true},{quota:true}]){const failed=exerciseFoamSave(options);assert.equal(failed.stored,failed.raw);assert.equal(failed.writes,0);assert.equal(failed.events,0);assert.deepEqual(failed.timers,[]);assert.equal(failed.published,undefined);assert.notEqual(failed.error,'');}
 console.log(JSON.stringify({foamSyncSyntheticCases:4,result:'PASS',realDataAccess:false,network:false}));
+
+// Run the real extracted save and commit functions against each inactive ref state.
+for(const state of [{access:'pending'},{access:'failed'},{mounted:false}])for(const directCommit of [false,true]){
+ const blocked=exerciseFoamSave({...state,directCommit});
+ assert.equal(blocked.stored,blocked.raw);assert.equal(blocked.writes,0);
+ assert.equal(blocked.events,0);assert.deepEqual(blocked.timers,[]);
+ assert.equal(blocked.published,undefined);assert.equal(blocked.error,'');
+}
+console.log(JSON.stringify({foamInactivePageBoundaryCases:6,result:'PASS'}));
