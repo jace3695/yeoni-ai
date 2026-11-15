@@ -3508,6 +3508,7 @@ return (
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => {
+                    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
                     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && input.trim() && !aiLoading) {
                       e.preventDefault()
                       handleAddTransaction()
@@ -3866,7 +3867,10 @@ return (
               <input
                 value={question}
                 onChange={e => setQuestion(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && !analyzing && handleAnalyze()}
+                onKeyDown={e => {
+                  if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
+                  if (e.key === 'Enter' && !analyzing) handleAnalyze()
+                }}
                 placeholder="예: 이번 달 식비는 얼마나 썼어?"
                 aria-label="연이에게 질문할 내용"
                 style={{ flex: '1 1 220px', minHeight: 46, background: 'rgba(8,8,12,0.46)', border: '1px solid rgba(255,255,255,0.24)', borderRadius: 10, padding: '12px 14px', color: '#FFFFFF', fontSize: 14, outline: 'none', textShadow: '0 1px 2px rgba(0,0,0,0.45)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.08)' }}
