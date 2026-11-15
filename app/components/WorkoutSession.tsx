@@ -680,14 +680,14 @@ export default function WorkoutSession({
                   {recommendation.durationMinutes ? <span className="rounded-full bg-white px-3 py-1 text-[11px] font-bold">추천 {recommendation.durationMinutes}분</span> : null}
                 </div></div>
               </details>
-              <TimerButton
+              {exercise.executionContext?.method === 'interval' && exercise.intervalPlan ? <p className="mt-4 rounded-xl bg-blue-50 px-3 py-2 text-[12px] leading-relaxed text-blue-900">아래 구간 타이머로 모든 라운드를 진행한 뒤 하단 완료 버튼으로 직접 기록해 주세요. 타이머가 끝나도 자동으로 완료 처리하지 않습니다. 통증이나 불편감이 생기면 중단하세요.</p> : <TimerButton
                 key={`${currentIndex}:${initialTimerSeconds}`}
                 initialSeconds={initialTimerSeconds}
                 restoredSeconds={timerSecondsRef.current}
                 onSecondsChange={(seconds) => { timerSecondsRef.current = seconds; }}
                 onStart={() => { void requestWakeLock(); voice.prepare(advanceMessage); }}
                 onComplete={finishOrAdvance}
-              />
+              />}
               {exercise.intervalPlan ? <IntervalTimer plan={exercise.intervalPlan} /> : null}
               <ExerciseRecordEditor
                 exercise={exercise}
