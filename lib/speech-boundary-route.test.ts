@@ -54,14 +54,15 @@ test('server-only Preview gate rejects every omitted/mismatched condition, inclu
   assert.equal(gate('http://127.0.0.1:54321')(allowedEnv), null);
 });
 
-test('retired diagnostic page cannot initialize its boundary client', () => {
+test('retired diagnostic page always stops with notFound before any feature initializes', () => {
+  const sentinel = new Error('synthetic not-found boundary');
+  let calls = 0;
   const page = load('../app/language/practice/access-check/page.tsx', {
-    'react/jsx-runtime': { jsx, jsxs: jsx },
-    '@/components/RetiredPractice': { default: 'retired' },
+    'next/navigation': { notFound: () => { calls++; throw sentinel; } },
   });
-  const render = page.default as () => Element;
-  assert.equal(render().type, 'retired');
-  assert.equal(render().props.language, true);
+  assert.deepEqual(Object.keys(page), ['default']);
+  assert.throws(page.default as () => never, error => error === sentinel);
+  assert.equal(calls, 1);
 });
 
 function routeHarness(path: string | null, gateAllowed = true, delays: { beforeDigest?: () => Promise<void>; beforeProbe?: () => Promise<void> } = {}, storageStatus = 'ready') {

@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 const read=(path:string)=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
 test('all direct retired pages render only the safe notice, without feature initialization',()=>{
- for(const route of ['growth/typing','growth/typing/basics','growth/drawing','language/practice','language/practice/access-check','language/conversation','language/speaking']) {
+ for(const route of ['growth/typing','growth/typing/basics','growth/drawing','language/practice','language/conversation','language/speaking']) {
   const exports: {default?:()=>{type:string;props:{language?:boolean}}}={};
   const source=ts.transpileModule(read(`app/${route}/page.tsx`),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS}}).outputText;
   vm.runInNewContext(source,{exports,require:(name:string)=>{
@@ -15,6 +15,19 @@ test('all direct retired pages render only the safe notice, without feature init
   assert.equal(exports.default!().type,'retired');
   assert.equal(Boolean(exports.default!().props.language),route.startsWith('language/'));
  }
+});
+test('retired diagnostic is a terminal 404, not a feature or hosted Preview entry',()=>{
+ const exports: {default?:()=>never}={};
+ const sentinel=new Error('synthetic not-found boundary');
+ let calls=0;
+ const source=ts.transpileModule(read('app/language/practice/access-check/page.tsx'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
+ vm.runInNewContext(source,{exports,require:(name:string)=>{
+  assert.equal(name,'next/navigation');
+  return {notFound:()=>{calls++;throw sentinel;}};
+ }});
+ assert.deepEqual(Object.keys(exports),['default']);
+ assert.throws(()=>exports.default!(),error=>error===sentinel);
+ assert.equal(calls,1);
 });
 test('remaining navigation and focused lessons do not initialize retired practice',()=>{
  for(const path of ['app/growth/page.tsx','app/language/page.tsx','components/TopNav.tsx']) assert.doesNotMatch(read(path),/href=["']\/(?:growth\/(?:typing|drawing)|language\/(?:conversation|speaking|practice))/);
