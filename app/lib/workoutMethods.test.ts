@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { transformSync } from "esbuild";
 import { normalizeWorkoutMethod, prepareMethodExercises } from "../data/workoutMethods.ts";
-import type { Exercise } from "../data/workouts.ts";
+import type { Exercise, IntervalPlan } from "../data/workouts.ts";
 
 const exercises = ["스쿼트", "로우", "푸시업"].map((name) => ({ name, sets: 3, restSeconds: 45, details: [] }));
 
@@ -171,4 +171,164 @@ test("선택 인터벌에서도 통증 중단과 건너뛰기를 계속 사용�
   skip.clickText("건너뛰기");
   assert.equal(skip.named("IntervalTimer").length, 0);
   assert.equal(skip.saves(), 0);
+});
+
+test("0초 휴식 인터벌은 설정·메타·계획값을 보존하고 실행 구간만 생략한다", () => {
+  const config = { method: "interval" as const, rounds: 3, workSeconds: 30, restSeconds: 0 };
+  const input = structuredClone(timedExercise);
+  const before = structuredClone({ input, config });
+  const result = prepareMethodExercises([input], config)[0];
+  assert.deepEqual(result.intervalPlan, { rounds: 3, segments: [{ label: "운동", seconds: 30, intensity: "자세 유지" }] });
+  assert.equal(result.executionContext?.plannedRestSeconds, 0);
+  assert.equal(result.executionContext?.plannedWorkSeconds, 30);
+  assert.match(result.meta ?? "", /30초 운동 · 0초 휴식 × 3라운드/);
+  assert.equal(normalizeWorkoutMethod(config).restSeconds, 0);
+  assert.deepEqual({ input, config }, before);
+});
+
+type IntervalNode = { type: string; props: Record<string, unknown>; children: unknown[] };
+type TimerSlot = { value?: unknown; deps?: unknown[]; cleanup?: () => void };
+const controlsSource = readFileSync(new URL("../components/WorkoutControls.tsx", import.meta.url), "utf8");
+const intervalSource = controlsSource.slice(controlsSource.indexOf("export function IntervalTimer("), controlsSource.indexOf("export function AbSlideGate("));
+const intervalCode = transformSync(intervalSource.replace("export function", "function") + "\nglobalThis.Component = IntervalTimer;", { loader: "tsx", jsxFactory: "h" }).code;
+
+// Exact existing IntervalTimer render/effect/button callbacks driven by synthetic
+// hooks and one-second scheduled ticks. This is not React/browser wall-clock QA.
+function intervalHarness(initialPlan: IntervalPlan) {
+  let plan = initialPlan;
+  const slots: TimerSlot[] = [];
+  const active = new Map<number, () => void>();
+  let cursor = 0;
+  let nextId = 0;
+  let dirty = true;
+  let pending: (() => void)[] = [];
+  let tree: unknown;
+  const same = (a: unknown[] | undefined, b: unknown[]) => a?.length === b.length && a.every((value, index) => Object.is(value, b[index]));
+  const context = {
+    Component: undefined as undefined | ((props: { plan: IntervalPlan }) => unknown),
+    h: (type: string, props: Record<string, unknown> | null, ...children: unknown[]): IntervalNode => ({ type, props: props ?? {}, children }),
+    useState(initial: unknown) {
+      const index = cursor++;
+      slots[index] ??= { value: initial };
+      return [slots[index].value, (next: unknown) => {
+        const value = typeof next === "function" ? next(slots[index].value) : next;
+        if (!Object.is(value, slots[index].value)) { slots[index].value = value; dirty = true; }
+      }];
+    },
+    useMemo(factory: () => unknown, deps: unknown[]) {
+      const index = cursor++;
+      if (!same(slots[index]?.deps, deps)) slots[index] = { value: factory(), deps };
+      return slots[index].value;
+    },
+    useEffect(effect: () => void | (() => void), deps: unknown[]) {
+      const index = cursor++;
+      if (!same(slots[index]?.deps, deps)) {
+        const previous = slots[index];
+        slots[index] = { deps, cleanup: previous?.cleanup };
+        pending.push(() => { slots[index].cleanup?.(); slots[index].cleanup = effect() || undefined; });
+      }
+    },
+    window: {
+      setInterval(callback: () => void, milliseconds: number) { assert.equal(milliseconds, 1000); active.set(++nextId, callback); return nextId; },
+      clearInterval(id: number) { active.delete(id); },
+    },
+  };
+  runInNewContext(intervalCode, context);
+  const flush = () => {
+    let renders = 0;
+    while (dirty || pending.length) {
+      assert.ok(++renders < 30, "bounded synthetic effect flush");
+      if (dirty) { dirty = false; cursor = 0; tree = context.Component!({ plan }); }
+      const effects = pending; pending = [];
+      for (const effect of effects) effect();
+    }
+  };
+  const nodes = (node: unknown): IntervalNode[] => {
+    if (Array.isArray(node)) return node.flatMap(nodes);
+    if (!node || typeof node !== "object" || !("children" in node)) return [];
+    const element = node as IntervalNode;
+    return [element, ...nodes(element.children)];
+  };
+  flush();
+  return {
+    snapshot: () => ({ index: slots[1].value, left: slots[2].value, running: slots[3].value, finished: slots[4].value, timers: active.size }),
+    click(index: number) { const buttons = nodes(tree).filter((node) => node.type === "button"); assert.ok(buttons[index]); (buttons[index].props.onClick as () => void)(); flush(); },
+    tick(count = 1) { for (let i = 0; i < count; i++) { for (const callback of [...active.values()]) callback(); flush(); } },
+    text: () => JSON.stringify(tree),
+    changePlan(next: IntervalPlan) { plan = next; dirty = true; flush(); },
+    unmount() { for (const slot of slots) slot.cleanup?.(); assert.equal(active.size, 0); },
+  };
+}
+
+function preparedInterval(restSeconds: number, rounds = 3, workSeconds = 30): IntervalPlan {
+  return prepareMethodExercises([timedExercise], { method: "interval", restSeconds, rounds, workSeconds })[0].intervalPlan!;
+}
+
+test("0초 휴식은 30·60·90tick 경계에서 다음 라운드와 최종 완료를 처리한다", () => {
+  const timer = intervalHarness(preparedInterval(0));
+  timer.click(0);
+  timer.tick(29);
+  assert.deepEqual(timer.snapshot(), { index: 0, left: 1, running: true, finished: false, timers: 1 });
+  timer.tick();
+  assert.deepEqual(timer.snapshot(), { index: 1, left: 30, running: true, finished: false, timers: 1 });
+  timer.tick(30);
+  assert.deepEqual(timer.snapshot(), { index: 2, left: 30, running: true, finished: false, timers: 1 });
+  timer.tick(29);
+  assert.equal(timer.snapshot().finished, false);
+  timer.tick();
+  assert.deepEqual(timer.snapshot(), { index: 2, left: 0, running: false, finished: true, timers: 0 });
+  assert.match(timer.text(), /인터벌 완료!/);
+  timer.tick(30);
+  assert.equal(timer.snapshot().timers, 0);
+  timer.unmount();
+});
+
+test("0초 휴식의 경계 일시정지·재개·초기화와 계획 변경은 남은 구간을 보존한다", () => {
+  const timer = intervalHarness(preparedInterval(0));
+  timer.click(0); timer.tick(29); timer.click(0); timer.tick(100);
+  assert.deepEqual(timer.snapshot(), { index: 0, left: 1, running: false, finished: false, timers: 0 });
+  timer.click(0); timer.tick(); timer.click(0); timer.tick(100);
+  assert.deepEqual(timer.snapshot(), { index: 1, left: 30, running: false, finished: false, timers: 0 });
+  timer.click(0); timer.tick(60);
+  assert.equal(timer.snapshot().finished, true);
+  timer.click(1);
+  assert.deepEqual(timer.snapshot(), { index: 0, left: 30, running: false, finished: false, timers: 0 });
+  timer.click(0); timer.tick(35); timer.click(1);
+  assert.equal(timer.snapshot().index, 0); assert.equal(timer.snapshot().left, 30); assert.equal(timer.snapshot().timers, 0);
+  timer.click(0); timer.tick(5); timer.changePlan(preparedInterval(60));
+  assert.deepEqual(timer.snapshot(), { index: 0, left: 30, running: false, finished: false, timers: 0 });
+  timer.click(0); timer.tick(30);
+  assert.equal(timer.snapshot().index, 1); assert.equal(timer.snapshot().left, 60);
+  timer.unmount();
+});
+
+test("양수 휴식은 마지막 휴식까지 유지하고 1초는93tick·60초는270tick에 끝난다", () => {
+  for (const [rest, total] of [[1, 93], [60, 270]]) {
+    const plan = preparedInterval(rest);
+    assert.deepEqual(plan.segments.map((segment) => segment.seconds), [30, rest]);
+    const timer = intervalHarness(plan); timer.click(0); timer.tick(total - 1);
+    assert.equal(timer.snapshot().finished, false); assert.equal(timer.snapshot().left, 1);
+    timer.tick(); assert.equal(timer.snapshot().finished, true); assert.equal(timer.snapshot().index, 5); assert.equal(timer.snapshot().timers, 0);
+    timer.unmount();
+  }
+});
+
+test("0초 휴식의 최소·최대 라운드와 운동 시간은 운동 구간 총량만큼 진행한다", () => {
+  for (const rounds of [1, 8]) for (const work of [10, 600]) {
+    const timer = intervalHarness(preparedInterval(0, rounds, work)); timer.click(0); timer.tick(rounds * work - 1);
+    assert.equal(timer.snapshot().finished, false);
+    timer.tick(); assert.equal(timer.snapshot().finished, true); assert.equal(timer.snapshot().index, rounds - 1); assert.equal(timer.snapshot().timers, 0);
+    timer.unmount();
+  }
+});
+
+test("0초 휴식 변경은 기존 단일 구간과 다른 운동 방식의 계획을 수정하지 않는다", () => {
+  const plan = { rounds: 1, segments: [{ label: "가상 가볍게", seconds: 10, intensity: "가볍게" }] };
+  const exercise = { ...timedExercise, intervalPlan: plan };
+  for (const method of ["standard", "free", "circuit", "superset"] as const) {
+    const result = prepareMethodExercises([exercise], { method, restSeconds: 0 });
+    assert.ok(result.every((item) => item.intervalPlan === plan));
+  }
+  const timer = intervalHarness(plan); timer.click(0); timer.tick(9); assert.equal(timer.snapshot().finished, false);
+  timer.tick(); assert.equal(timer.snapshot().finished, true); timer.unmount();
 });

@@ -86,7 +86,8 @@ export function prepareMethodExercises(exercises: Exercise[], rawConfig?: Partia
         rounds: config.rounds,
         segments: [
           { label: "운동", seconds: config.workSeconds, intensity: "자세 유지" },
-          { label: "휴식", seconds: config.restSeconds, intensity: "호흡 정리" },
+          // A zero-length rest has no elapsed time and must not consume a timer tick.
+          ...(config.restSeconds === 0 ? [] : [{ label: "휴식", seconds: config.restSeconds, intensity: "호흡 정리" }]),
         ],
       },
     }, config, index, index));
