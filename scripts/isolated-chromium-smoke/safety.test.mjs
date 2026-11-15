@@ -732,7 +732,7 @@ test('reviewed curriculum repair and bounded real-UI scenarios retain exact sour
   "tests/fixtures/curriculumUiHarness.ts": "cc0b1bedc39e32cf82232e6a630f85cd9e87aa8e17e9ee0ff5774e4df0a521ce",
   "tests/language-storage-compatibility-ui.test.ts": "bf9db8fc45832aafb8c1480fab71a7bab6ef530625a35dca1ef30ccdb9aa83c5",
   "utils/curriculumProgress.ts": "c9ce21e1c5e3be1deb15fe97f681169fc6a5a1364c766cc44c1940514b1912ef",
-  "utils/learningSession.ts": "b672566336eca17ce5ba4017b6c32a25cd0a50a8c191a93b431fc113c1eef528",
+  "utils/learningSession.ts": "cd0b281bdcefba7506e3e54be352a0217de0fcb5a2fbb71fac150c0e4d4e37b3",
   "tests/e2e/curriculum-corruption.spec.ts": "77d9bcccc9f3bf3e285dc2f97a5cda9ff2af9c01eb7dfbf342fb9225ac0f91af",
   "tests/e2e/curriculum-terminal.spec.ts": "18847114d43198589168f95303a44b770325e46278acc921515c68834f33420a",
   "tests/e2e/curriculum-browser-state.ts": "276908fe0cc7b095cf34ad530b4cfa04c51271c3ee8402a885caca42fe3d0a7b"
