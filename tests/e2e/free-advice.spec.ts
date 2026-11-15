@@ -92,7 +92,7 @@ test('free advice previews real owner records across four areas without modifyin
   }
   await page.goto('/budget');
   await page.getByRole('navigation', { name: '가계부 주요 메뉴' }).getByRole('button', { name: '분석', exact: true }).click();
-  await page.getByRole('tab', { name: 'AI 상담', exact: true }).click();
+  await page.getByRole('tab', { name: '연이 상담', exact: true }).click();
   await enterAdvice(page, 'budget');
   const budget = page.getByRole('region', { name: '가계부 무료 AI 조언', exact: true });
   await budget.getByRole('button', { name: '조언받을 기록 확인', exact: true }).click();
