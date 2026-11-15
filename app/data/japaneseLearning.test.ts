@@ -12,6 +12,8 @@ import { answerSessionQuestion, createLearningSession, getQuestionChoices, getSe
 import { withLearningSessionDraft, withoutLearningSessionDraft } from "../../utils/learningSession.ts";
 import { BEGINNER_KANA_GROUPS } from "../../data/beginnerKana.ts";
 import { DEFAULT_CURRICULUM_PROGRESS } from "../../utils/curriculumProgress.ts";
+import type { CurriculumReviewItem } from "../../utils/curriculumProgress.ts";
+import { summarizeReviewMastery } from "../../utils/learningReview.ts";
 
 test("일본어 자료는 필수 필드와 고유 식별자를 유지한다", () => {
   assert.equal(WORDS.length, new Set(WORDS.map((item) => item.word)).size);
@@ -232,3 +234,119 @@ test("저것 구분 질문은 두 사람 모두에게서 먼 위치를 명시한
  assert.match(lesson.quiz.question, /말하는 사람과 듣는 사람 모두/);
 });
 
+
+const spacedNow = new Date('2026-11-16T12:00:00Z');
+function spacedSession(id: string, options: { correct?: boolean; firstWrong?: boolean; help?: boolean; responseMs?: number; observed?: boolean; lesson?: typeof CURRICULUM[number]; minutes?: 5 | 10 | 20 } = {}) {
+  const lesson = options.lesson ?? CURRICULUM[0];
+  let session = { ...createLearningSession(lesson.id, options.minutes ?? 5, 'starter'), id };
+  for (const index of getSessionQuizIndices(lesson, session.minutes, session.quizPlanVersion)) {
+    const observation = options.observed === false ? undefined : { neededHelp: options.help ?? false, responseMs: options.responseMs ?? 2000, modality: 'meaning' as const };
+    if (options.firstWrong) session = answerSessionQuestion(session, index, false, '가상 오답', observation);
+    session = answerSessionQuestion(session, index, options.correct ?? true, '가상 선택', observation);
+  }
+  return session;
+}
+function firstSpacedReviews(): CurriculumReviewItem[] {
+  return updateSessionReviews([], CURRICULUM[0], spacedSession('first'), spacedNow);
+}
+
+test('core early repeats record observations without postponing scheduled recall or inventing spaced mastery', () => {
+  let reviews = firstSpacedReviews();
+  const originalDue = reviews[0].nextReviewAt;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const session = spacedSession(`repeat-${attempt}`);
+    reviews = updateSessionReviews(reviews, CURRICULUM[0], session, new Date(spacedNow.getTime() + attempt * 300000));
+    assert.ok(reviews.every(item => item.intervalDays === 1 && item.nextReviewAt === originalDue && item.successStreak === 1));
+    assert.ok(reviews.every(item => item.reviewCount === attempt + 1 && item.lastSessionId === session.id));
+    assert.equal(summarizeReviewMastery(reviews).find(item => item.modality === 'meaning')?.stable, 0);
+  }
+});
+
+test('core recall advances at the exact due instant, never a millisecond before it', () => {
+  const previous = firstSpacedReviews();
+  const due = Date.parse(previous[0].nextReviewAt!);
+  for (const offset of [-1, 0, 1]) {
+    const now = new Date(due + offset);
+    const result = updateSessionReviews(previous, CURRICULUM[0], spacedSession(`boundary-${offset}`), now);
+    assert.ok(result.every(item => item.intervalDays === (offset < 0 ? 1 : 3)));
+    assert.ok(result.every(item => item.successStreak === (offset < 0 ? 1 : 2)));
+    assert.equal(result[0].nextReviewAt, offset < 0 ? previous[0].nextReviewAt : new Date(now.getTime() + 3 * 86400000).toISOString());
+  }
+});
+
+test('core future recall remains fixed across dates and at every existing interval', () => {
+  for (const intervalDays of [1, 3, 7, 14, 30]) {
+    const nextReviewAt = new Date(spacedNow.getTime() + intervalDays * 86400000).toISOString();
+    const previous = firstSpacedReviews().map(item => ({ ...item, intervalDays, nextReviewAt, successStreak: 2 }));
+    const now = new Date(Date.parse(nextReviewAt) - 1);
+    const result = updateSessionReviews(previous, CURRICULUM[0], spacedSession(`cross-date-${intervalDays}`), now);
+    assert.ok(result.every(item => item.intervalDays === intervalDays && item.nextReviewAt === nextReviewAt && item.successStreak === 2));
+  }
+});
+
+test('core wrong, corrected-first-wrong and helped answers still shorten a future review immediately', () => {
+  for (const options of [{ correct: false }, { firstWrong: true }, { help: true }]) {
+    const previous = firstSpacedReviews().map(item => ({ ...item, intervalDays: 30, successStreak: 5, nextReviewAt: '2026-12-16T12:00:00.000Z' }));
+    const now = new Date('2026-11-16T12:05:00Z');
+    const result = updateSessionReviews(previous, CURRICULUM[0], spacedSession('shorten', options), now);
+    const interval = options.correct === false ? 0 : 1;
+    assert.ok(result.every(item => item.intervalDays === interval && item.successStreak === 0));
+    assert.ok(result.every(item => item.nextReviewAt === new Date(now.getTime() + interval * 86400000).toISOString()));
+  }
+});
+
+test('core slow early correct responses remain observations but do not move the due date or spaced streak', () => {
+  const previous = firstSpacedReviews();
+  const result = updateSessionReviews(previous, CURRICULUM[0], spacedSession('slow', { responseMs: 45000 }), new Date('2026-11-16T12:05:00Z'));
+  assert.ok(result.every(item => item.nextReviewAt === previous[0].nextReviewAt && item.successStreak === 1 && item.lastResponseMs === 45000 && item.reviewCount === 2));
+});
+
+test('core early save retry after serialization counts the new session once and preserves old input and unknown fields', () => {
+  const previous = firstSpacedReviews().map(item => ({ ...item, retainedExtension: { original: true }, wrongCount: 3, lastWrongAt: '2026-10-01T00:00:00Z' }));
+  const untouched = { ...previous[0], id: 'retired:99', lessonId: 'retired', prompt: '과거 가상 문제' };
+  previous.push(untouched);
+  const snapshot = JSON.stringify(previous);
+  const session = spacedSession('retry');
+  const result = updateSessionReviews(previous, CURRICULUM[0], session, new Date('2026-11-16T12:05:00Z'));
+  const persisted = JSON.parse(JSON.stringify(result)) as CurriculumReviewItem[];
+  assert.deepEqual(updateSessionReviews(persisted, CURRICULUM[0], session, new Date('2026-11-17T12:05:00Z')), persisted);
+  assert.equal(JSON.stringify(previous), snapshot);
+  assert.strictEqual(result.at(-1), untouched);
+  assert.equal(result[0].createdAt, previous[0].createdAt);
+  assert.equal(result[0].wrongCount, 3);
+  assert.equal(result[0].lastWrongAt, previous[0].lastWrongAt);
+  assert.deepEqual((result[0] as typeof previous[number]).retainedExtension, { original: true });
+  assert.equal(result[0].successStreak, 1);
+});
+
+test('core historical drafts without observations preserve a known future schedule without synthesizing measurements', () => {
+  const previous = firstSpacedReviews();
+  const result = updateSessionReviews(previous, CURRICULUM[0], spacedSession('legacy', { observed: false }), new Date('2026-11-16T12:05:00Z'));
+  assert.ok(result.every(item => item.intervalDays === 1 && item.nextReviewAt === previous[0].nextReviewAt && item.reviewCount === 1 && item.successStreak === 1));
+  assert.deepEqual(updateSessionReviews([], CURRICULUM[0], spacedSession('old-new', { observed: false }), spacedNow), []);
+});
+
+test('core absent or invalid legacy due timestamps retain the existing explicit-answer scheduling behavior', () => {
+  for (const nextReviewAt of [undefined, 'invalid', '']) {
+    const previous = firstSpacedReviews().map(item => ({ ...item, nextReviewAt, intervalDays: 3 }));
+    const result = updateSessionReviews(previous, CURRICULUM[0], spacedSession('legacy-date'), spacedNow);
+    assert.ok(result.every(item => item.intervalDays === 7 && item.nextReviewAt === '2026-11-23T12:00:00.000Z'));
+  }
+});
+
+test('core early protection applies to V2 and legacy plans at all session lengths without changing IDs', () => {
+  for (const lesson of [CURRICULUM[0], CURRICULUM.find(item => item.id === 'f13')!]) for (const minutes of [5, 10, 20] as const) {
+    const first = spacedSession('plan-first', { lesson, minutes });
+    const previous = updateSessionReviews([], lesson, first, spacedNow);
+    const result = updateSessionReviews(previous, lesson, spacedSession('plan-again', { lesson, minutes }), new Date('2026-11-16T12:05:00Z'));
+    assert.deepEqual(result.map(item => item.id), getSessionQuizIndices(lesson, minutes, first.quizPlanVersion).map(index => `${lesson.id}:${index}`));
+    assert.ok(result.every(item => item.intervalDays === 1 && item.successStreak === 1 && item.nextReviewAt === previous[0].nextReviewAt));
+  }
+});
+
+test('core early practice does not invent missing historical interval or spaced-success measurements', () => {
+  const previous = firstSpacedReviews().map(item => { const legacy = { ...item }; delete legacy.successStreak; delete legacy.intervalDays; return legacy; });
+  const result = updateSessionReviews(previous, CURRICULUM[0], spacedSession('missing-measurement'), new Date('2026-11-16T12:05:00Z'));
+  assert.ok(result.every(item => item.successStreak === undefined && item.intervalDays === undefined && item.nextReviewAt === previous[0].nextReviewAt && item.reviewCount === 2));
+  assert.ok(JSON.parse(JSON.stringify(result)).every((item: CurriculumReviewItem) => !Object.hasOwn(item, 'successStreak') && !Object.hasOwn(item, 'intervalDays')));
+});

@@ -149,7 +149,7 @@ test('choice response timing uses the choice threshold after restoration, while 
   for (const modality of ['meaning', 'typing'] as const) {
     const observation: ReviewObservation = { neededHelp: false, modality, responseMs: 15000 };
     const session = answerSessionQuestion(createLearningSession(lesson.id, 20, 'reader'), index, true, correctLabel, observation);
-    const existing = updateSessionReviews([], lesson, session, now).map(item => ({ ...item, lastSessionId: 'older-session', intervalDays: 3 }));
+    const existing = updateSessionReviews([], lesson, session, now).map(item => ({ ...item, lastSessionId: 'older-session', intervalDays: 3, nextReviewAt: now.toISOString() }));
     const restored = normalizeLearningSession(roundTrip(session), lesson)!;
     assert.equal(updateSessionReviews(existing, lesson, restored, now)[0].intervalDays, modality === 'meaning' ? 3 : 7);
   }

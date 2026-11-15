@@ -153,7 +153,14 @@ export function updateSessionReviews(existing: CurriculumReviewItem[], lesson: C
     const observation = session.observations?.[index];
     if (!firstWrong && session.answers[index] && !previous && !observation) continue;
     const effectiveObservation = observation ? { ...observation, neededHelp: observation.neededHelp || firstWrong } : undefined;
-    const intervalDays = session.answers[index] === false ? 0 : firstWrong ? 1 : reviewInterval(previous?.intervalDays, true, effectiveObservation);
+    // Extra practice before a known due time is not spaced recall. Keep the
+    // schedule and spaced streak, but still record this session's observation.
+    // Missing legacy observations do not prove a new spaced success either.
+    // Wrong/helped answers retain their existing immediate shortening rules;
+    // missing/invalid legacy due dates retain the existing answer-time policy.
+    const earlyCorrect = session.answers[index] && !firstWrong && !effectiveObservation?.neededHelp
+      && previous && now.getTime() < Date.parse(previous.nextReviewAt ?? '');
+    const intervalDays = earlyCorrect ? previous.intervalDays : session.answers[index] === false ? 0 : firstWrong ? 1 : reviewInterval(previous?.intervalDays, true, effectiveObservation);
     updated.set(id, {
       ...previous, id, lastSessionId: session.id, lastSessionResult: session.answers[index], lessonId: lesson.id, lessonTitle: lesson.title,
       prompt: lesson.quiz[index].prompt, explanation: lesson.quiz[index].explanation,
@@ -161,7 +168,8 @@ export function updateSessionReviews(existing: CurriculumReviewItem[], lesson: C
       wrongCount: (previous?.wrongCount ?? 0) + (firstWrong && !repeatedSave ? 1 : 0),
       lastWrongAt: firstWrong && !repeatedSave ? now.toISOString() : previous?.lastWrongAt,
       ...(effectiveObservation ? reviewObservationFields(repeatedSave ? { ...previous, reviewCount: Math.max(0, (previous?.reviewCount ?? 1) - 1) } as CurriculumReviewItem : previous, session.answers[index], effectiveObservation) : {}),
-      intervalDays, nextReviewAt: new Date(now.getTime() + intervalDays * 86_400_000).toISOString(),
+      ...(earlyCorrect ? { successStreak: previous.successStreak } : {}),
+      intervalDays, nextReviewAt: earlyCorrect ? previous.nextReviewAt : new Date(now.getTime() + (intervalDays ?? 0) * 86_400_000).toISOString(),
     });
   }
   // Unasked questions and unrelated lessons remain untouched.
