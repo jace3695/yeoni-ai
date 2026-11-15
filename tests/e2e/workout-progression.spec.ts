@@ -134,3 +134,138 @@ test('authenticated workout review requires confirmation before applying one loa
     await test.step('workout phase 079', async () => { expect(today(), 'workout-corruption-no-midnight-crossing').toBe(date); expect(qa.traffic.blockedOrigins.size, 'workout-corruption-no-external-origin').toBe(0); await noOverflow(page); await silence.check(); });
   } finally { await test.step('workout phase 060', async () => { await silence.restore(); }); }
 });
+
+// Raw-direction migration coverage. Synthetic account only; no product function replacement.
+import type { Page } from '@playwright/test';
+const migrationKeys = ['ai-fitness-user-workout-settings', 'ai-fitness-selected-weekly-workout-plan', 'selectedWeeklyWorkoutPlanId', 'ai-fitness-workout-direction-version', 'ai-fitness-workout-direction-backup'];
+const migrationPrefix = 'ai-fitness-workout-direction-raw-backup-v1:';
+const migrationRaw = '{ "weeklyGroups": {}, "weeklyMethods": {}, "weeklyEdits": {"mon":{"memo":"QA preserved edit"}}, "exerciseTargets": {}, "dateOverrides": {}, "unknownQA": {"keep":true} }';
+const migrationBackup = '{ "savedAt":"2001-01-02T00:00:00.000Z", "settings":{"oldQA":true} }';
+type MigrationProbe = { writes: number; rejected: number; quota: boolean; original: Record<string, string | null>; snapshots: string[]; restore: () => void; repair: () => void };
+declare global { interface Window { __qaDirectionProbe?: MigrationProbe } }
+
+async function migrationInstall(page: Page, owner: string, mode: 'normal' | 'malformed' | 'quota') {
+  return page.evaluate(({ owner, mode, keys, prefix, raw, backup }) => {
+    if (location.origin !== 'http://127.0.0.1:3000' || localStorage.getItem('fitness-cloud-sync-user') !== owner) throw Error('Synthetic owner/origin mismatch');
+    if (window.__qaDirectionProbe || localStorage.getItem('yeoni-storage-transaction-v1')) throw Error('Unexpected probe or unresolved journal');
+    const setDescriptor = Object.getOwnPropertyDescriptor(Storage.prototype, 'setItem')!;
+    const removeDescriptor = Object.getOwnPropertyDescriptor(Storage.prototype, 'removeItem')!;
+    const set = Storage.prototype.setItem, remove = Storage.prototype.removeItem;
+    const original = Object.fromEntries(keys.map(key => [key, localStorage.getItem(key)]));
+    const snapshots = Object.keys(localStorage).filter(key => key.startsWith(prefix));
+    const seeded = Object.fromEntries(keys.map(key => [key, null])) as Record<string, string | null>;
+    seeded[keys[0]] = mode === 'malformed' ? '{QA malformed settings' : raw;
+    seeded[keys[2]] = 'qa-legacy-selection'; seeded[keys[4]] = backup;
+    for (const [key, value] of Object.entries(seeded)) value === null ? remove.call(localStorage, key) : set.call(localStorage, key, value);
+    const probe: MigrationProbe = { writes: 0, rejected: 0, quota: mode === 'quota', original, snapshots,
+      repair: () => { probe.quota = false; set.call(localStorage, keys[0], raw); },
+      restore: () => {
+        Object.defineProperty(Storage.prototype, 'setItem', setDescriptor);
+        Object.defineProperty(Storage.prototype, 'removeItem', removeDescriptor);
+        for (const key of Object.keys(localStorage)) if (key.startsWith(prefix) && !snapshots.includes(key)) remove.call(localStorage, key);
+        for (const [key, value] of Object.entries(original)) value === null ? remove.call(localStorage, key) : set.call(localStorage, key, value);
+        delete window.__qaDirectionProbe;
+      },
+    };
+    window.__qaDirectionProbe = probe;
+    Storage.prototype.setItem = function(key, value) {
+      if (this === localStorage && (keys.includes(key) || key.startsWith(prefix))) {
+        probe.writes++;
+        if (probe.quota && key.startsWith(prefix)) { probe.rejected++; throw new DOMException('QA snapshot quota', 'QuotaExceededError'); }
+      }
+      return set.call(this, key, value);
+    };
+    Storage.prototype.removeItem = function(key) {
+      if (this === localStorage && (keys.includes(key) || key.startsWith(prefix))) probe.writes++;
+      return remove.call(this, key);
+    };
+    return seeded;
+  }, { owner, mode, keys: migrationKeys, prefix: migrationPrefix, raw: migrationRaw, backup: migrationBackup });
+}
+async function migrationState(page: Page) {
+  return page.evaluate(({ keys, prefix }) => ({
+    raw: Object.fromEntries(keys.map(key => [key, localStorage.getItem(key)])),
+    backups: Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith(prefix)).map(key => [key, localStorage.getItem(key)])),
+    journal: localStorage.getItem('yeoni-storage-transaction-v1'),
+    writes: window.__qaDirectionProbe?.writes ?? -1,
+    rejected: window.__qaDirectionProbe?.rejected ?? -1,
+  }), { keys: migrationKeys, prefix: migrationPrefix });
+}
+async function migrationNavigate(page: Page, path: '/fitness' | '/diet') {
+  await page.getByRole('navigation', { name: 'AI 연이 공통 메뉴', exact: true }).locator(`a[href="${path}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`${path}$`));
+  // The same-document probe must survive Next navigation, never silently lose a fault.
+  expect(await page.evaluate(() => Boolean(window.__qaDirectionProbe))).toBe(true);
+}
+async function migrationRefresh(page: Page) {
+  const before = await migrationState(page);
+  for (const eventName of ['focus', 'storage', 'yeoni-records-changed']) {
+    await page.evaluate(async eventName => {
+      window.dispatchEvent(eventName === 'storage'
+        ? new StorageEvent('storage', { key: 'ai-fitness-user-workout-settings', storageArea: localStorage })
+        : new Event(eventName));
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    }, eventName);
+    await migrationPageBlocked(page);
+    expect(await migrationState(page), `no mutation after ${eventName}`).toEqual(before);
+  }
+}
+async function migrationPageBlocked(page: Page) {
+  await expect(page.getByRole('alert').filter({ hasText: '운동 기록을 안전하게 읽거나 저장하지 못했습니다.' })).toBeVisible();
+  await expect(page.getByText('기록 보호를 위해 앱을 멈췄어요', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('페이지를 다시 열기 전에 보존된 기록을 확인해 주세요. 초기화는 하지 않았습니다.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: '기록에 따른 운동 조정', exact: true })).toHaveCount(0);
+  await expect(page.locator('main select, main input, main textarea')).toHaveCount(0);
+}
+async function migrationRestore(page: Page) {
+  // Never suppress cleanup errors. Fixture then closes the context and removes its synthetic account.
+  await page.evaluate(() => window.__qaDirectionProbe?.restore());
+  expect(await page.evaluate(() => window.__qaDirectionProbe === undefined)).toBe(true);
+}
+
+test('workout raw preservation preserves exact originals and current-version reentry does not write direction keys', async ({ page, qa }) => {
+  await login(page, qa.account, '/diet/settings'); await synced(page);
+  try {
+    const seeded = await migrationInstall(page, qa.account.id, 'normal');
+    await migrationNavigate(page, '/fitness');
+    await expect(page.getByText('기존 설정 원문을 보관하고 현재 운동 방향에 맞춰 주 5일 근력·회복 교차 계획을 적용했습니다.', { exact: true })).toBeVisible();
+    const migrated = await migrationState(page);
+    expect(Object.keys(migrated.backups)).toHaveLength(1);
+    const snapshot = JSON.parse(Object.values(migrated.backups)[0]!);
+    expect(snapshot.raw).toEqual(seeded); expect(snapshot.owner).toBe(qa.account.id);
+    expect(migrated.raw[migrationKeys[4]]).toBe(migrationBackup);
+    expect(migrated.raw[migrationKeys[3]]).toBe('five-day-circuit-v1'); expect(migrated.journal).toBeNull();
+    await synced(page); await migrationNavigate(page, '/diet');
+    await page.evaluate(() => { window.__qaDirectionProbe!.writes = 0; });
+    await migrationNavigate(page, '/fitness');
+    await expect(page.getByRole('region', { name: '기록에 따른 운동 조정', exact: true })).toBeVisible();
+    const reentered = await migrationState(page);
+    expect(reentered.writes).toBe(0); expect(reentered.raw).toEqual(migrated.raw); expect(reentered.backups).toEqual(migrated.backups);
+  } finally { await migrationRestore(page); }
+});
+
+for (const mode of ['malformed', 'quota'] as const) {
+  test(`workout raw preservation ${mode} fails closed through refresh and requires a fresh page mount after QA repair`, async ({ page, qa }) => {
+    await login(page, qa.account, '/diet/settings'); await synced(page);
+    try {
+      const seeded = await migrationInstall(page, qa.account.id, mode);
+      await migrationNavigate(page, '/fitness'); await migrationPageBlocked(page);
+      const blocked = await migrationState(page);
+      expect(blocked.raw).toEqual(seeded); expect(blocked.backups).toEqual({}); expect(blocked.journal).toBeNull();
+      expect(blocked.rejected).toBe(mode === 'quota' ? 1 : 0);
+      await migrationRefresh(page); await migrationPageBlocked(page);
+      expect(await migrationState(page)).toEqual(blocked);
+      // QA repairs synthetic bytes; this is not a product recovery UI.
+      await page.evaluate(() => window.__qaDirectionProbe!.repair());
+      const repaired = await migrationState(page);
+      await migrationRefresh(page); await migrationPageBlocked(page);
+      expect(await migrationState(page)).toEqual(repaired);
+      await migrationNavigate(page, '/diet'); await migrationNavigate(page, '/fitness');
+      await expect(page.getByText('기존 설정 원문을 보관하고 현재 운동 방향에 맞춰 주 5일 근력·회복 교차 계획을 적용했습니다.', { exact: true })).toBeVisible();
+      const recovered = await migrationState(page);
+      expect(Object.keys(recovered.backups)).toHaveLength(1);
+      expect(JSON.parse(Object.values(recovered.backups)[0]!).raw).toEqual(repaired.raw);
+      expect(recovered.raw[migrationKeys[4]]).toBe(migrationBackup); expect(recovered.journal).toBeNull();
+    } finally { await migrationRestore(page); }
+  });
+}
