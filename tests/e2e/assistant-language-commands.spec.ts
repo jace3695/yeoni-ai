@@ -37,12 +37,9 @@ test('language confirmation cancels without writes, recovers after lost response
   expect((await qa.account.client.from('assistant_language_command_history').select('id')).data).toHaveLength(1);
   await page.getByRole('link', { name: '오늘 학습 현황 보기 →', exact: true }).click();
   await expect(page).toHaveURL(/\/language$/);
-  await page.locator('.routine-details > summary').click();
-  const wordRow = page.locator('.routine-row').filter({ has: page.getByRole('heading', { name: '단어 퀴즈 풀기 5문제', exact: true }) });
-  await expect(wordRow.getByRole('button', { name: '완료 취소', exact: true })).toBeVisible();
+  const committedLanguage = await qa.readLanguage(); await page.goto('/language/calendar', { waitUntil: 'domcontentloaded' }); await expectCompletedWord(page); expect(await qa.readLanguage()).toEqual(committedLanguage);
   await expect(page.getByText('학습 기록 · 서버 저장 확인', { exact: true })).toBeVisible();
-  await page.reload({ waitUntil: 'domcontentloaded' }); await page.locator('.routine-details > summary').click();
-  await expect(wordRow.getByRole('button', { name: '완료 취소', exact: true })).toBeVisible();
+  await page.reload({ waitUntil: 'domcontentloaded' }); await expectCompletedWord(page); expect(await qa.readLanguage()).toEqual(committedLanguage);
   await page.goto('/assistant/history?area=language', { waitUntil: 'domcontentloaded' });
   const receipt = page.getByRole('article', { name: '단어 학습 실행 이력' }); await expect(receipt).toBeVisible();
   await page.reload({ waitUntil: 'domcontentloaded' }); await expect(receipt).toBeVisible();
@@ -54,13 +51,12 @@ test('language confirmation cancels without writes, recovers after lost response
   expect(after.dailyRoutineProgress).toBe(before.dailyRoutineProgress); expect(after.dailyLearningHistory).toBe(before.dailyLearningHistory);
   expect(after.learningSettings).toBe(before.learningSettings);
   await page.reload({ waitUntil: 'domcontentloaded' }); await expect(receipt.getByText(/되돌리기 완료/)).toBeVisible();
-  await page.goto('/language', { waitUntil: 'domcontentloaded' }); await page.locator('.routine-details > summary').click();
-  await expect(wordRow.getByRole('button', { name: '직접 완료', exact: true })).toBeVisible();
+  await page.goto('/language/calendar', { waitUntil: 'domcontentloaded' }); await expect(page.getByText('아직 완료된 루틴이 없어요. 오늘 루틴부터 차근차근 시작해 보세요.', { exact: true })).toBeVisible(); expect(await qa.readLanguage()).toEqual(after);
 });
 
 test('independent sessions cannot confirm stale learning, and a subsequent lesson prevents unsafe undo', async ({ page, qa, browser }) => {
   await login(page, qa.account); await synced(page); await openCommand(page); await expect(reviewFor(page)).toBeVisible();
-  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } }); await qa.traffic.install(context);
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Seoul' }); await qa.traffic.install(context);
   try {
     const second = await context.newPage(); await login(second, qa.account); await synced(second);
     await openCommand(second, '오늘 문법 학습 완료했어'); await expect(reviewFor(second)).toBeVisible();
@@ -68,8 +64,8 @@ test('independent sessions cannot confirm stale learning, and a subsequent lesso
     await reviewFor(second).getByRole('button', { name: '확인하고 저장' }).click();
     await expect(reviewFor(second).getByRole('alert')).toContainText('다른 곳에서 학습 기록이 변경');
     expect((await qa.account.client.from('assistant_language_command_history').select('id')).data).toHaveLength(1);
-    await second.goto('/language', { waitUntil: 'domcontentloaded' }); await second.locator('.routine-details > summary').click();
-    await second.getByRole('button', { name: '직접 완료', exact: true }).first().click();
+    await second.goto('/language/kana', { waitUntil: 'domcontentloaded' }); const answers = await kanaAnswers(second); await second.getByRole('button', { name: '퀴즈 모드', exact: true }).click();
+    for (let count = 1; count <= 5; count++) { await (await correctChoice(second, 'kana', answers)).click(); await score(second, 'kana', count); if (count < 5) await nextButton(second, 'kana').click(); }
     await expect.poll(async () => JSON.parse((await qa.readLanguage()).dailyRoutineProgress as string).completedIds).toEqual(['words', 'kana']);
     await expect(second.getByText('학습 기록 · 서버 저장 확인', { exact: true })).toBeVisible();
     const beforeUndo = await qa.readLanguage();
@@ -100,3 +96,9 @@ test('ambiguous language commands stay unchanged, expiry and owner checks hold, 
   await page.unroute('**/api/assistant/language-commands?*'); await page.getByRole('button', { name: '이력 새로고침' }).click();
   await expect(page.getByRole('article', { name: '단어 학습 실행 이력' })).toBeVisible();
 });
+
+import { kanaAnswers, correctChoice, score, nextButton } from './japanese-reference-routine-state';
+async function expectCompletedWord(page: Page) {
+  const detail = page.getByRole('heading', { name: `${today().replaceAll('-', '.')} 학습 상세`, exact: true }).locator('..');
+  await expect(detail.getByRole('heading', { name: '완료한 루틴', exact: true }).locator('..').getByRole('listitem')).toHaveText(['단어']);
+}

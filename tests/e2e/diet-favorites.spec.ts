@@ -4,7 +4,7 @@ import { RouteDrain } from './route-drain';
 
 test('meal favorites review save, cancel, reload, apply and delete preserve daily history at 320px', async ({page,qa}) => {
   await page.setViewportSize({width:320,height:844});
-  await login(page,qa.account); await synced(page); await page.goto('/diet', {waitUntil:'domcontentloaded'});
+  await login(page,qa.account); await synced(page); await page.goto('/diet', {waitUntil:'domcontentloaded'}); await openStage21DietSection(page, '식사 즐겨찾기');
   const panel=page.getByRole('region',{name:'식사 즐겨찾기',exact:true});
   const review=panel.getByRole('region',{name:'즐겨찾기 내용 확인'});
   const lunch=page.getByRole('article').filter({has:page.getByText('점심',{exact:true})});
@@ -27,7 +27,7 @@ test('meal favorites review save, cancel, reload, apply and delete preserve dail
   await lunch.getByRole('combobox',{name:'식품 단백질',exact:true}).selectOption('none');
   await lunch.getByRole('button',{name:'없음',exact:true}).nth(0).click();
   await lunch.getByRole('button',{name:'없음',exact:true}).nth(1).click();
-  await page.reload({waitUntil:'domcontentloaded'}); await synced(page);
+  await page.reload({waitUntil:'domcontentloaded'}); await openStage21DietSection(page, '식사 즐겨찾기'); await synced(page);
   const card=panel.getByRole('listitem',{name:'점심 즐겨찾기 합성 회사 점심',exact:true});
   await expect(card).toContainText('식품 단백질 30g');
   await card.getByRole('button',{name:'불러오기',exact:true}).click();
@@ -48,13 +48,13 @@ test('meal favorites review save, cancel, reload, apply and delete preserve dail
   await card.getByRole('button',{name:'즐겨찾기 삭제',exact:true}).click();
   await review.getByRole('button',{name:'확인 후 즐겨찾기 삭제',exact:true}).click();
   await expect(panel).toContainText('저장한 식사 즐겨찾기가 없습니다.');
-  await page.reload({waitUntil:'domcontentloaded'}); await synced(page);
+  await page.reload({waitUntil:'domcontentloaded'}); await openStage21DietSection(page, '식사 즐겨찾기'); await synced(page);
   await expect(page.getByLabel('점심 식품 단백질 직접 입력')).toHaveValue('30');
   expect(await qa.read()).toEqual(daily);
 });
 
 test('favorite lost response recovers by GET only and duplicate names never overwrite amounts', async ({page,qa})=>{
-  await login(page,qa.account);await synced(page);await page.goto('/diet',{waitUntil:'domcontentloaded'});
+  await login(page,qa.account);await synced(page);await page.goto('/diet',{waitUntil:'domcontentloaded'}); await openStage21DietSection(page, '식사 즐겨찾기');
   const panel=page.getByRole('region',{name:'식사 즐겨찾기',exact:true});
   await expect(panel.getByText('저장한 식사 즐겨찾기가 없습니다.',{exact:true})).toBeVisible();
   await panel.getByLabel('즐겨찾기 이름',{exact:true}).fill('결과 복구');
@@ -82,7 +82,7 @@ test('favorite lost response recovers by GET only and duplicate names never over
   await panel.getByRole('button',{name:'확인 후 즐겨찾기 저장',exact:true}).click();
   await expect(panel.getByRole('status')).toContainText('같은 이름의 즐겨찾기가 있어요');
   expect((await qa.account.client.from('diet_meal_favorites').select('*').single()).data).toEqual(saved);
-  await page.reload({waitUntil:'domcontentloaded'});await expect(panel.getByRole('listitem',{name:'점심 즐겨찾기 결과 복구',exact:true})).toBeVisible();
+  await page.reload({waitUntil:'domcontentloaded'}); await openStage21DietSection(page, '식사 즐겨찾기');await expect(panel.getByRole('listitem',{name:'점심 즐겨찾기 결과 복구',exact:true})).toBeVisible();
   expect(await qa.read()).toEqual(before);await synced(page);
 });
 
@@ -108,3 +108,12 @@ test('favorites isolate owners, preserve dinner and show read errors instead of 
   expect(await qa.read()).toEqual(before);
   expect((await qa.account.client.from('diet_meal_favorites').select('*').eq('id',id).single()).data).toMatchObject(row);
 });
+
+async function openStage21DietSection(page: Parameters<typeof synced>[0], title: string) {
+  const disclosure = page.locator('details[data-diet-disclosure]').filter({ has: page.locator('summary').filter({ hasText: title }) });
+  await expect(disclosure).toHaveCount(1);
+  const summary = disclosure.locator(':scope > summary');
+  await expect(summary).toHaveCount(1);
+  if (await disclosure.getAttribute('open') === null) await summary.click();
+  await expect(disclosure).toHaveAttribute('open', '');
+}

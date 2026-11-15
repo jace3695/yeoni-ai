@@ -44,7 +44,7 @@ test('monthly plan preview, home reminders, reported subscription use and stop/d
   await expect(monthly.getByText(/같은 이름의 지난달 추정액을 다시 더하지/)).toBeVisible();
   await page.reload(); panel=await openPlans(page);
   await expect(panel.getByText(/마지막 사용 .*35일 경과/)).toBeVisible();
-  await menu(page).getByRole('button',{name:'홈',exact:true}).click();
+  await menu(page).getByRole('button',{name:'홈',exact:true}).click(); await openStage21BudgetHomeDetails(page);
   const home=page.getByRole('region',{name:'오늘의 결제 점검'});
   await expect(home.getByText(/합성 구독 1.*오늘 예정.*35일 경과/)).toBeVisible();
   await home.getByRole('button',{name:'결제 예정일 관리',exact:true}).click(); panel=page.getByRole('region',{name:'결제 예정일과 구독 관리'});
@@ -77,7 +77,7 @@ test('lost save response survives reload, failed confirmation GET stays pending,
   });
   await save(page,panel); await expect(panel.getByText(/저장 응답을 확인하지 못했어요/)).toBeVisible();
   const original=(await qa.account.client.from('budget_payment_plans').select('*')).data; expect(original).toHaveLength(1);
-  await page.reload();
+  await page.reload(); await openStage21BudgetHomeDetails(page);
   const home=page.getByRole('region',{name:'오늘의 결제 점검'});
   await expect(home.getByRole('button',{name:'같은 예정일 결과 확인',exact:true})).toBeVisible();
   let failRead=true, blocked=0;
@@ -124,3 +124,12 @@ test('independent sessions reject stale plan updates and deletions while preserv
     expect(traffic.blockedOrigins.size).toBe(0);
   } finally { await context.close(); }
 });
+
+async function openStage21BudgetHomeDetails(page: Page) {
+  const disclosure = page.locator('details.budget-home-details').filter({ has: page.getByText('돈의 흐름 · 지출 분석 · 결제 예정', { exact: true }) });
+  await expect(disclosure).toHaveCount(1);
+  const summary = disclosure.locator(':scope > summary');
+  await expect(summary).toHaveCount(1);
+  if (await disclosure.getAttribute('open') === null) await summary.click();
+  await expect(disclosure).toHaveAttribute('open', '');
+}

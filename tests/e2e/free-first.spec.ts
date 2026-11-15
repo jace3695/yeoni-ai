@@ -70,7 +70,7 @@ test('meal reuse previews before applying, preserves other inputs, and saves wee
   await expect(page.getByLabel('소화 상태', { exact: true })).toHaveValue('bloated');
   await expect(page.getByLabel('야식을 먹었나요?', { exact: true })).toHaveValue('yes');
   await expect(page.getByLabel('메모', { exact: true })).toHaveValue('무료 개선 합성 식단 메모');
-  await expect(page.getByRole('region', { name: '최근 7일 식단 요약' })).toContainText('소화 불편 1일 / 상태 응답 1일');
+  await openStage21DietSection(page, '식단 분석·추세'); await expect(page.getByRole('region', { name: '최근 7일 식단 요약' })).toContainText('소화 불편 1일 / 상태 응답 1일');
   await noOverflow(page);
 });
 
@@ -121,3 +121,12 @@ test('review records response time and hint use in the actual DB without treatin
   await expect(page.getByRole('region', { name: '복습 숙련도' })).toContainText('안정 0 / 측정 1문제');
   await noOverflow(page);
 });
+
+async function openStage21DietSection(page: Parameters<typeof synced>[0], title: string) {
+  const disclosure = page.locator('details[data-diet-disclosure]').filter({ has: page.locator('summary').filter({ hasText: title }) });
+  await expect(disclosure).toHaveCount(1);
+  const summary = disclosure.locator(':scope > summary');
+  await expect(summary).toHaveCount(1);
+  if (await disclosure.getAttribute('open') === null) await summary.click();
+  await expect(disclosure).toHaveAttribute('open', '');
+}

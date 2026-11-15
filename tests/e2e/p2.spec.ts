@@ -290,7 +290,7 @@ test('growth weekday patterns count recorded days, survive reload and preserve r
   await page.setViewportSize({ width: 320, height: 844 });
   await login(page, qa.account); await synced(page);
   await page.goto('/growth');
-  await expect(page.getByRole('heading', { name: '나의 루틴', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '직접 정하는 활동', exact: true })).toBeVisible(); await expect(page.getByLabel('활동 이름', { exact: true })).toBeEnabled();
   const routine = await qa.account.client.from('growth_routines').insert({ user_id: qa.account.id, title: '합성 패턴 루틴', category: 'custom', target_minutes: 10, enabled: true, sort_order: 999, preferred_days: [1,3,5], target_sessions_per_week: 3 }).select().single();
   expect(routine.error).toBeNull();
   const rows = [-1,-2,-3].map((offset, index) => ({ user_id: qa.account.id, routine_id: routine.data!.id, session_date: dateMinus(today(), -offset), status: index ? 'stopped' : 'completed', planned_minutes: 10, actual_minutes: 5, source: 'manual' }));
@@ -308,7 +308,7 @@ test('growth weekday patterns count recorded days, survive reload and preserve r
   await panel.getByLabel('살펴볼 루틴').selectOption(routine.data!.id);
   await expect(panel).toContainText('기록 3일 · 기록 없음 25일');
   await panel.getByRole('link', { name: '루틴 일정 확인하기 →' }).click();
-  await expect(page.getByRole('button', { name: '루틴 편집', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '직접 정하는 활동', exact: true })).toBeVisible(); await expect(page.getByLabel('활동 이름', { exact: true })).toBeEnabled(); const otherDays = page.locator('details').filter({ has: page.getByText(/다른 요일의 활동/) }); if (await otherDays.count()) { await expect(otherDays).toHaveCount(1); if (await otherDays.getAttribute('open') === null) await otherDays.locator('summary').click(); await expect(otherDays).toHaveAttribute('open', ''); } const activity = page.getByRole('listitem').filter({ has: page.getByText('합성 패턴 루틴', { exact: true }) }); await expect(activity).toHaveCount(1); await expect(activity.getByRole('button', { name: '수정', exact: true })).toBeVisible();
   expect((await qa.account.client.from('growth_sessions').select('*').order('id')).data).toEqual(before);
   expect((await qa.account.client.from('growth_routines').select('*').order('id')).data).toEqual(routinesBefore);
 });
@@ -354,7 +354,7 @@ test('growth start times compare Korean slots at 320px without inventing clocks 
   await page.setViewportSize({ width: 320, height: 844 });
   await login(page, qa.account); await synced(page);
   await page.goto('/growth', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: '나의 루틴', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '직접 정하는 활동', exact: true })).toBeVisible(); await expect(page.getByLabel('활동 이름', { exact: true })).toBeEnabled();
   await expect(page.getByText('개인 루틴을 안전하게 동기화하고 있어요…', { exact: true })).toHaveCount(0);
   const routine = await qa.account.client.from('growth_routines').insert({ user_id: qa.account.id, title: '합성 시작 시간 비교', category: 'custom', target_minutes: 10, enabled: true, sort_order: 999, preferred_days: [1,3,5], target_sessions_per_week: 3 }).select().single();
   expect(routine.error).toBeNull();
@@ -392,9 +392,9 @@ test('growth start times compare Korean slots at 320px without inventing clocks 
 test('growth start time exclusions and explicit refresh use the saved start instead of the insertion time', async ({ page, qa }) => {
   await login(page, qa.account); await synced(page);
   await page.goto('/growth', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: '나의 루틴', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '직접 정하는 활동', exact: true })).toBeVisible(); await expect(page.getByLabel('활동 이름', { exact: true })).toBeEnabled();
   await expect(page.getByText('개인 루틴을 안전하게 동기화하고 있어요…', { exact: true })).toHaveCount(0);
-  const routine = await qa.account.client.from('growth_routines').select('*').order('sort_order').limit(1).single();
+  const routine = await qa.account.client.from('growth_routines').insert({ user_id: qa.account.id, title: '합성 시각 제외 확인', category: 'custom', target_minutes: 10, enabled: true, sort_order: 999, preferred_days: [1, 2, 3, 4, 5, 6, 7], target_sessions_per_week: 7 }).select('*').single();
   expect(routine.error).toBeNull();
   const date = dateMinus(today(), 1);
   const session = await qa.account.client.from('growth_sessions').insert({ user_id: qa.account.id, routine_id: routine.data!.id, session_date: date, status: 'completed', planned_minutes: 10, actual_minutes: 5, source: 'manual', started_at: `${dateMinus(date,1)}T23:55:00+09:00`, ended_at: `${date}T00:05:00+09:00` }).select().single();
@@ -420,7 +420,7 @@ test('growth workout comparison uses explicit marks, reloads and preserves both 
   await page.setViewportSize({ width: 320, height: 844 });
   await login(page, qa.account); await synced(page);
   await page.goto('/growth', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: '나의 루틴', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '직접 정하는 활동', exact: true })).toBeVisible(); await expect(page.getByLabel('활동 이름', { exact: true })).toBeEnabled();
   await expect(page.getByText('개인 루틴을 안전하게 동기화하고 있어요…', { exact: true })).toHaveCount(0);
   const routine = await qa.account.client.from('growth_routines').insert({ user_id: qa.account.id, title: '합성 운동 비교', category: 'custom', target_minutes: 10, enabled: true, sort_order: 999, preferred_days: [1,3,5], target_sessions_per_week: 3 }).select().single();
   expect(routine.error).toBeNull();
@@ -456,9 +456,9 @@ test('growth workout comparison uses explicit marks, reloads and preserves both 
 test('growth workout comparison blocks malformed records and refresh shows a corrected server value', async ({ page, qa }) => {
   await login(page, qa.account); await synced(page);
   await page.goto('/growth', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: '나의 루틴', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '직접 정하는 활동', exact: true })).toBeVisible(); await expect(page.getByLabel('활동 이름', { exact: true })).toBeEnabled();
   await expect(page.getByText('개인 루틴을 안전하게 동기화하고 있어요…', { exact: true })).toHaveCount(0);
-  const routine = await qa.account.client.from('growth_routines').select('*').order('sort_order').limit(1).single();
+  const routine = await qa.account.client.from('growth_routines').insert({ user_id: qa.account.id, title: '합성 운동 형식 확인', category: 'custom', target_minutes: 10, enabled: true, sort_order: 999, preferred_days: [1, 2, 3, 4, 5, 6, 7], target_sessions_per_week: 7 }).select('*').single();
   expect(routine.error).toBeNull();
   const date = dateMinus(today(), 1);
   expect((await qa.account.client.from('growth_sessions').insert({ user_id: qa.account.id, routine_id: routine.data!.id, session_date: date, status: 'completed', planned_minutes: 10, actual_minutes: 5, source: 'manual' })).error).toBeNull();
@@ -630,7 +630,7 @@ test('diet 28 day comparison uses saved answers, evidence, reload and 320px with
   const state = { ...before, 'ai-fitness-diet-completed-days': { ...(before['ai-fitness-diet-completed-days'] as Record<string, unknown>), ...records, [today()]: { digestionStatus: 'comfortable', lateSnack: 'no' }, [dateMinus(today(), 8)]: { dietMemo: '미응답 보존' } } };
   expect((await qa.account.client.from('user_app_state').update({ state }).eq('user_id', qa.account.id)).error).toBeNull();
   await login(page, qa.account); await synced(page);
-  await page.goto('/diet', { waitUntil: 'domcontentloaded' });
+  await page.goto('/diet', { waitUntil: 'domcontentloaded' }); await openStage21DietSection(page, '식단 분석·추세');
   const panel = page.getByRole('region', { name: '28일 식단 기록 비교' });
   await expect(panel.getByRole('article', { name: '최근 28일', exact: true })).toContainText('소화 불편 7일 / 응답 7일 · 100%');
   await expect(panel).toContainText('소화 불편: 이전 기간보다 응답일 비율 100%p 높음');
@@ -641,10 +641,10 @@ test('diet 28 day comparison uses saved answers, evidence, reload and 320px with
   await page.getByLabel('소화 상태', { exact: true }).selectOption('nausea');
   await expect(panel).toContainText('소화 불편 7일 / 응답 7일 · 100%');
   await page.getByLabel('소화 상태', { exact: true }).selectOption('comfortable');
-  await page.reload({ waitUntil: 'domcontentloaded' }); await synced(page);
+  await page.reload({ waitUntil: 'domcontentloaded' }); await synced(page); await openStage21DietSection(page, '식단 분석·추세');
   await expect(panel).toContainText('야식: 이전 기간보다 응답일 비율 43%p 높음');
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.goto('/diet', { waitUntil: 'domcontentloaded' }); await synced(page);
+  await page.goto('/diet', { waitUntil: 'domcontentloaded' }); await openStage21DietSection(page, '식단 분석·추세'); await synced(page);
   await expect(panel).toContainText('소화 불편: 이전 기간보다 응답일 비율 100%p 높음');
   expect(await qa.read()).toEqual(state);
   assertOriginalPreserved(await qa.read());
@@ -653,13 +653,13 @@ test('diet 28 day comparison uses saved answers, evidence, reload and 320px with
 test('diet comparison with no responses keeps unknown rates and does not infer a trend', async ({ page, qa }) => {
   const before = await qa.read();
   await login(page, qa.account); await synced(page);
-  await page.goto('/diet', { waitUntil: 'domcontentloaded' });
+  await page.goto('/diet', { waitUntil: 'domcontentloaded' }); await openStage21DietSection(page, '식단 분석·추세');
   const panel = page.getByRole('region', { name: '28일 식단 기록 비교' });
   await expect(panel.getByRole('article', { name: '최근 28일', exact: true })).toContainText('소화 불편 0일 / 응답 0일 · 비율 미기록');
   await expect(panel).toContainText('소화 불편: 각 기간에 응답 7일 이상이면 차이를 표시합니다.');
   await panel.getByText('이전 28일 날짜별 근거', { exact: true }).click();
   await expect(panel.getByRole('article', { name: '이전 28일', exact: true }).getByText('이 기간에 저장된 식단 기록이 없습니다.', { exact: true })).toBeVisible();
-  await page.reload({ waitUntil: 'domcontentloaded' }); await synced(page);
+  await page.reload({ waitUntil: 'domcontentloaded' }); await synced(page); await openStage21DietSection(page, '식단 분석·추세');
   await expect(panel).toContainText('비율 미기록');
   expect(await qa.read()).toEqual(before);
 });
@@ -704,3 +704,12 @@ test('diet workout context distinguishes malformed workout data from an empty hi
   await expect(panel).toContainText('운동 표시 0일'); await expect(panel.getByRole('alert')).toHaveCount(0);
   expect(await qa.read()).toEqual(repaired);
 });
+
+async function openStage21DietSection(page: Parameters<typeof synced>[0], title: string) {
+  const disclosure = page.locator('details[data-diet-disclosure]').filter({ has: page.locator('summary').filter({ hasText: title }) });
+  await expect(disclosure).toHaveCount(1);
+  const summary = disclosure.locator(':scope > summary');
+  await expect(summary).toHaveCount(1);
+  if (await disclosure.getAttribute('open') === null) await summary.click();
+  await expect(disclosure).toHaveAttribute('open', '');
+}
