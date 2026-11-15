@@ -103,3 +103,90 @@ test('real HistoryScreen invalid amount and reversed date filters never render f
     assert.ok(!html.includes('₩0'))
   }
 })
+
+// Capture the actual screen's event callback without mounting auth or issuing a
+// browser download. Synthetic DOM/URL sinks prove whether download was attempted.
+function csvScreen(amounts: unknown[], kind: 'income' | 'expense' | 'saving' = 'income', search = '', minimum = '', extraExpense: unknown[] = []) {
+  const Component = loadComponent('app/budget/components/history-screen.tsx', [false, false, false, search, '', '', 'all', 'all', minimum, '', 'all'])
+  const notices: string[] = []
+  const noAction = () => { throw new Error('unexpected mutation') }
+  const rows = amounts.map((amount, i) => ({ id: String(i), amount, name: i ? 'other' : '=SUM(A1)', place: i ? 'other' : '=SUM(A1)', goal_name: i ? 'other' : '=SUM(A1)', date: '2026-11-15' }))
+  const props = { userId: 'synthetic-only', incomeList: kind === 'income' ? rows : [], transactions: kind === 'expense' ? rows : extraExpense.map((amount, i) => ({ id: `extra-${i}`, amount, date: '2026-11-15' })), savings: kind === 'saving' ? rows : [], currency: 'KRW', processingRecordKey: '', onChanged: noAction, onDeleteIncome: noAction, onDeleteExpense: noAction, onDeleteSaving: noAction, onNavigateInput: noAction, onNotice: (notice: string) => notices.push(notice) }
+  const tree = (Component as (input: typeof props) => React.ReactNode)(props)
+  function findExport(node: React.ReactNode): React.ReactElement<{ disabled: boolean; onClick: () => void }> | undefined {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { for (const child of node) { const match = findExport(child); if (match) return match }; return }
+    if (!('props' in node)) return
+    const element = node as React.ReactElement<{ children?: React.ReactNode; disabled: boolean; onClick: () => void }>
+    if (element.type === 'button' && element.props.children === '현재 결과 CSV 저장') return element
+    return findExport(element.props.children)
+  }
+  return { button: findExport(tree)!, notices, tree }
+}
+
+test('CSV real handler fails closed for corrupt filtered money in all record types', () => {
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
+  let downloads = 0
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: { createElement() { downloads++; throw new Error('invalid money must not reach DOM download') } } })
+  try {
+    for (const kind of ['income', 'expense', 'saving'] as const) {
+      for (const amount of [null, undefined, '', ' ', false, true, NaN, Infinity, -1, 1.5, '1e3', '1,000', '9007199254740992', Number.MAX_SAFE_INTEGER + 1]) {
+        const { button, notices, tree } = csvScreen([amount], kind)
+        assert.equal(button.props.disabled, true)
+        assert.ok(renderToStaticMarkup(tree).includes('history-csv-guidance'))
+        button.props.onClick() // even a direct callback call cannot bypass the guard
+        assert.equal(notices.length, 1)
+        assert.ok(notices[0].includes('금액을 확인'))
+      }
+    }
+    const invalidFilter = csvScreen([100], 'income', '', 'bad')
+    invalidFilter.button.props.onClick()
+    assert.ok(invalidFilter.notices[0].includes('금액 조건'))
+    assert.equal(downloads, 0)
+  } finally {
+    if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument)
+    else Reflect.deleteProperty(globalThis, 'document')
+  }
+})
+
+test('CSV retains zero, numeric strings, exact values and formula escaping; filtered-out corrupt rows do not block export', async () => {
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
+  const originalCreate = URL.createObjectURL
+  const originalRevoke = URL.revokeObjectURL
+  const blobs: Blob[] = []
+  let clicks = 0
+  let revokes = 0
+  URL.createObjectURL = blob => { blobs.push(blob as Blob); return 'blob:synthetic-only' }
+  URL.revokeObjectURL = () => { revokes++ }
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: { createElement: () => ({ click: () => { clicks++ }, remove() {} }), body: { appendChild() {} } } })
+  try {
+    for (const kind of ['income', 'expense', 'saving'] as const) {
+      const valid = csvScreen([0, '001200', Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER], kind)
+      assert.equal(valid.button.props.disabled, false)
+      assert.ok(renderToStaticMarkup(valid.tree).includes('합계 확인 필요'))
+      valid.button.props.onClick()
+      assert.ok(valid.notices[0].includes('4건'))
+      const csv = await blobs.at(-1)!.text()
+      assert.ok(csv.includes('"0"'))
+      assert.ok(csv.includes('"1200"'))
+      assert.equal(csv.split('"9007199254740991"').length - 1, 2)
+      assert.ok(csv.includes('"\'=SUM(A1)"'))
+      assert.ok(!csv.includes('NaN'))
+    }
+    const filtered = csvScreen([100, null], 'income', '=SUM')
+    assert.equal(filtered.button.props.disabled, false)
+    filtered.button.props.onClick()
+    assert.ok(filtered.notices[0].includes('1건'))
+    const boundary = csvScreen([Number.MAX_SAFE_INTEGER], 'income', '', '', [Number.MAX_SAFE_INTEGER])
+    assert.equal(boundary.button.props.disabled, false)
+    boundary.button.props.onClick()
+    assert.ok((await blobs.at(-1)!.text()).includes('"9007199254740991"'))
+    assert.equal(clicks, 5)
+    assert.equal(revokes, 5)
+  } finally {
+    URL.createObjectURL = originalCreate
+    URL.revokeObjectURL = originalRevoke
+    if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument)
+    else Reflect.deleteProperty(globalThis, 'document')
+  }
+})

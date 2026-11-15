@@ -83,7 +83,7 @@ test('history filter labels and CSV action use scoped semantic colors with AA co
  assert.match(csv,/color: 'var\(--sage-dark\)'/);
  assert.match(csv,/background: 'var\(--surface\)'/);
  assert.match(csv,/border: '1px solid var\(--border\)'/);
- assert.match(csv,/disabled=\{Boolean\(filterError\)\}/);
+ assert.match(csv,/disabled=\{Boolean\(csvExportError\)\}/);
  assert.match(csv,/onClick=\{exportFilteredHistoryCsv\}/);
  // The doubly scoped redesign tokens win over the older app defaults.
  const scope=css.match(/\.budget-app-shell\.budget-app-shell \{([^}]+)\}/)?.[1];
@@ -118,4 +118,11 @@ test('Yeoni remains in home diagnosis and consultation, suspended in entry and h
  assert.match(page,/<CommonCharacterGuide>[\s\S]*?home-yeoni-diagnosis[\s\S]*?<\/CommonCharacterGuide>/);
  assert.match(page,/<CommonCharacterSlot>[\s\S]*?연이의 가계부 상담[\s\S]*?<\/CommonCharacterSlot>/);
  assert.doesNotMatch(page,/AI 상담|쓴 돈이나 받은 돈을 적어요/);
+});
+
+
+test('CSV availability still includes invalid filter and corrupt amount guards', () => {
+  const source = readFileSync('app/budget/components/history-screen.tsx', 'utf8');
+  assert.match(source, /const csvExportError = filterError \|\| csvAmountError/);
+  assert.match(source, /if \(csvExportError\) \{ onNotice\(csvExportError\); return \}/);
 });

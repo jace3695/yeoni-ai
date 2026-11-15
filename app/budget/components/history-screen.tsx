@@ -5,6 +5,7 @@ import { Search } from 'lucide-react'
 import CategoryEditor from './category-editor'
 import HistorySummary from './history-summary'
 import { amountRange, historyCsv } from '../lib/history-edit'
+import { sumHistoryAmounts } from '../lib/history-summary'
 
 type HistoryType = 'all' | 'income' | 'expense' | 'saving'
 
@@ -78,11 +79,19 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
   const hasStoredRecords = incomeList.length + transactions.length + savings.length > 0
   const hasHistoryFilters = Boolean(normalizedSearchQuery || historyStartDate || historyEndDate || historyTypeFilter !== 'all' || historyCategoryFilter !== 'all' || minimumAmount || maximumAmount || paymentFilter !== 'all')
   const resetHistoryFilters = () => { setSearchQuery(''); setHistoryStartDate(''); setHistoryEndDate(''); setHistoryTypeFilter('all'); setHistoryCategoryFilter('all'); setMinimumAmount(''); setMaximumAmount(''); setPaymentFilter('all') }
+  const csvGroups = [filteredIncomeItems, filteredExpenseItems, filteredSavingItems]
+  const csvAmountError = csvGroups.some(
+    items => items.some(item => sumHistoryAmounts([item]) === null)
+  ) ? '금액을 확인할 내역이 있어 CSV를 저장할 수 없어요. 검색 결과의 금액을 확인해 주세요.' : ''
+  // CSV contains individual values, not totals. Valid rows remain exportable
+  // when only their group sum overflows; the summary still shows its warning.
+  const csvExportError = filterError || csvAmountError
   const exportFilteredHistoryCsv = () => {
+    if (csvExportError) { onNotice(csvExportError); return }
     const rows = [
-      ...filteredIncomeItems.map((item: any) => ({ date: item.date, type: '수입', name: item.name || '', category: item.category || '', payment: '', amount: Number(item.amount || 0), memo: item.memo || '' })),
-      ...filteredExpenseItems.map((item: any) => ({ date: item.date, type: '지출', name: item.place || '', category: item.category || '', payment: item.payment || '', amount: Number(item.amount || 0), memo: item.memo || '' })),
-      ...filteredSavingItems.map((item: any) => ({ date: item.date, type: '저축', name: item.goal_name || '일반저축', category: '저축', payment: '', amount: Number(item.amount || 0), memo: item.memo || '' }))
+      ...filteredIncomeItems.map((item: any) => ({ date: item.date, type: '수입', name: item.name || '', category: item.category || '', payment: '', amount: Number(item.amount), memo: item.memo || '' })),
+      ...filteredExpenseItems.map((item: any) => ({ date: item.date, type: '지출', name: item.place || '', category: item.category || '', payment: item.payment || '', amount: Number(item.amount), memo: item.memo || '' })),
+      ...filteredSavingItems.map((item: any) => ({ date: item.date, type: '저축', name: item.goal_name || '일반저축', category: '저축', payment: '', amount: Number(item.amount), memo: item.memo || '' }))
     ].sort((a, b) => String(b.date).localeCompare(String(a.date)))
     if (!rows.length) { onNotice('내보낼 내역이 없어요.'); return }
     const header = ['날짜', '유형', '내용', '카테고리', '결제수단', '금액', '메모']
@@ -154,8 +163,9 @@ export default function HistoryScreen({ userId, onChanged, incomeList, transacti
                 {filterError && <p role="alert">{filterError}</p>}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                   <button type="button" onClick={resetHistoryFilters} style={{ minHeight: 40, flex: '1 1 120px', borderRadius: 9, border: '1px solid #2A2A3E', padding: '8px 12px', cursor: 'pointer' }}>필터 초기화</button>
-                  <button type="button" disabled={Boolean(filterError)} onClick={exportFilteredHistoryCsv} style={{ minHeight: 40, flex: '1 1 150px', borderRadius: 9, border: '1px solid var(--border)', padding: '8px 12px', cursor: 'pointer', color: 'var(--sage-dark)', background: 'var(--surface)' }}>현재 결과 CSV 저장</button>
+                  <button type="button" disabled={Boolean(csvExportError)} aria-describedby={csvExportError ? 'history-csv-guidance' : undefined} onClick={exportFilteredHistoryCsv} style={{ minHeight: 40, flex: '1 1 150px', borderRadius: 9, border: '1px solid var(--border)', padding: '8px 12px', cursor: 'pointer', color: 'var(--sage-dark)', background: 'var(--surface)' }}>현재 결과 CSV 저장</button>
                 </div>
+                {csvExportError && <p id="history-csv-guidance" style={{ color: 'var(--expense)', fontSize: 12, margin: '10px 0 0' }}>{csvExportError}</p>}
                 <p aria-live="polite" style={{ color: '#9CA3AF', fontSize: 11, margin: '10px 0 0' }}>
                   총 {filteredIncomeItems.length + filteredExpenseItems.length + filteredSavingItems.length}건
                 </p>
