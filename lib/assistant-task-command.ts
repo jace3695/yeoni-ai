@@ -41,18 +41,32 @@ export function parseTaskCompletionTarget(message: string): string {
   return target;
 }
 
+// Date parsing and title cleanup must recognize the same complete tokens.
+// Keep validation in commandDueDate; this helper only removes date syntax from
+// a proposed title, never selects a date or writes a task.
+const EXPLICIT_TASK_DATE = String.raw`(?<!\d)(\d{4,})[-./년]\s*(\d+)[-./월]\s*(\d+)((?:[./-]\d+)*)일?`;
+const MONTH_DAY_TASK_DATE = String.raw`(?<!\d)(\d+)월\s*(\d+)((?:[./-]\d+)*)일`;
+
+export function stripExplicitTaskDates(message: string) {
+  const suffix = String.raw`(?:\s*(?:까지|으로|로)(?![\p{L}\p{M}\p{N}_]))?`;
+  // Treat adjacent date expressions as one removed span, without normalizing
+  // unrelated whitespace inside the user's title.
+  const date = `(?:${EXPLICIT_TASK_DATE}|${MONTH_DAY_TASK_DATE})`;
+  return message.replace(new RegExp(String.raw`\s*(?:${date}${suffix}\s*)+`, 'gu'), ' ').trim();
+}
+
 export function commandDueDate(message: string, today: string) {
   // Inspect complete date-shaped tokens before selecting a date. Otherwise an
   // invalid explicit date can be truncated or silently fall back to "내일".
   const invalidDate = () => new Error('존재하는 날짜를 말씀해 주세요. 예: 9월 20일');
-  const explicitTokens = [...message.matchAll(/(?<!\d)(\d{4,})[-./년]\s*(\d+)[-./월]\s*(\d+)((?:[./-]\d+)*)일?/g)];
+  const explicitTokens = [...message.matchAll(new RegExp(EXPLICIT_TASK_DATE, 'g'))];
   for (const token of explicitTokens) {
     if (!/^20\d{2}$/.test(token[1]) || token[2].length > 2 || token[3].length > 2 || token[4]) throw invalidDate();
     const value = `${token[1]}-${token[2].padStart(2, '0')}-${token[3].padStart(2, '0')}`;
     const date = new Date(`${value}T12:00:00Z`);
     if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw invalidDate();
   }
-  const monthDayTokens = [...message.matchAll(/(?<!\d)(\d+)월\s*(\d+)((?:[./-]\d+)*)일/g)];
+  const monthDayTokens = [...message.matchAll(new RegExp(MONTH_DAY_TASK_DATE, 'g'))];
   for (const token of monthDayTokens) {
     if (token[1].length > 2 || token[2].length > 2 || token[3]) throw invalidDate();
     // A month/day inside an explicit year uses that year (including leap years).

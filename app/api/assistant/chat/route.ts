@@ -13,7 +13,7 @@ import { dayIdToKoreanLabel, getDayWorkoutForPlan, getWeeklyWorkoutPlanById, get
 import { parseRecurrence, stripRecurrenceExpressions } from "@/app/lib/assistantRecurrence";
 import { buildPersonalMemoryContext, selectConversationHistory, type AssistantConversationMessage } from "@/app/lib/assistantConversation";
 import { isRetiredGrowthRoutine } from "@/app/data/growthRoutines";
-import { commandDueDate, parseTaskCompletionTarget, type TaskCommandProposal, type TaskCommandValues } from "@/lib/assistant-task-command";
+import { commandDueDate, stripExplicitTaskDates, parseTaskCompletionTarget, type TaskCommandProposal, type TaskCommandValues } from "@/lib/assistant-task-command";
 
 import { isBudgetEditIntent, parseBudgetAmountCommand, type BudgetCommandProposal } from '@/lib/assistant-budget-command';
 import { proposeBudgetAmount } from '@/lib/assistant-budget-server';
@@ -40,12 +40,10 @@ function won(value: number) {
 }
 
 function taskTitle(message: string) {
-  return stripRecurrenceExpressions(message
+  return stripRecurrenceExpressions(stripExplicitTaskDates(message)
     .replace(/^((오늘|내일|모레|긴급|중요|높은\s*우선순위|낮은\s*우선순위)\s*)*(할\s*일|일정)(에|로|으로)?\s*/, "")
     .replace(/\s*(추가|등록|기록)(해\s*줘|해줘|해|해주세요|해요)?[.!?]?$/, "")
     .replace(/\s*(오늘|내일|모레|긴급|중요|높은\s*우선순위|낮은\s*우선순위)(로|까지|으로)?\s*/g, " ")
-    .replace(/\s*\d{1,2}월\s*\d{1,2}일(까지|로)?\s*/g, " ")
-    .replace(/\s*\d{4}-\d{2}-\d{2}(까지|로)?\s*/g, " ")
     .replace(/\s*['“”]?[^'“”]+['“”]?\s*프로젝트에\s*/, " "))
     .trim();
 }

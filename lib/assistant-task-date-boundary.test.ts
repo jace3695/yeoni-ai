@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { commandDueDate } from './assistant-task-command.ts';
+import { commandDueDate, stripExplicitTaskDates } from './assistant-task-command.ts';
 
 const today = '2026-11-09';
 for (const value of [
@@ -54,4 +54,19 @@ test('invalid later dates are rejected rather than ignored, without reinterpreti
   assert.equal(commandDueDate('11월 12일, 2028년 2월 29일', today), '2028-02-29');
   assert.equal(commandDueDate('2028년 2월 29일, 11월 12일', today), '2028-02-29');
   assert.equal(commandDueDate('11월 12일, 2월 29일', '2028-11-09'), '2028-11-12');
+});
+
+
+test('title cleanup shares complete explicit date tokens without inventing or selecting dates', () => {
+  for (const expression of ['2026-12-2', '2026/12/2', '2026.12.2', '2026년 12월 2일', '12월 2일']) {
+    for (const suffix of ['', '까지', '로', '으로', ' 까지']) {
+      assert.equal(stripExplicitTaskDates(`보고서 ${expression}${suffix} 작성`), '보고서 작성');
+    }
+  }
+  assert.equal(stripExplicitTaskDates('2026년 12월 2일까지 할 일 보고서 작성'), '할 일 보고서 작성');
+  assert.equal(stripExplicitTaskDates('보고서 2026/12/2 2026년 12월 3일 작성'), '보고서 작성');
+  for (const title of ['보고서 123개', '버전 1.2.3 확인', '보고서 2026', '회의 11시 30분', '내일 보고서', '매일경제 읽기', '보고서  원문  간격']) {
+    assert.equal(stripExplicitTaskDates(title), title);
+  }
+  assert.equal(stripExplicitTaskDates('보고서 2026-12-02 로봇'), '보고서 로봇');
 });

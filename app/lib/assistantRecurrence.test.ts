@@ -108,7 +108,7 @@ function chatFixture(items: SyntheticItem[] = [], authenticated = true) {
     cache.set(path, loadedModule);
     const source = ts.transpileModule(readFileSync(path, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
     const run = vm.runInNewContext(`(function(require,module,exports){${source}\n})`, {
-      Request, Response, crypto: webcrypto, process: { env: { NODE_ENV: 'test' } }, console: { error() {}, warn() {} },
+      Request, Response, Error, crypto: webcrypto, process: { env: { NODE_ENV: 'test' } }, console: { error() {}, warn() {} },
       fetch() { calls.network++; throw Error('Network is forbidden'); },
     });
     run((next: string) => load(next, dirname(path)), loadedModule, loadedModule.exports);
@@ -199,6 +199,68 @@ test('common repeated daily and attached weekly weekdays retain their existing m
     assert.equal(body.proposal.values.title, title);
     assert.equal(body.proposal.values.recurrence_rule, rule);
     assert.equal(body.proposal.values.due_at, null);
+  }
+  assert.equal(fixture.calls.taskWrites + fixture.calls.provider + fixture.calls.network, 0);
+});
+
+// Explicit dates supported by commandDueDate must not leak into a new title.
+test('actual POST keeps supported explicit due dates out of new task titles', async () => {
+  const fixture = chatFixture();
+  const titles: { expression: string; actual: string; expected: string }[] = [];
+  for (const expression of ['2026-12-02', '2026-1-2', '2026/12/2', '2026.12.2', '2026년 12월 2일', '12월 2일']) {
+    for (const suffix of ['', '까지', '로', '으로']) {
+      const { status, body } = await fixture.post(`할 일 보고서 작성 ${expression}${suffix} 추가해줘`);
+      assert.equal(status, 200);
+      assert.match(body.proposal.values.due_at, expression.startsWith('2026-1-2') ? /^2026-01-02T23:59:00\+09:00$/ : /-12-02T23:59:00\+09:00$/);
+      assert.equal(body.proposal.operation, 'create');
+      assert.match(body.reply, /확인 버튼을 눌러야 저장/);
+      titles.push({ expression: expression + suffix, actual: body.proposal?.values.title, expected: '보고서 작성' });
+      assert.equal(body.changed, false);
+    }
+  }
+  assert.deepEqual(titles.filter(item => item.actual !== item.expected), []);
+  assert.equal(fixture.calls.taskWrites + fixture.calls.provider + fixture.calls.network, 0);
+});
+
+
+test('actual POST removes explicit leading and middle dates before extracting the task title', async () => {
+  const fixture = chatFixture();
+  for (const message of [
+    '2026년 12월 2일까지 할 일 보고서 작성 추가해줘',
+    '2026/12/2 일정 보고서 작성 등록해줘',
+    '할 일 보고서 2026.12.2까지 작성 추가해줘',
+    '할 일 매 주 보고서 작성 2026-12-2까지 추가해줘',
+  ]) {
+    const { status, body } = await fixture.post(message);
+    assert.equal(status, 200);
+    assert.equal(body.proposal.values.title, '보고서 작성', message);
+    assert.equal(body.proposal.values.due_at, '2026-12-02T23:59:00+09:00');
+    assert.equal(body.proposal.values.recurrence_rule, message.includes('매 주') ? 'weekly' : 'none');
+    assert.equal(body.changed, false);
+  }
+  assert.equal(fixture.calls.taskWrites + fixture.calls.provider + fixture.calls.network, 0);
+});
+
+test('actual POST asks for a missing task title instead of proposing a date-only title', async () => {
+  const fixture = chatFixture();
+  for (const expression of ['2026년 12월 2일', '2026/12/2', '2026.12.2', '2026-1-2']) {
+    for (const message of [`할 일 ${expression}까지 추가해줘`, `${expression}까지 할 일 추가해줘`]) {
+      const { status, body } = await fixture.post(message);
+      assert.equal(status, 200);
+      assert.equal(body.proposal, undefined);
+      assert.match(body.reply, /추가할 내용을 함께/);
+      assert.equal(body.changed, false);
+    }
+  }
+  assert.equal(fixture.calls.taskWrites + fixture.calls.provider + fixture.calls.network, 0);
+});
+
+test('actual POST still rejects malformed explicit dates before proposing a task', async () => {
+  const fixture = chatFixture();
+  for (const expression of ['2026-02-30', '2026년 13월 2일', '2026/12/222', '2026.12.2.5']) {
+    const { body } = await fixture.post(`할 일 보고서 작성 ${expression}까지 추가해줘`);
+    assert.equal(body.proposal, undefined);
+    assert.match(body.reply || body.error, /존재하는 날짜/);
   }
   assert.equal(fixture.calls.taskWrites + fixture.calls.provider + fixture.calls.network, 0);
 });
