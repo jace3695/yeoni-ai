@@ -4,7 +4,7 @@ const transportSource = fs.readFileSync(new URL('../lib/supabase.ts', import.met
 const boundaryClassSource = transportSource.slice(transportSource.indexOf('export class AuthenticatedFetchBoundaryError'), transportSource.indexOf('export async function authenticatedFetch')).replace('export class', 'class');
 const AuthenticatedFetchBoundaryError = vm.runInNewContext(ts.transpileModule(boundaryClassSource, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText + '; AuthenticatedFetchBoundaryError') as new () => Error;
 
-function fixture(){const state={items:[] as unknown[],confirm:false,feedback:'',writes:0,rpc:0,resets:0},storage=new Map();const context={user:{id:'A'},aiLoading:false,liveBudgetOwner:{current:'A'},budgetEpoch:{current:0},reviewOwner:{current:null as string|null},reviewWasManual:{current:false},savingRecordsRef:{current:false},pendingSaveRef:{current:null},parsedItems:state.items,validBudgetDate,manualEntry:{clear:()=>{}},setParsedItems:(v:unknown[])=>state.items=v,setFeedback:(v:string)=>state.feedback=v,setShowConfirm:(v:boolean)=>state.confirm=v,setIsSavingRecords:()=>{},setHasPendingSave:()=>{},setInput:()=>{},setManualReset:()=>state.resets++,crypto:{randomUUID:()=> 'synthetic-id'},pendingBudgetSaveKey:(id:string)=>id,window:{localStorage:{setItem:(k:string,v:string)=>{state.writes++;storage.set(k,v)},removeItem:(k:string)=>storage.delete(k)}},supabase:{rpc:async()=>{state.rpc++;return {data:{count:1},error:null}}},fetchIncome:async()=>{},fetchTransactions:async()=>{},fetchSavings:async()=>{}};
+function fixture(){const state={items:[] as unknown[],confirm:false,feedback:'',writes:0,rpc:0,resets:0},storage=new Map();const context={parseRequestRef:{current:null as null|{owner:string;epoch:number}},user:{id:'A'},aiLoading:false,liveBudgetOwner:{current:'A'},budgetEpoch:{current:0},reviewOwner:{current:null as string|null},reviewWasManual:{current:false},savingRecordsRef:{current:false},pendingSaveRef:{current:null},parsedItems:state.items,validBudgetDate,manualEntry:{clear:()=>{}},setParsedItems:(v:unknown[])=>state.items=v,setFeedback:(v:string)=>state.feedback=v,setShowConfirm:(v:boolean)=>state.confirm=v,setIsSavingRecords:()=>{},setHasPendingSave:()=>{},setInput:()=>{},setManualReset:()=>state.resets++,crypto:{randomUUID:()=> 'synthetic-id'},pendingBudgetSaveKey:(id:string)=>id,window:{localStorage:{setItem:(k:string,v:string)=>{state.writes++;storage.set(k,v)},removeItem:(k:string)=>storage.delete(k)}},supabase:{rpc:async()=>{state.rpc++;return {data:{count:1},error:null}}},fetchIncome:async()=>{},fetchTransactions:async()=>{},fetchSavings:async()=>{}};
 const a=source.indexOf('  const handleManualReview ='),b=source.indexOf('  const handleAddTransaction',a);const c=source.indexOf('  const handleConfirmSave ='),d=source.indexOf('  const refreshBudgetRecordList',c);const code=ts.transpileModule(source.slice(a,b)+source.slice(c,d),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;const actions=vm.runInNewContext(code+'\n({review:handleManualReview,save:handleConfirmSave})',context) as {review:(item:unknown,owner:string)=>void;save:()=>Promise<void>};return{state,context,actions};}
 const item={type:'expense',date:'2026-10-01',amount:1,place:'synthetic',memo:'preserve',category:'기타'};
 test('manual review does not call fetch, RPC or storage; only explicit save uses existing RPC',async()=>{const f=fixture();f.actions.review(item,'A');assert.equal(f.state.confirm,true);assert.deepEqual(structuredClone(f.state.items),[item]);assert.equal(f.state.rpc,0);assert.equal(f.state.writes,0);f.context.parsedItems=f.state.items;await f.actions.save();assert.equal(f.state.rpc,1);assert.equal(f.state.resets,1);});
@@ -89,13 +89,13 @@ test('existing repeat behavior, shortcuts and busy/empty guards remain unchanged
 });
 
 function parseRequestFixture(rulesError = false) {
-  const state = { parses: 0, rules: 0, confirms: 0, loading: [] as boolean[], feedback: [] as string[] };
+  const state = { parses: 0, rules: 0, confirms: 0, items: [] as unknown[], loading: [] as boolean[], feedback: [] as string[] };
   const pending: { resolve: (value: unknown[]) => void; reject: (error: Error) => void }[] = [];
-  const context = { AuthenticatedFetchBoundaryError, input: 'synthetic', budgetMounted: { current: true }, user: { id: 'A' } as { id: string } | null, liveBudgetOwner: { current: 'A' }, budgetEpoch: { current: 1 }, parseRequestRef: { current: null as null | { owner: string; epoch: number } }, savingRecordsRef: { current: false }, pendingSaveRef: { current: null }, reviewOwner: { current: null }, reviewWasManual: { current: false }, setAiLoading: (value: boolean) => state.loading.push(value), setFeedback: (value: string) => state.feedback.push(value), setParsedItems: () => {}, setShowConfirm: () => { state.confirms++; }, applyCategoryMemory: (items: unknown[]) => items, parseInput: () => { state.parses++; return new Promise<unknown[]>((resolve, reject) => pending.push({ resolve, reject })); }, supabase: { from: () => { state.rules++; return { select: () => ({ eq: () => ({ order: () => ({ limit: async () => ({ data: [], error: rulesError ? { message: 'synthetic' } : null, count: 0 }) }) }) }) }; } } };
-  const start = source.indexOf('  const handleAddTransaction ='), end = source.indexOf('  const updateParsedItem', start);
+  const context = { AuthenticatedFetchBoundaryError, aiLoading: false, input: 'synthetic', budgetMounted: { current: true }, user: { id: 'A' } as { id: string } | null, liveBudgetOwner: { current: 'A' }, budgetEpoch: { current: 1 }, parseRequestRef: { current: null as null | { owner: string; epoch: number } }, savingRecordsRef: { current: false }, pendingSaveRef: { current: null }, reviewOwner: { current: null }, reviewWasManual: { current: false }, setAiLoading: (value: boolean) => state.loading.push(value), setFeedback: (value: string) => state.feedback.push(value), setParsedItems: (items: unknown[]) => { state.items = items; }, setShowConfirm: () => { state.confirms++; }, applyCategoryMemory: (items: unknown[]) => items, parseInput: () => { state.parses++; return new Promise<unknown[]>((resolve, reject) => pending.push({ resolve, reject })); }, supabase: { from: () => { state.rules++; return { select: () => ({ eq: () => ({ order: () => ({ limit: async () => ({ data: [], error: rulesError ? { message: 'synthetic' } : null, count: 0 }) }) }) }) }; } } };
+  const start = source.indexOf('  const handleManualReview ='), end = source.indexOf('  const updateParsedItem', start);
   const code = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const run = vm.runInNewContext(code + '; handleAddTransaction', context) as () => Promise<void>;
-  return { state, context, pending, run };
+  const actions = vm.runInNewContext(code + '; ({run:handleAddTransaction, manual:handleManualReview})', context) as { run: () => Promise<void>; manual: (item: unknown, owner: string) => void };
+  return { state, context, pending, ...actions };
 }
 
 test('same-generation overlapping sentence requests invoke parser only once and allow retry after settlement', async () => {
@@ -263,4 +263,39 @@ test('guarded owner IDs require nonblank strings before any auth or current-scop
   const untrimmed = authDispatchFixture(); const mismatch = untrimmed.transport('/synthetic', {}, { ownerId: ' A ', isCurrent: () => true });
   untrimmed.authWaits[0].resolve(untrimmed.session('A'));
   await assert.rejects(mismatch, { name: 'AuthenticatedFetchBoundaryError' }); assert.equal(untrimmed.state.fetches, 0);
+});
+
+
+test('a same-render manual callback cannot open review while parsing holds the current-generation lock', async () => {
+  const f = parseRequestFixture(); const pending = f.run();
+  f.manual(item, 'A');
+  const prematureManualReviews = f.state.confirms;
+  f.pending[0].resolve([{ ...item, place: 'synthetic parsed' }]); await pending;
+  assert.equal(prematureManualReviews, 0, 'manual callback must consult synchronous lock before aiLoading rerenders');
+  assert.equal(f.state.confirms, 1);
+});
+
+
+test('manual review resumes after parser settlement and ignores obsolete owner-generation locks', async () => {
+  for (const fail of [false, true]) {
+    const f = parseRequestFixture(); const pending = f.run();
+    f.manual(item, 'A'); assert.equal(f.state.confirms, 0);
+    if (fail) f.pending[0].reject(Error('synthetic')); else f.pending[0].resolve([]);
+    await pending; const before = f.state.confirms;
+    f.manual(item, 'A'); assert.equal(f.state.confirms, before + 1); assert.deepEqual(structuredClone(f.state.items), [item]);
+  }
+  for (const token of [{ owner: 'A', epoch: -1 }, { owner: 'B', epoch: 0 }]) {
+    const old = fixture(); old.context.parseRequestRef.current = token;
+    old.actions.review(item, 'A'); assert.equal(old.state.confirm, true);
+    assert.equal(old.state.rpc, 0); assert.equal(old.state.writes, 0);
+  }
+});
+
+test('manual review is excluded while category lookup retains the parse lock', async () => {
+  const f = parseRequestFixture(); let resolveRules!: (value: { data: never[]; error: null; count: number }) => void;
+  f.context.supabase.from = () => { f.state.rules++; return { select: () => ({ eq: () => ({ order: () => ({ limit: () => new Promise(resolve => { resolveRules = resolve; }) }) }) }) }; };
+  const pending = f.run(); f.pending[0].resolve([]); await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(f.state.rules, 1); f.manual(item, 'A'); assert.equal(f.state.confirms, 0);
+  resolveRules({ data: [], error: null, count: 0 }); await pending;
+  assert.equal(f.state.confirms, 1);
 });

@@ -1475,6 +1475,8 @@ function BudgetDashboard() {
 
   const handleManualReview = (item: ReturnType<typeof import('./lib/manual-entry').manualBudgetItem>, ownerId: string) => {
     if (!user?.id || ownerId !== user.id || liveBudgetOwner.current !== ownerId || aiLoading || savingRecordsRef.current || pendingSaveRef.current) return
+    const activeRequest = parseRequestRef.current
+    if (activeRequest && activeRequest.owner === ownerId && activeRequest.epoch === budgetEpoch.current) return
     reviewOwner.current = ownerId
     reviewWasManual.current = true
     setParsedItems([item]); setFeedback(''); setShowConfirm(true)
