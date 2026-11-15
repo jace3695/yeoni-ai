@@ -11,7 +11,7 @@ import { GROWTH_ROUTINE_LIMIT, isRetiredGrowthRoutine } from "../data/growthRout
 import { ALL_GROWTH_WEEKDAYS, GROWTH_WEEKDAYS, formatGrowthPreferredDays, isGrowthRoutineScheduled } from "../data/growthSchedule";
 import { shiftDateKey } from "../data/growthPlatform";
 import type { GrowthRoutineRow } from "../data/growthPlatform";
-import { checklistCompleted } from "@/lib/growth-checklist";
+import { buildChecklistRoutineEdit, checklistCompleted } from "@/lib/growth-checklist";
 import { getLocalDateKey } from "@/utils/dateKey";
 import { useGrowthData } from "./useGrowthData";
 import styles from "./checklist.module.css";
@@ -74,7 +74,7 @@ export default function GrowthPage() {
     if (isRetiredGrowthRoutine({ title })) { setMessage("종료된 기본 과정 이름이에요. 다른 활동 이름을 입력해 주세요."); return; }
     void run(async (isCurrent) => {
       const result = editing
-        ? await growth.updateRoutine(editing, { title: title.trim(), preferred_days: [...days].sort((a,b) => a-b), target_sessions_per_week: days.length })
+        ? await growth.updateRoutine(editing, buildChecklistRoutineEdit(routines.find(row => row.id === editing), title, days))
         : await growth.addRoutine({ title, category, targetMinutes: 5, preferredDays: days, targetSessionsPerWeek: days.length });
       if (result.error) throw result.error;
       if (isCurrent()) resetEditor();

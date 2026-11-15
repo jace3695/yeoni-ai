@@ -2,6 +2,20 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getGrowthLegacySessionCloudId } from '../app/data/growthRoutines.ts';
 import type { GrowthRoutineRow, GrowthSessionRow } from '../app/data/growthPlatform.ts';
 
+export function buildChecklistRoutineEdit(current: GrowthRoutineRow | undefined, title: string, days: number[]) {
+  if (!current) throw new Error('활동 정보를 다시 불러온 뒤 수정해 주세요.');
+  const previousDays = new Set(current.preferred_days);
+  const nextDays = new Set(days);
+  const sameDays = previousDays.size === nextDays.size && [...previousDays].every(day => nextDays.has(day));
+  // The checklist does not expose weekly goals. Do not rewrite a hidden goal
+  // (including a newer server value) when only the title has changed.
+  return {
+    title: title.trim(),
+    preferred_days: [...days].sort((a, b) => a - b),
+    ...(!sameDays ? { target_sessions_per_week: days.length } : {}),
+  };
+}
+
 export function checklistCompleted(sessions: GrowthSessionRow[], routineId: string, date: string) {
   return sessions.some(row => row.routine_id === routineId && row.session_date === date && row.status === 'completed');
 }
