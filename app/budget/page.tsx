@@ -165,6 +165,11 @@ function BudgetDashboard() {
   const [recurringTransactions, setRecurringTransactions] = useState<any[]>([])
   const [recurringExpensePreferences, setRecurringExpensePreferences] = useState<any[]>([])
   const [recurringDecisionSavingKey, setRecurringDecisionSavingKey] = useState('')
+  const [recurringLoadState, setRecurringLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const recurringReadyRef = useRef(false)
+  const recurringReadVersion = useRef(0)
+  const recurringDecisionRef = useRef<symbol | null>(null)
+  const recurringDecisionBlocked = recurringLoadState !== 'ready' || Boolean(recurringDecisionSavingKey)
   const [incomeList, setIncomeList] = useState<any[]>([])
   const [incomeInput, setIncomeInput] = useState('')
   const [incomeListening, setIncomeListening] = useState(false)
@@ -231,6 +236,22 @@ function BudgetDashboard() {
       setFeedback('이전 저장 결과를 확인해야 해요. 아래 버튼으로 같은 요청을 다시 확인하면 중복 없이 처리합니다.')
     } catch { setFeedback('이전 저장 내용을 읽지 못했어요. 저장 공간 설정을 확인해 주세요.') }
     // Initial reads belong to the owner generation, not to recreated read callbacks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
+  useEffect(() => {
+    recurringReadyRef.current = false
+    recurringReadVersion.current += 1
+    recurringDecisionRef.current = null
+    setRecurringExpensePreferences([])
+    setRecurringDecisionSavingKey('')
+    setRecurringLoadState('loading')
+    if (user?.id) void fetchRecurringExpensePreferences()
+    return () => {
+      recurringReadyRef.current = false
+      recurringReadVersion.current += 1
+      recurringDecisionRef.current = null
+    }
+    // Start after the owner effect has committed its epoch; cleanup rejects old responses.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
   const [question, setQuestion] = useState('')
@@ -557,9 +578,6 @@ function BudgetDashboard() {
         const savedQuestion = localStorage.getItem(autoQuestionKey) ?? localStorage.getItem('autoQuestion')
         if (savedQuestion?.trim()) setAutoQuestion(savedQuestion)
 
-        Promise.allSettled([
-          fetchRecurringExpensePreferences()
-        ])
       } catch (error) {
         console.error('초기 로딩 오류:', error)
         setPageNotice('앱 데이터를 불러오는 중 문제가 발생했어요. 잠시 후 다시 시도해주세요.')
@@ -749,94 +767,121 @@ function BudgetDashboard() {
   const fetchTransactions = () => fetchRecordKind('expense')
 
   const fetchRecurringExpensePreferences = async () => {
-    const { data: authData } = await supabase.auth.getUser()
-    const currentUser = authData.user
-
-    if (!currentUser) {
-      setRecurringExpensePreferences([])
-      return
+    const owner = liveBudgetOwner.current, epoch = budgetEpoch.current
+    if (!owner || !budgetMounted.current || recurringDecisionRef.current) return false
+    const ticket = ++recurringReadVersion.current
+    const current = () => budgetMounted.current && liveBudgetOwner.current === owner
+      && budgetEpoch.current === epoch && recurringReadVersion.current === ticket
+      && !recurringDecisionRef.current
+    recurringReadyRef.current = false
+    setRecurringLoadState('loading')
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+      if (!current()) return false
+      if (authError || authData.user?.id !== owner) throw new Error('owner')
+      const { data, error } = await supabase
+        .from('budget_recurring_expense_preferences')
+        .select('signature, name, category, status, average_amount, last_detected_on')
+        .eq('user_id', owner)
+        .order('updated_at', { ascending: false })
+      if (!current()) return false
+      if (error || !Array.isArray(data)) throw new Error('read')
+      const { data: checkedAuth, error: checkedError } = await supabase.auth.getUser()
+      if (!current()) return false
+      if (checkedError || checkedAuth.user?.id !== owner) throw new Error('owner')
+      setRecurringExpensePreferences(data)
+      recurringReadyRef.current = true
+      setRecurringLoadState('ready')
+      setActionError((current) => current === '반복지출 설정 결과를 확인하지 못했어요. 설정을 다시 불러온 뒤 확인해 주세요.' ? '' : current)
+      return true
+    } catch {
+      if (current()) setRecurringLoadState('error')
+      return false
     }
+  }
 
-    const { data, error } = await supabase
-      .from('budget_recurring_expense_preferences')
-      .select('signature, name, category, status, average_amount, last_detected_on')
-      .eq('user_id', currentUser.id)
-      .order('updated_at', { ascending: false })
-
-    if (error) {
-      console.error('반복지출 설정 조회 오류:', error)
-      setActionError('반복지출 관리 정보를 불러오지 못했어요.')
-      return
+  const performRecurringExpenseDecision = async (
+    signature: string,
+    write: (owner: string) => PromiseLike<{ data?: any; error?: unknown }>,
+    commit: (data: any) => void,
+  ) => {
+    const owner = user?.id, epoch = budgetEpoch.current
+    if (!owner || !signature || !budgetMounted.current || liveBudgetOwner.current !== owner
+      || !recurringReadyRef.current || recurringDecisionRef.current) return false
+    const ticket = Symbol('recurring-decision')
+    recurringDecisionRef.current = ticket
+    recurringReadVersion.current += 1
+    const current = () => budgetMounted.current && liveBudgetOwner.current === owner
+      && budgetEpoch.current === epoch && recurringDecisionRef.current === ticket
+    setRecurringDecisionSavingKey(signature)
+    setActionError('')
+    setPageNotice('')
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+      if (!current()) return false
+      if (authError || authData.user?.id !== owner) throw new Error('owner')
+      const { data, error } = await write(owner)
+      if (!current()) return false
+      if (error) throw new Error('write')
+      const { data: checkedAuth, error: checkedError } = await supabase.auth.getUser()
+      if (!current()) return false
+      if (checkedError || checkedAuth.user?.id !== owner) throw new Error('owner')
+      commit(data)
+      return true
+    } catch {
+      if (current()) {
+        recurringReadyRef.current = false
+        setRecurringLoadState('error')
+        setActionError('반복지출 설정 결과를 확인하지 못했어요. 설정을 다시 불러온 뒤 확인해 주세요.')
+      }
+      return false
+    } finally {
+      if (current()) {
+        recurringDecisionRef.current = null
+        setRecurringDecisionSavingKey('')
+      }
     }
-
-    setRecurringExpensePreferences(data || [])
   }
 
   const saveRecurringExpenseDecision = async (item: any, status: 'confirmed' | 'excluded') => {
-    if (!user?.id || recurringDecisionSavingKey) return
-
     const signature = item.key || item.signature
-    if (!signature) return
-
-    setRecurringDecisionSavingKey(signature)
-    setActionError('')
-
-    const preference = {
-      user_id: user.id,
-      signature,
-      name: item.place || item.name || '미분류',
-      category: item.category || '기타',
-      status,
-      average_amount: Math.max(0, Math.round(Number(item.avgAmount ?? item.average_amount) || 0)),
-      last_detected_on: item.lastDate || item.last_detected_on || null,
-      updated_at: new Date().toISOString()
-    }
-
-    const { data, error } = await supabase
-      .from('budget_recurring_expense_preferences')
-      .upsert(preference, { onConflict: 'user_id,signature' })
-      .select('signature, name, category, status, average_amount, last_detected_on')
-      .single()
-
-    if (error || !data) {
-      console.error('반복지출 설정 저장 오류:', error)
-      setActionError('반복지출 설정을 저장하지 못했어요.')
-      setRecurringDecisionSavingKey('')
-      return
-    }
-
-    setRecurringExpensePreferences((current) => [
-      data,
-      ...current.filter((saved) => saved.signature !== signature)
-    ])
-    setPageNotice(status === 'confirmed' ? '반복지출로 확정했어요.' : '이 후보를 분석에서 제외했어요.')
-    setRecurringDecisionSavingKey('')
+    return performRecurringExpenseDecision(signature, async (owner) => {
+      const preference = {
+        user_id: owner,
+        signature,
+        name: item.place || item.name || '미분류',
+        category: item.category || '기타',
+        status,
+        average_amount: Math.max(0, Math.round(Number(item.avgAmount ?? item.average_amount) || 0)),
+        last_detected_on: item.lastDate || item.last_detected_on || null,
+        updated_at: new Date().toISOString()
+      }
+      return await supabase
+        .from('budget_recurring_expense_preferences')
+        .upsert(preference, { onConflict: 'user_id,signature' })
+        .select('signature, name, category, status, average_amount, last_detected_on')
+        .single()
+    }, (data) => {
+      if (!data || data.signature !== signature || data.status !== status) throw new Error('response')
+      setRecurringExpensePreferences((current) => [
+        data,
+        ...current.filter((saved) => saved.signature !== signature)
+      ])
+      setPageNotice(status === 'confirmed' ? '반복지출로 확정했어요.' : '이 후보를 분석에서 제외했어요.')
+    })
   }
 
   const restoreRecurringExpenseCandidate = async (signature: string) => {
-    if (!user?.id || recurringDecisionSavingKey) return
-
-    setRecurringDecisionSavingKey(signature)
-    setActionError('')
-
-    const { error } = await supabase
-      .from('budget_recurring_expense_preferences')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('signature', signature)
-
-    if (error) {
-      console.error('반복지출 설정 복원 오류:', error)
-      setActionError('반복지출 설정을 되돌리지 못했어요.')
-      setRecurringDecisionSavingKey('')
-      return
-    }
-
-    setRecurringExpensePreferences((current) =>
-      current.filter((saved) => saved.signature !== signature)
-    )
-    setPageNotice('자동 감지 후보로 되돌렸어요.')
-    setRecurringDecisionSavingKey('')
+    return performRecurringExpenseDecision(signature, async (owner) => {
+      return await supabase
+        .from('budget_recurring_expense_preferences')
+        .delete()
+        .eq('user_id', owner)
+        .eq('signature', signature)
+    }, () => {
+      setRecurringExpensePreferences((current) => current.filter((saved) => saved.signature !== signature))
+      setPageNotice('자동 감지 후보로 되돌렸어요.')
+    })
   }
 
   const fetchSavings = () => fetchRecordKind('saving')
@@ -4124,6 +4169,13 @@ return (
               </div>
             </div>
 
+            {recurringLoadState !== 'ready' && (
+              <div role="status" style={{ color: '#FCD34D', fontSize: 12, lineHeight: 1.6, marginBottom: 12 }}>
+                <p>{recurringLoadState === 'loading' ? '저장된 반복지출 설정을 확인하고 있어요. 확인 뒤 확정·제외·해제할 수 있어요.' : '저장된 설정을 확인하지 못했어요. 새로 결정하기 전에 설정을 다시 불러와 주세요.'}</p>
+                {recurringLoadState === 'error' && <button type="button" onClick={() => { void fetchRecurringExpensePreferences() }} style={{ border: '1px solid #475569', borderRadius: 8, padding: '8px 10px', background: 'transparent', color: '#FCD34D' }}>설정 다시 불러오기</button>}
+              </div>
+            )}
+
             {confirmedRecurringExpenses.length > 0 && (
               <div style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.28)', borderRadius: 12, padding: 12, marginBottom: 12 }}>
                 <p style={{ color: '#6EE7B7', fontSize: 11, fontWeight: 700, margin: '0 0 10px' }}>확정한 반복지출 {confirmedRecurringExpenses.length}개</p>
@@ -4135,9 +4187,9 @@ return (
                     </div>
                     <button
                       type="button"
-                      disabled={Boolean(recurringDecisionSavingKey)}
+                      disabled={recurringDecisionBlocked}
                       onClick={() => restoreRecurringExpenseCandidate(item.key)}
-                      style={{ flexShrink: 0, background: 'transparent', border: '1px solid #475569', borderRadius: 8, padding: '7px 9px', color: '#CBD5E1', fontSize: 11, cursor: recurringDecisionSavingKey ? 'default' : 'pointer', opacity: recurringDecisionSavingKey ? 0.55 : 1 }}
+                      style={{ flexShrink: 0, background: 'transparent', border: '1px solid #475569', borderRadius: 8, padding: '7px 9px', color: '#CBD5E1', fontSize: 11, cursor: recurringDecisionBlocked ? 'default' : 'pointer', opacity: recurringDecisionBlocked ? 0.55 : 1 }}
                     >
                       확정 해제
                     </button>
@@ -4167,17 +4219,17 @@ return (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <button
                         type="button"
-                        disabled={Boolean(recurringDecisionSavingKey)}
+                        disabled={recurringDecisionBlocked}
                         onClick={() => saveRecurringExpenseDecision(item, 'confirmed')}
-                        style={{ background: 'rgba(52,211,153,0.14)', border: '1px solid rgba(52,211,153,0.45)', borderRadius: 8, padding: '8px 10px', color: '#6EE7B7', fontSize: 11, fontWeight: 700, cursor: recurringDecisionSavingKey ? 'default' : 'pointer', opacity: recurringDecisionSavingKey ? 0.55 : 1 }}
+                        style={{ background: 'rgba(52,211,153,0.14)', border: '1px solid rgba(52,211,153,0.45)', borderRadius: 8, padding: '8px 10px', color: '#6EE7B7', fontSize: 11, fontWeight: 700, cursor: recurringDecisionBlocked ? 'default' : 'pointer', opacity: recurringDecisionBlocked ? 0.55 : 1 }}
                       >
                         반복지출 확정
                       </button>
                       <button
                         type="button"
-                        disabled={Boolean(recurringDecisionSavingKey)}
+                        disabled={recurringDecisionBlocked}
                         onClick={() => saveRecurringExpenseDecision(item, 'excluded')}
-                        style={{ background: 'rgba(148,163,184,0.08)', border: '1px solid #475569', borderRadius: 8, padding: '8px 10px', color: '#CBD5E1', fontSize: 11, fontWeight: 700, cursor: recurringDecisionSavingKey ? 'default' : 'pointer', opacity: recurringDecisionSavingKey ? 0.55 : 1 }}
+                        style={{ background: 'rgba(148,163,184,0.08)', border: '1px solid #475569', borderRadius: 8, padding: '8px 10px', color: '#CBD5E1', fontSize: 11, fontWeight: 700, cursor: recurringDecisionBlocked ? 'default' : 'pointer', opacity: recurringDecisionBlocked ? 0.55 : 1 }}
                       >
                         후보에서 제외
                       </button>
@@ -4198,9 +4250,9 @@ return (
                     </div>
                     <button
                       type="button"
-                      disabled={Boolean(recurringDecisionSavingKey)}
+                      disabled={recurringDecisionBlocked}
                       onClick={() => restoreRecurringExpenseCandidate(item.key)}
-                      style={{ flexShrink: 0, background: 'transparent', border: '1px solid #475569', borderRadius: 8, padding: '7px 9px', color: '#CBD5E1', fontSize: 11, cursor: recurringDecisionSavingKey ? 'default' : 'pointer', opacity: recurringDecisionSavingKey ? 0.55 : 1 }}
+                      style={{ flexShrink: 0, background: 'transparent', border: '1px solid #475569', borderRadius: 8, padding: '7px 9px', color: '#CBD5E1', fontSize: 11, cursor: recurringDecisionBlocked ? 'default' : 'pointer', opacity: recurringDecisionBlocked ? 0.55 : 1 }}
                     >
                       다시 후보로
                     </button>
