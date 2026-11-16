@@ -2023,9 +2023,10 @@ function BudgetDashboard() {
 
     const recurringExpenseCandidates = Object.entries(groupedByRecurringKey)
       .map(([groupKey, items]) => {
-        const sorted = [...(items as any[])].sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-        )
+        // 거래일은 시각이 아닌 달력 날짜다. 기기의 시간대로 전날로 바꾸지 않는다.
+        const sorted = (items as any[])
+          .filter((item) => typeof item.date === 'string' && validBudgetDate(item.date))
+          .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
 
         if (sorted.length < 2) return null
 
@@ -2037,13 +2038,10 @@ function BudgetDashboard() {
           avgAmount > 0 && ((maxAmount - minAmount) / avgAmount <= 0.12 || maxAmount - minAmount <= 5000)
 
         const uniqueMonths = Array.from(new Set(
-          sorted.map((x) => {
-            const d = new Date(x.date)
-            return `${d.getFullYear()}-${d.getMonth()}`
-          })
+          sorted.map((x) => x.date.slice(0, 7))
         ))
 
-        const dayNumbers = sorted.map((x) => new Date(x.date).getDate())
+        const dayNumbers = sorted.map((x) => Number(x.date.slice(8, 10)))
         const avgDay = dayNumbers.reduce((s, v) => s + v, 0) / dayNumbers.length
         const dayStable = dayNumbers.every((d) => Math.abs(d - avgDay) <= 4)
 
