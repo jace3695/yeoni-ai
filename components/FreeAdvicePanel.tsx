@@ -6,6 +6,7 @@ import { FREE_ADVICE_LABELS, type FreeAdviceContext, type FreeAdviceScope } from
 import type { FreeAdvice } from "@/lib/free-advice";
 import type { ReplyPlan } from '@/lib/yeoni/reply-plan';
 import ZephyrReadButton from './ZephyrReadButton';
+import OpenAiAdviceStatus from './OpenAiAdviceStatus';
 
 type Preview = { context: FreeAdviceContext; fingerprint: string; configured: boolean };
 type ApiBody = Partial<Preview> & { advice?: FreeAdvice; performance?: ReplyPlan; error?: string; code?: string };
@@ -128,5 +129,6 @@ export default function FreeAdvicePanel({ scope, initialQuestion = "", sourceOwn
       <ZephyrReadButton text={[advice.summary, ...advice.nextSteps, advice.basis, advice.limitations].join('\n')} />
       <p className="text-xs leading-5 text-gray-500">{preview?.context.recordSource === "example" ? "가상의 예시로 만든 AI 조언이며, 실제 내 기록을 분석한 결과가 아니에요." : "무료 AI가 만든 조언이에요. 기록이나 계획을 자동으로 바꾸지 않아요."}</p>
     </div>}
+    <OpenAiAdviceStatus />
   </section>;
 }

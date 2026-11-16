@@ -243,3 +243,93 @@ test("example provider prompt identifies fictional data and never describes it a
     return output();
   });
 });
+
+// OpenAI stays disabled in production; these are synthetic port-only regressions.
+import { assertAdviceDisplayPolicy, OPENAI_RECORD_NOTICE, adviceFingerprint, createOpenAiAdviceService, createOpenAiAdviceHandler, OPENAI_ADVICE_DEPLOYMENT, type OpenAiPorts, type ApprovedAdvice, type Reservation, type Identity } from './openai-advice-server.ts';
+{
+const ID='00000000-0000-4000-8000-000000000001';
+const question='가상 기록으로만 작은 행동을 제안해 줘';
+const answer={summary:'가상 답변',nextSteps:['가상 행동'],basis:'가상 근거',limitations:'가상 한계'};
+const raw=()=>({requestId:ID,feature:'advice' as const,question});
+const deferred=<T>()=>{let resolve!:(value:T)=>void;const promise=new Promise<T>(r=>{resolve=r;});return {promise,resolve};};
+function fixture(){
+  const seen:{event:string;data?:unknown}[]=[];let now=100;let live:Identity={ownerId:'fake-A',epoch:1};const used=new Set<string>();
+  const grant:ApprovedAdvice={id:'fake-grant',ownerId:'fake-A',epoch:1,requestId:ID,feature:'advice',provider:'openai',organization:'fake-org',project:'fake-project',model:'fake-model',question,summary:'합성 요약',fingerprint:'',consentId:'fake-consent',approvalId:'fake-approval',quoteId:'fake-quote',pricingVersion:'fake-price',expiresAt:200,quoteExpiresAt:200,creditVerifiedUntil:200,currency:'USD',maxCostMicros:100,maxOutputTokens:100};
+  const g={...grant,fingerprint:adviceFingerprint(grant)};
+  const receipt=(v:ApprovedAdvice):Reservation=>({id:'fake-reservation',grantId:v.id,ownerId:v.ownerId,epoch:v.epoch,requestId:v.requestId,fingerprint:v.fingerprint,organization:v.organization,project:v.project,model:v.model,currency:'USD',reservedMicros:v.maxCostMicros,sendBefore:190});
+  const response=()=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(answer)}}],usage:{prompt_tokens:10,completion_tokens:20}});
+  const ports:OpenAiPorts={
+    authenticate:async()=>{seen.push({event:'auth'});return {...live};},isCurrent:i=>i.ownerId===live.ownerId&&i.epoch===live.epoch,
+    authorize:async()=>{seen.push({event:'authorize'});return g;},
+    reserve:async v=>{seen.push({event:'reserve',data:v});if(used.has(v.requestId))return null;used.add(v.requestId);return receipt(v);},
+    claimDispatch:async()=>{seen.push({event:'claim'});return true;},credentials:async()=>{seen.push({event:'credentials'});return 'fake-never-real-key';},
+    retain:async(r,reason)=>{seen.push({event:'retain',data:{r,reason}});},complete:async(r,u)=>{seen.push({event:'complete',data:{r,u}});},
+    request:async(url,init)=>{seen.push({event:'fetch',data:{url,init}});return response();},now:()=>now,
+  };
+  return {ports,g,seen,receipt,response,scope:(i:Identity)=>{live=i;},time:(n:number)=>{now=n;},run:()=>createOpenAiAdviceService({enabled:true},ports)};
+}
+const count=(f:ReturnType<typeof fixture>,event:string)=>f.seen.filter(x=>x.event===event).length;
+test('deployed endpoint disabled before body/auth/key/budget/fetch, even with supplied ports',async()=>{
+ const f=fixture();const h=createOpenAiAdviceHandler(OPENAI_ADVICE_DEPLOYMENT,f.ports);
+ assert.equal((await h(new Request('https://fake.invalid',{method:'POST',body:'not json'}))).status,503);assert.deepEqual(f.seen,[]);
+ await assert.rejects(createOpenAiAdviceService({enabled:false},f.ports)(raw(),new AbortController().signal),/OPENAI_NOT_ACTIVATED/);assert.deepEqual(f.seen,[]);
+});
+test('single synthetic provider attempt after committed reservation/claim; no tools/voice/retries',async()=>{
+ const f=fixture();assert.deepEqual(await f.run()(raw(),new AbortController().signal),answer);
+ assert.deepEqual(f.seen.map(x=>x.event),['auth','authorize','reserve','credentials','claim','fetch','complete']);
+ const {url,init}=f.seen.find(x=>x.event==='fetch')!.data as {url:string;init:RequestInit};
+ assert.equal(url,'https://api.openai.com/v1/chat/completions');assert.equal(init.redirect,'error');
+ const body=JSON.parse(String(init.body));assert.equal(body.store,false);assert.equal(body.stream,false);assert.equal(body.max_completion_tokens,100);assert.equal(body.tools,undefined);assert.equal(body.audio,undefined);assert.equal(body.messages.length,2);
+ assert.deepEqual((f.seen.at(-1)!.data as {u:unknown}).u,{promptTokens:10,completionTokens:20});
+});
+for(const [name,value] of Object.entries({null:null,array:[],voice:{...raw(),feature:'voice'},extra:{...raw(),apiKey:'fake'},empty:{...raw(),question:''}}))test(`invalid request ${name}`,async()=>{const f=fixture();await assert.rejects(f.run()(value,new AbortController().signal),/INVALID_REQUEST/);assert.deepEqual(f.seen,[]);});
+const invalidGrant:Record<string,(g:ApprovedAdvice)=>ApprovedAdvice>={
+ provider:g=>({...g,provider:'google' as 'openai'}),owner:g=>({...g,ownerId:'fake-B'}),ABA:g=>({...g,epoch:3}),
+ question:g=>({...g,question:'changed'}),fingerprint:g=>({...g,fingerprint:'changed'}),expired:g=>({...g,expiresAt:100}),
+ quoteExpired:g=>({...g,quoteExpiresAt:100}),creditExpired:g=>({...g,creditVerifiedUntil:100}),noConsent:g=>({...g,consentId:''}),
+ noApproval:g=>({...g,approvalId:''}),noQuote:g=>({...g,quoteId:''}),noPrice:g=>({...g,pricingVersion:''}),
+ amount:g=>({...g,maxCostMicros:NaN}),zero:g=>({...g,maxCostMicros:0}),fraction:g=>({...g,maxCostMicros:.2}),
+ tokens:g=>({...g,maxOutputTokens:3000}),currency:g=>({...g,currency:'KRW' as 'USD'}),
+};
+for(const [name,change] of Object.entries(invalidGrant))test(`reject grant ${name} before reserve/fetch`,async()=>{const f=fixture();f.ports.authorize=async()=>change(f.g);await assert.rejects(f.run()(raw(),new AbortController().signal),/APPROVAL_OR_QUOTE_REQUIRED/);assert.equal(count(f,'reserve'),0);assert.equal(count(f,'fetch'),0);});
+test('nonpositive clock cannot approve a grant',async()=>{const f=fixture();f.time(-1);await assert.rejects(f.run()(raw(),new AbortController().signal),/APPROVAL_OR_QUOTE_REQUIRED/);assert.equal(count(f,'fetch'),0);});
+for(const stage of ['authorize','reserve','credentials','claimDispatch'] as const)test(`account switch during ${stage} prevents provider`,async()=>{
+ const f=fixture();const original=f.ports[stage];
+ // Preserve actual port output; switch in its awaited completion.
+ if(stage==='authorize')f.ports.authorize=async(r,i)=>{const v=await (original as OpenAiPorts['authorize'])(r,i);f.scope({ownerId:'fake-B',epoch:2});return v;};
+ if(stage==='reserve')f.ports.reserve=async(g)=>{const v=await (original as OpenAiPorts['reserve'])(g);f.scope({ownerId:'fake-B',epoch:2});return v;};
+ if(stage==='credentials')f.ports.credentials=async(o,p)=>{const v=await (original as OpenAiPorts['credentials'])(o,p);f.scope({ownerId:'fake-A',epoch:3});return v;};
+ if(stage==='claimDispatch')f.ports.claimDispatch=async(r)=>{const v=await (original as OpenAiPorts['claimDispatch'])(r);f.scope({ownerId:'fake-B',epoch:2});return v;};
+ await assert.rejects(f.run()(raw(),new AbortController().signal),/STALE_ACCOUNT/);assert.equal(count(f,'fetch'),0);
+});
+test('same-render duplicate held before authorize completes; no second reserve/transport',async()=>{
+ const f=fixture(),d=deferred<ApprovedAdvice>();f.ports.authorize=async()=>d.promise;const run=f.run();const a=run(raw(),new AbortController().signal);await Promise.resolve();
+ await assert.rejects(run(raw(),new AbortController().signal),/REQUEST_IN_PROGRESS/);d.resolve(f.g);await a;assert.equal(count(f,'fetch'),1);
+});
+test('durable request ID reservation denies retry after completion, across service instances',async()=>{const f=fixture();await f.run()(raw(),new AbortController().signal);await assert.rejects(f.run()(raw(),new AbortController().signal),/BUDGET_NOT_RESERVED/);assert.equal(count(f,'fetch'),1);});
+for(const [name,change] of Object.entries({owner:(r:Reservation)=>({...r,ownerId:'fake-B'}),project:(r:Reservation)=>({...r,project:'other'}),amount:(r:Reservation)=>({...r,reservedMicros:99}),expired:(r:Reservation)=>({...r,sendBefore:100}),fingerprint:(r:Reservation)=>({...r,fingerprint:'other'})}))test(`reservation mismatch ${name}`,async()=>{const f=fixture();f.ports.reserve=async()=>change(f.receipt(f.g));await assert.rejects(f.run()(raw(),new AbortController().signal),/BUDGET_NOT_RESERVED/);assert.equal(count(f,'fetch'),0);assert.equal(count(f,'retain'),0);assert.equal(count(f,'complete'),0);});
+test('expiry during final claim blocks transmission',async()=>{const f=fixture();f.ports.claimDispatch=async()=>{f.time(300);return true;};await assert.rejects(f.run()(raw(),new AbortController().signal),/EXPIRED_AUTHORIZATION/);assert.equal(count(f,'fetch'),0);});
+test('abort before authentication settled sends nothing',async()=>{const f=fixture(),a=new AbortController();a.abort();await assert.rejects(f.run()(raw(),a.signal),/STALE_ACCOUNT/);assert.equal(count(f,'fetch'),0);});
+for(const mode of ['429','network','invalid-json','refusal','oversize','usage','settle'] as const)test(`failure ${mode} retains reservation; no retry/refund`,async()=>{
+ const f=fixture();f.ports.request=async()=>{f.seen.push({event:'fetch'});if(mode==='network')throw Error('fake');if(mode==='429')return new Response('',{status:429});if(mode==='invalid-json')return new Response('bad');if(mode==='oversize')return new Response('x'.repeat(33000));if(mode==='refusal')return Response.json({choices:[{finish_reason:'stop',message:{refusal:'no'}}]});if(mode==='usage')return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(answer)}}]});return f.response();};
+ if(mode==='settle')f.ports.complete=async()=>{throw Error('fake-ledger-down');};
+ await assert.rejects(f.run()(raw(),new AbortController().signal));assert.equal(count(f,'fetch'),1);assert.equal(count(f,'retain'),1);assert.equal((f.seen.find(x=>x.event==='retain')!.data as {reason:string}).reason,'uncertain');
+});
+test('late response after account switch is charged to old reservation but never returned',async()=>{const f=fixture();f.ports.request=async()=>{f.seen.push({event:'fetch'});f.scope({ownerId:'fake-B',epoch:2});return f.response();};await assert.rejects(f.run()(raw(),new AbortController().signal),/STALE_ACCOUNT/);assert.equal(count(f,'complete'),1);assert.equal((f.seen.find(x=>x.event==='complete')!.data as {r:Reservation}).r.ownerId,'fake-A');});
+test('handler performs same flow using only synthetic body/ports',async()=>{const f=fixture();const res=await createOpenAiAdviceHandler({enabled:true},f.ports)(new Request('https://fake.invalid',{method:'POST',body:JSON.stringify(raw())}));assert.equal(res.status,200);assert.deepEqual((await res.json()).advice,answer);});
+
+for(const claim of ['기록을 저장했어요','가계부를 수정하였습니다','내역 삭제 완료','계획을 반영해 드렸어요','I have saved your record','We deleted the transaction','Saved successfully','記録を保存しました']) test(`known completion claim rejected: ${claim}`,()=>{
+ assert.throws(()=>assertAdviceDisplayPolicy({...answer,summary:claim}),/UNVERIFIED_ACTION_CLAIM/);
+});
+test('suggestion/explicit non-action allowed and immutable action envelope is server-generated',async()=>{
+ assert.doesNotThrow(()=>assertAdviceDisplayPolicy({...answer,summary:'필요하면 내용을 확인하고 직접 저장해 주세요.',limitations:'기록을 변경하지 않았어요.'}));
+ const f=fixture();const res=await createOpenAiAdviceHandler({enabled:true},f.ports)(new Request('https://fake.invalid',{method:'POST',body:JSON.stringify(raw())}));const body=await res.json();
+ assert.equal(body.recordActionsPerformed,false);assert.equal(body.recordNotice,OPENAI_RECORD_NOTICE);
+});
+test('valid provider usage settled, but known false saved claim never displayed',async()=>{
+ const f=fixture();f.ports.request=async()=>{f.seen.push({event:'fetch'});return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({...answer,summary:'기록을 저장했어요'})}}],usage:{prompt_tokens:10,completion_tokens:20}});};
+ await assert.rejects(f.run()(raw(),new AbortController().signal),/UNVERIFIED_ACTION_CLAIM/);assert.equal(count(f,'fetch'),1);assert.equal(count(f,'complete'),1);assert.equal(count(f,'retain'),0);
+});
+
+test('known paraphrase completion also rejected',()=>{assert.throws(()=>assertAdviceDisplayPolicy({...answer,summary:'기록 저장이 끝났어요.'}),/UNVERIFIED_ACTION_CLAIM/);});
+}
