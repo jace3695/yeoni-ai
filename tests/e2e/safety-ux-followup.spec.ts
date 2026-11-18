@@ -9,6 +9,9 @@ const workouts = 'ai-fitness-workout-completed-days';
 
 test('foam unanswered timing and pain remain absent through save reload and calendar edits', async ({ page, qa }) => {
   await test.step('QA_STAGE_01', async () => {});
+  // Capture the authenticated JSONB seed before mount; hydration serializes these returned objects.
+  const seeded = await qa.read();
+  expect(seeded).toEqual(original);
   await login(page, qa.account, '/fitness'); await synced(page);
   await test.step('QA_STAGE_02', async () => {});
   // Await normal mount migration and its authenticated server round trip before the preservation baseline.
@@ -22,8 +25,8 @@ test('foam unanswered timing and pain remain absent through save reload and cale
       && canonical(local['ai-fitness-user-workout-settings']) === canonical(expectedSettings)
       && Object.entries(original).every(([key, value]) => key === 'ai-fitness-user-workout-settings' || canonical(local[key]) === canonical(value))
       && backup?.schema === 1 && backup.targetVersion === CURRENT_WORKOUT_DIRECTION_VERSION
-      && backup.raw?.['ai-fitness-user-workout-settings'] === JSON.stringify(original['ai-fitness-user-workout-settings'])
-      && backup.raw?.['ai-fitness-workout-direction-backup'] === JSON.stringify(original['ai-fitness-workout-direction-backup'])
+      && backup.raw?.['ai-fitness-user-workout-settings'] === JSON.stringify(seeded['ai-fitness-user-workout-settings'])
+      && backup.raw?.['ai-fitness-workout-direction-backup'] === JSON.stringify(seeded['ai-fitness-workout-direction-backup'])
       && backup.raw?.[CURRENT_WORKOUT_DIRECTION_VERSION_KEY] === null
       && canonical(local) === canonical(remote);
   }).toBe(true);

@@ -56,12 +56,15 @@ test('application regression source is pinned without changing the original diet
 // Normalize only the exact additive initialization barrier; retain both complete original source pins.
 function beforeInitializationBarrier(source) {
   const imports = "import { original, localState } from './fixture';\nimport { buildCurrentWorkoutSettings, CURRENT_WORKOUT_DIRECTION_VERSION, CURRENT_WORKOUT_DIRECTION_VERSION_KEY } from '../../app/data/currentWorkoutDirection';\nimport { DEFAULT_WEEKLY_WORKOUT_PLAN_ID, SELECTED_WEEKLY_WORKOUT_PLAN_KEY } from '../../app/data/workoutPlans';\n";
-  const barrier = "  // Await normal mount migration and its authenticated server round trip before the preservation baseline.\n  const expectedSettings = buildCurrentWorkoutSettings({ weeklyGroups: {}, exerciseTargets: {}, weeklyEdits: {}, weeklyMethods: {}, dateOverrides: {}, weeklyExerciseTargets: {}, adaptiveReviewDecisions: [] });\n  await expect.poll(async () => {\n    const local = await localState(page), remote = await qa.read();\n    const backups = Object.entries(local).filter(([key]) => key.startsWith('ai-fitness-workout-direction-raw-backup-v1:'));\n    const backup = backups.length === 1 ? backups[0][1] as { schema?: number; targetVersion?: string; raw?: State } : undefined;\n    return local[CURRENT_WORKOUT_DIRECTION_VERSION_KEY] === CURRENT_WORKOUT_DIRECTION_VERSION\n      && local[SELECTED_WEEKLY_WORKOUT_PLAN_KEY] === DEFAULT_WEEKLY_WORKOUT_PLAN_ID\n      && canonical(local['ai-fitness-user-workout-settings']) === canonical(expectedSettings)\n      && Object.entries(original).every(([key, value]) => key === 'ai-fitness-user-workout-settings' || canonical(local[key]) === canonical(value))\n      && backup?.schema === 1 && backup.targetVersion === CURRENT_WORKOUT_DIRECTION_VERSION\n      && backup.raw?.['ai-fitness-user-workout-settings'] === JSON.stringify(original['ai-fitness-user-workout-settings'])\n      && backup.raw?.['ai-fitness-workout-direction-backup'] === JSON.stringify(original['ai-fitness-workout-direction-backup'])\n      && backup.raw?.[CURRENT_WORKOUT_DIRECTION_VERSION_KEY] === null\n      && canonical(local) === canonical(remote);\n  }).toBe(true);\n";
+  const barrier = "  // Await normal mount migration and its authenticated server round trip before the preservation baseline.\n  const expectedSettings = buildCurrentWorkoutSettings({ weeklyGroups: {}, exerciseTargets: {}, weeklyEdits: {}, weeklyMethods: {}, dateOverrides: {}, weeklyExerciseTargets: {}, adaptiveReviewDecisions: [] });\n  await expect.poll(async () => {\n    const local = await localState(page), remote = await qa.read();\n    const backups = Object.entries(local).filter(([key]) => key.startsWith('ai-fitness-workout-direction-raw-backup-v1:'));\n    const backup = backups.length === 1 ? backups[0][1] as { schema?: number; targetVersion?: string; raw?: State } : undefined;\n    return local[CURRENT_WORKOUT_DIRECTION_VERSION_KEY] === CURRENT_WORKOUT_DIRECTION_VERSION\n      && local[SELECTED_WEEKLY_WORKOUT_PLAN_KEY] === DEFAULT_WEEKLY_WORKOUT_PLAN_ID\n      && canonical(local['ai-fitness-user-workout-settings']) === canonical(expectedSettings)\n      && Object.entries(original).every(([key, value]) => key === 'ai-fitness-user-workout-settings' || canonical(local[key]) === canonical(value))\n      && backup?.schema === 1 && backup.targetVersion === CURRENT_WORKOUT_DIRECTION_VERSION\n      && backup.raw?.['ai-fitness-user-workout-settings'] === JSON.stringify(seeded['ai-fitness-user-workout-settings'])\n      && backup.raw?.['ai-fitness-workout-direction-backup'] === JSON.stringify(seeded['ai-fitness-workout-direction-backup'])\n      && backup.raw?.[CURRENT_WORKOUT_DIRECTION_VERSION_KEY] === null\n      && canonical(local) === canonical(remote);\n  }).toBe(true);\n";
+  const capture = "  // Capture the authenticated JSONB seed before mount; hydration serializes these returned objects.\n  const seeded = await qa.read();\n  expect(seeded).toEqual(original);\n";
+  assert.equal(source.split(capture).length - 1, 1);
+  assert.ok(source.includes(capture + "  await login(page, qa.account, '/fitness'); await synced(page);"));
   assert.equal(source.split(imports).length - 1, 1);
   assert.equal(source.split(barrier).length - 1, 1);
   assert.ok(source.startsWith(imports));
   assert.ok(source.includes(barrier + "  const before = await qa.read(), language = await qa.readLanguage(), day = today();\n"));
-  return source.replace(imports, '').replace(barrier, '');
+  return source.replace(imports, '').replace(barrier, '').replace(capture, '');
 }
 
 test('safety UX regression source is pinned without changing previous four cases',()=>{
@@ -102,4 +105,38 @@ test('stage receipt rejects missing, out-of-range and nonnumeric stage data',()=
   }
   assert.equal(validReceipt({...report,cases:report.cases.map((item,index)=>index===6?{...item,stage:24}:item)},'x'),false);
   assert.equal(validReceipt({...report,cases:report.cases.map((item,index)=>index===0?{...item,stage:1}:item)},'x'),false);
+});
+
+
+test('JSONB hydration ordering preserves actual raw migration source rather than insertion order', async () => {
+  const { PGlite } = await import('@electric-sql/pglite');
+  const { initializeWorkoutDirection, WORKOUT_DIRECTION_RAW_BACKUP_PREFIX } = await import('../../app/data/workoutDirectionMigration.ts');
+  const { grantSyntheticStorageOwnership } = await import('../../tests/storageOwnershipFixture.ts');
+  grantSyntheticStorageOwnership();
+  const db = new PGlite();
+  try {
+    const original = {
+      'ai-fitness-user-workout-settings': { dayRoutineEdits: {}, exerciseTargets: {} },
+      'ai-fitness-workout-direction-backup': { savedAt: '2001-01-02T00:00:00.000Z', selectedPlanId: 'ci-original', settings: { marker: 'keep' } },
+    };
+    const result = await db.query('select $1::jsonb as state', [JSON.stringify(original)]);
+    const seeded = result.rows[0].state;
+    assert.deepEqual(seeded, original);
+    const cloudSource = readFileSync(new URL('app/data/cloudSync.ts', root), 'utf8');
+    assert.ok(cloudSource.includes('for (const [key, value] of Object.entries(state)) changes[key] = typeof value === "string" ? value : JSON.stringify(value);'));
+    const data = new Map(Object.entries(seeded).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)]));
+    data.set('fitness-cloud-sync-user', 'synthetic-owner'); data.set('fitness-cloud-sync-epoch', 'synthetic-epoch');
+    const storage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+    const hydratedBackup = data.get('ai-fitness-workout-direction-backup');
+    assert.notEqual(hydratedBackup, JSON.stringify(original['ai-fitness-workout-direction-backup']));
+    assert.equal(initializeWorkoutDirection(storage).migrated, true);
+    const backups = [...data].filter(([key]) => key.startsWith(WORKOUT_DIRECTION_RAW_BACKUP_PREFIX));
+    assert.equal(backups.length, 1);
+    const raw = JSON.parse(backups[0][1]).raw;
+    for (const key of Object.keys(original)) assert.equal(raw[key], JSON.stringify(seeded[key]));
+    assert.equal(data.get('ai-fitness-workout-direction-backup'), hydratedBackup);
+    assert.equal(raw['ai-fitness-workout-direction-version'], null);
+    assert.equal(initializeWorkoutDirection(storage).migrated, false);
+    assert.equal([...data.keys()].filter(key => key.startsWith(WORKOUT_DIRECTION_RAW_BACKUP_PREFIX)).length, 1);
+  } finally { await db.close(); }
 });
