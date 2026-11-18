@@ -26,3 +26,10 @@ test('server routes both use same installed adapter; no browser-public trial var
  for(const p of ['../app/api/ai/openai-general-synthetic/route.ts','../app/api/ai/openai-general-synthetic/prepare/route.ts'])assert.match(readFileSync(new URL(p,import.meta.url),'utf8'),/INSTALLED_SYNTHETIC_SERVER/);
  assert.equal(readSyntheticTrialConfig({...env(),YEONI_OPENAI_SYNTHETIC_ENABLED:undefined,NEXT_PUBLIC_YEONI_OPENAI_SYNTHETIC_ENABLED:'true'},now),null);
 });
+
+test('authenticated session binding requires exact server-only alternative shape',()=>{
+ const n=Date.now();const trial={ownerId:'10000000-0000-4000-8000-000000000002',requestId:'10000000-0000-4000-8000-000000000001',allowedOrigin:'https://synthetic.test',expiresAt:n+240000,sessionBinding:'authenticated'};
+ const env={YEONI_OPENAI_SYNTHETIC_ENABLED:'true',YEONI_OPENAI_SYNTHETIC_CONFIGURATION_REVIEWED:'true',YEONI_OPENAI_SNAPSHOT_REVIEWED:'true',YEONI_OPENAI_SYNTHETIC_TRIAL:JSON.stringify(trial)};
+ assert.equal(readSyntheticTrialConfig(env,n)?.sessionBinding,'authenticated');
+ for(const x of [{...trial,sessionBinding:undefined},{...trial,sessionBinding:'unknown'},{...trial,sessionId:'10000000-0000-4000-8000-000000000003'},{...trial,expiresAt:n},{...trial,expiresAt:n+300001}])assert.equal(readSyntheticTrialConfig({...env,YEONI_OPENAI_SYNTHETIC_TRIAL:JSON.stringify(x)},n),null);
+});

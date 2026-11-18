@@ -7,12 +7,13 @@ import {createLiveSessionLock} from './live-session-lock.ts';
 import {GENERAL_SYNTHETIC_QUESTION,createGeneralSyntheticExecution} from './general-synthetic-execution.ts';
 import {prepareGeneralSyntheticProposal,confirmGeneralSyntheticProposal} from './general-synthetic-preparation.ts';
 import {readGeneralEnvironment} from './general-environment-composition.ts';
-type Config={enabled:boolean;snapshotRaceAccepted:boolean;configurationReviewed:boolean;requestId:string;ownerId:string;sessionId:string;expiresAt:number;allowedOrigin:string};
+type Config={enabled:boolean;snapshotRaceAccepted:boolean;configurationReviewed:boolean;requestId:string;ownerId:string;expiresAt:number;allowedOrigin:string}&({sessionId:string;sessionBinding?:never}|{sessionBinding:'authenticated';sessionId?:never});
 type Review=Parameters<typeof createGeneralSyntheticExecution>[1];
 type Deps=Parameters<typeof createGeneralSyntheticExecution>[2]&{billing:()=>Promise<{budgetId:string;organization:string;project:string;creditVerifiedUntil:number}>};
 function validConfig(c:Config,n:number){
  const uuid=(s:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
- try{const u=new URL(c.allowedOrigin);return [c.ownerId,c.sessionId,c.requestId].every(uuid)&&Number.isSafeInteger(n)&&Number.isSafeInteger(c.expiresAt)&&c.expiresAt>n&&c.expiresAt-n<=300000&&u.protocol==='https:'&&u.origin===c.allowedOrigin;}catch{return false;}
+ const binding=c.sessionBinding==='authenticated'?!Object.hasOwn(c,'sessionId'):!Object.hasOwn(c,'sessionBinding')&&typeof c.sessionId==='string'&&uuid(c.sessionId);
+ try{const u=new URL(c.allowedOrigin);return binding&&[c.ownerId,c.requestId].every(uuid)&&Number.isSafeInteger(n)&&Number.isSafeInteger(c.expiresAt)&&c.expiresAt>n&&c.expiresAt-n<=300000&&u.protocol==='https:'&&u.origin===c.allowedOrigin;}catch{return false;}
 }
 const off=()=>Object.freeze({available:false,POST:createGeneralRouteHandler(),PREPARE:createGeneralPrepareHandler()});
 /** Explicit server assembly. No normal record loaders; request client has auth only. */
@@ -24,23 +25,30 @@ export function createGeneralSyntheticServer(config:Config,review:Review,deps:De
   const client=await deps.createClient(r);
   const user=await createVerifiedUserBridge(r,async()=>client).getUser(r);
   const live=await createLiveSessionLock(r,user.data.user.id,{getClaims:()=>client.auth.getClaims()},'reviewed-snapshot');
-  if(live.identity.ownerId!==c.ownerId||live.identity.sessionId!==c.sessionId)throw Error('SYNTHETIC_IDENTITY_REJECTED');
+  if(live.identity.ownerId!==c.ownerId||(c.sessionBinding!=='authenticated'&&live.identity.sessionId!==c.sessionId))throw Error('SYNTHETIC_IDENTITY_REJECTED');
+  // Pin every subsequent SDK result to the initial verified identity, before any registration write.
+  const pinned={auth:{
+   getUser:async()=>{const result=await client.auth.getUser();if(r.signal.aborted||deps.now()>=c.expiresAt||(result as any)?.data?.user?.id!==live.identity.ownerId)throw Error('SYNTHETIC_IDENTITY_CHANGED');return result;},
+   getClaims:async()=>{const result=await client.auth.getClaims(),claims=(result as any)?.data?.claims;if(r.signal.aborted||deps.now()>=c.expiresAt||claims?.sub!==live.identity.ownerId||claims?.session_id!==live.identity.sessionId)throw Error('SYNTHETIC_IDENTITY_CHANGED');return result;}
+  }};
+  const bound=Object.freeze({...c,sessionId:live.identity.sessionId});
   // Registration can write only after exact verified identity match.
-  await registerVerifiedGeneralSession(r,async()=>client,deps.store,{snapshotRaceAccepted:true});
-  const authority=await createGeneralIdentityAuthority(r,async()=>client,deps.store,{snapshotRaceAccepted:true});
-  return {client,authority};
+  await registerVerifiedGeneralSession(r,async()=>pinned,deps.store,{snapshotRaceAccepted:true});
+  const authority=await createGeneralIdentityAuthority(r,async()=>pinned,deps.store,{snapshotRaceAccepted:true});
+  if(authority.identity.ownerId!==live.identity.ownerId||authority.identity.sessionId!==live.identity.sessionId)throw Error('SYNTHETIC_IDENTITY_CHANGED');
+  return {client:pinned,authority,bound};
  };
  return Object.freeze({available:true,
  PREPARE:createGeneralPrepareHandler({enabled:true,allowedOrigin:c.allowedOrigin},async(r,raw)=>{
   const x=raw as Record<string,unknown>;
   if(x.feature!=='conversation'||x.question!==GENERAL_SYNTHETIC_QUESTION||x.scope!=='synthetic')throw Error('SYNTHETIC_INPUT_REJECTED');
-  const {authority}=await auth(r);return prepareGeneralSyntheticProposal(authority,c,deps.billing,review,deps.now);
+  const {authority,bound}=await auth(r);return prepareGeneralSyntheticProposal(authority,bound,deps.billing,review,deps.now);
  }),
  POST:createGeneralRouteHandler({enabled:true,allowedOrigin:c.allowedOrigin},async(r,advice,confirmation)=>{
   if(advice.requestId!==c.requestId||advice.question!==GENERAL_SYNTHETIC_QUESTION||advice.feature!=='conversation')throw Error('SYNTHETIC_INPUT_REJECTED');
-  const {client,authority}=await auth(r);
-  await confirmGeneralSyntheticProposal(authority,c,confirmation,deps.now);
-  return createGeneralSyntheticExecution(c,review,{...deps,createClient:async()=>client})(r,advice,confirmation);
+  const {client,authority,bound}=await auth(r);
+  await confirmGeneralSyntheticProposal(authority,bound,confirmation,deps.now);
+  return createGeneralSyntheticExecution(bound,review,{...deps,createClient:async()=>client})(r,advice,confirmation);
  })});
 }
 async function loadDefault(){const [{default:postgres},m]=await Promise.all([import('postgres'),import('./general-server-dependencies.ts')]);return {postgres,...m};}
