@@ -1,3 +1,6 @@
+import { original, localState } from './fixture';
+import { buildCurrentWorkoutSettings, CURRENT_WORKOUT_DIRECTION_VERSION, CURRENT_WORKOUT_DIRECTION_VERSION_KEY } from '../../app/data/currentWorkoutDirection';
+import { DEFAULT_WEEKLY_WORKOUT_PLAN_ID, SELECTED_WEEKLY_WORKOUT_PLAN_KEY } from '../../app/data/workoutPlans';
 import { test, expect, login, synced, today, canonical, type State } from './fixture';
 import { SENTENCES } from '../../data/sentences';
 
@@ -8,6 +11,22 @@ test('foam unanswered timing and pain remain absent through save reload and cale
   await test.step('QA_STAGE_01', async () => {});
   await login(page, qa.account, '/fitness'); await synced(page);
   await test.step('QA_STAGE_02', async () => {});
+  // Await normal mount migration and its authenticated server round trip before the preservation baseline.
+  const expectedSettings = buildCurrentWorkoutSettings({ weeklyGroups: {}, exerciseTargets: {}, weeklyEdits: {}, weeklyMethods: {}, dateOverrides: {}, weeklyExerciseTargets: {}, adaptiveReviewDecisions: [] });
+  await expect.poll(async () => {
+    const local = await localState(page), remote = await qa.read();
+    const backups = Object.entries(local).filter(([key]) => key.startsWith('ai-fitness-workout-direction-raw-backup-v1:'));
+    const backup = backups.length === 1 ? backups[0][1] as { schema?: number; targetVersion?: string; raw?: State } : undefined;
+    return local[CURRENT_WORKOUT_DIRECTION_VERSION_KEY] === CURRENT_WORKOUT_DIRECTION_VERSION
+      && local[SELECTED_WEEKLY_WORKOUT_PLAN_KEY] === DEFAULT_WEEKLY_WORKOUT_PLAN_ID
+      && canonical(local['ai-fitness-user-workout-settings']) === canonical(expectedSettings)
+      && Object.entries(original).every(([key, value]) => key === 'ai-fitness-user-workout-settings' || canonical(local[key]) === canonical(value))
+      && backup?.schema === 1 && backup.targetVersion === CURRENT_WORKOUT_DIRECTION_VERSION
+      && backup.raw?.['ai-fitness-user-workout-settings'] === JSON.stringify(original['ai-fitness-user-workout-settings'])
+      && backup.raw?.['ai-fitness-workout-direction-backup'] === JSON.stringify(original['ai-fitness-workout-direction-backup'])
+      && backup.raw?.[CURRENT_WORKOUT_DIRECTION_VERSION_KEY] === null
+      && canonical(local) === canonical(remote);
+  }).toBe(true);
   const before = await qa.read(), language = await qa.readLanguage(), day = today();
   await test.step('QA_STAGE_03', async () => {});
   await page.getByRole('button', { name:'운동 시작하기',exact:true }).click();

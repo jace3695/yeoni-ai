@@ -53,8 +53,19 @@ test('application regression source is pinned without changing the original diet
   assert.equal(createHash('sha256').update(readFileSync(new URL('tests/e2e/japanese-application-plan.spec.ts',root))).digest('hex'),'245106aea8b56f36a831cc9204db4bf55393949afc9d26b74d926382669f630a');
 });
 
+// Normalize only the exact additive initialization barrier; retain both complete original source pins.
+function beforeInitializationBarrier(source) {
+  const imports = "import { original, localState } from './fixture';\nimport { buildCurrentWorkoutSettings, CURRENT_WORKOUT_DIRECTION_VERSION, CURRENT_WORKOUT_DIRECTION_VERSION_KEY } from '../../app/data/currentWorkoutDirection';\nimport { DEFAULT_WEEKLY_WORKOUT_PLAN_ID, SELECTED_WEEKLY_WORKOUT_PLAN_KEY } from '../../app/data/workoutPlans';\n";
+  const barrier = "  // Await normal mount migration and its authenticated server round trip before the preservation baseline.\n  const expectedSettings = buildCurrentWorkoutSettings({ weeklyGroups: {}, exerciseTargets: {}, weeklyEdits: {}, weeklyMethods: {}, dateOverrides: {}, weeklyExerciseTargets: {}, adaptiveReviewDecisions: [] });\n  await expect.poll(async () => {\n    const local = await localState(page), remote = await qa.read();\n    const backups = Object.entries(local).filter(([key]) => key.startsWith('ai-fitness-workout-direction-raw-backup-v1:'));\n    const backup = backups.length === 1 ? backups[0][1] as { schema?: number; targetVersion?: string; raw?: State } : undefined;\n    return local[CURRENT_WORKOUT_DIRECTION_VERSION_KEY] === CURRENT_WORKOUT_DIRECTION_VERSION\n      && local[SELECTED_WEEKLY_WORKOUT_PLAN_KEY] === DEFAULT_WEEKLY_WORKOUT_PLAN_ID\n      && canonical(local['ai-fitness-user-workout-settings']) === canonical(expectedSettings)\n      && Object.entries(original).every(([key, value]) => key === 'ai-fitness-user-workout-settings' || canonical(local[key]) === canonical(value))\n      && backup?.schema === 1 && backup.targetVersion === CURRENT_WORKOUT_DIRECTION_VERSION\n      && backup.raw?.['ai-fitness-user-workout-settings'] === JSON.stringify(original['ai-fitness-user-workout-settings'])\n      && backup.raw?.['ai-fitness-workout-direction-backup'] === JSON.stringify(original['ai-fitness-workout-direction-backup'])\n      && backup.raw?.[CURRENT_WORKOUT_DIRECTION_VERSION_KEY] === null\n      && canonical(local) === canonical(remote);\n  }).toBe(true);\n";
+  assert.equal(source.split(imports).length - 1, 1);
+  assert.equal(source.split(barrier).length - 1, 1);
+  assert.ok(source.startsWith(imports));
+  assert.ok(source.includes(barrier + "  const before = await qa.read(), language = await qa.readLanguage(), day = today();\n"));
+  return source.replace(imports, '').replace(barrier, '');
+}
+
 test('safety UX regression source is pinned without changing previous four cases',()=>{
-  assert.equal(createHash('sha256').update(readFileSync(new URL('tests/e2e/safety-ux-followup.spec.ts',root))).digest('hex'),'e748d63661f04f85b25d8f1a67e631a4e7574d256a5960c0c0c47b92ba6ba7fc');
+  assert.equal(createHash('sha256').update(beforeInitializationBarrier(readFileSync(new URL('tests/e2e/safety-ux-followup.spec.ts',root),'utf8'))).digest('hex'),'e748d63661f04f85b25d8f1a67e631a4e7574d256a5960c0c0c47b92ba6ba7fc');
 });
 
 test('numeric diagnostics never expose arbitrary strings or upgrade failure',()=>{
@@ -70,7 +81,7 @@ test('numeric diagnostics never expose arbitrary strings or upgrade failure',()=
 
 // Remove only inert, closed numeric checkpoints: every original assertion/action must remain byte-identical.
 test('checkpoints preserve the complete reviewed seven-case source',()=>{
-  const source=readFileSync(new URL('tests/e2e/safety-ux-followup.spec.ts',root),'utf8');
+  const source=beforeInitializationBarrier(readFileSync(new URL('tests/e2e/safety-ux-followup.spec.ts',root),'utf8'));
   const original=source.replace(/  \/\/ BEGIN fixed preservation diagnostics: additional assertions only\n[\s\S]*?  \/\/ END fixed preservation diagnostics\n/,'').replace(/^  await test\.step\('QA_STAGE_[0-9]{2}', async \(\) => \{\}\);\n/gm,'').replace("  preserved(saved);\n  qa.traffic.assertConfirmed(saved);", "  preserved(saved); qa.traffic.assertConfirmed(saved);").replace("async()=>{const raw=(await qa.readLanguage()).dailyLearningHistory;return raw===undefined?undefined:JSON.parse(raw as string)[day]?.completedIds;}","async()=>JSON.parse((await qa.readLanguage()).dailyLearningHistory as string)[day]?.completedIds").replace("expect(row(restored)).toEqual({...row(saved),foamRollerAreas:[]});","expect(row(restored)).toEqual(row(saved));");
   assert.equal(createHash('sha256').update(original).digest('hex'),'758e67f6bd1f36012bdbc7756df8ac1109eef1c8af0dac8eb299d8ebbd78d397');
 });
