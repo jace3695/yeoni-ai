@@ -36,7 +36,7 @@ before(async () => {
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('app.test_user',true),'')::uuid $$;
     grant usage on schema auth,public to authenticated,anon; grant execute on function auth.uid() to authenticated,anon;`);
   await db.exec(read('./e2e/schema.sql'));
-  for (const name of ['20260901125340_add_fitness_ai_review_history', '20260906141943_add_app_record_resets', '20260915034857_assistant_task_command_history', '20260916104440_assistant_diet_commands', '20260916131029_assistant_diet_meal_commands', '20260916142043_assistant_diet_time_commands']) await db.exec(read(`../supabase/migrations/${name}.sql`));
+  for (const name of ['20260901125340_add_fitness_ai_review_history', '20260906141943_add_app_record_resets', '20260915034857_assistant_task_command_history', '20260916104440_assistant_diet_commands', '20260916131029_assistant_diet_meal_commands', '20260916142043_assistant_diet_time_commands', '20261113055000_diet_protein_response_marker']) await db.exec(read(`../supabase/migrations/${name}.sql`));
 });
 after(async () => db.close());
 beforeEach(async () => {
@@ -56,6 +56,21 @@ for (const slot of ['lunch','dinner'] as const) for (const field of ['protein','
   else { assert.equal(next.proteinTotal,115); assert.equal((next[slot==='lunch'?'lunchCarb':'dinnerCarb'] as Row).grams,130); }
   assert.deepEqual(await apply(p),receipt); assert.equal(await count(),1);
   const undone=await undo(p.id); assert.ok(undone.undone_at); assert.deepEqual(await state(),original); assert.deepEqual(await apply(p),undone); assert.deepEqual(await undo(p.id),undone);
+});
+for (const slot of ['lunch', 'dinner'] as const) test(`${slot} explicit zero protein is recorded, survives retry and undoes without a stale marker`, async () => {
+  const before: Row = { settings: 'keep' };
+  await write(before);
+  const p = request(before, change(slot, 'protein', 0));
+  const receipt = await apply(p);
+  assert.deepEqual(receipt.after_values, dietNextSnapshot(p.expected, p.change));
+  const saved = dietDaySnapshot(await state(), today(), p.change);
+  assert.equal(saved.record?.proteinRecorded, true);
+  assert.equal(saved.record?.proteinDone, false);
+  assert.equal(saved.proteinTotal, 0);
+  assert.deepEqual(await apply(p), receipt);
+  assert.equal(await count(), 1);
+  await undo(p.id);
+  assert.deepEqual(await state(), before);
 });
 test('zero clears only the selected meal amount and derives the remaining total', async()=>{
   for (const field of ['protein','rice'] as const) {
