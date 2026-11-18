@@ -1871,15 +1871,20 @@ function BudgetDashboard() {
       isInMonth(item.date, currentYear, currentMonth)
     )
 
-    const allExpenseTotal = transactions.reduce((sum: number, item: any) => sum + item.amount, 0)
+    // Keep raw rows for history/transfer balances; only actual spending enters expense metrics.
+    const isExpenseTransaction = (item: { transaction_type?: unknown }) => item.transaction_type !== '충전카드 충전'
+    const expenseTransactions = transactions.filter(isExpenseTransaction)
+    const selectedExpenseTransactions = selectedTransactions.filter(isExpenseTransaction)
+
+    const allExpenseTotal = expenseTransactions.reduce((sum: number, item: any) => sum + item.amount, 0)
     const allIncomeTotal = incomeList.reduce((sum: number, item: any) => sum + item.amount, 0)
     const allSavingsTotal = savings.reduce((sum: number, item: any) => sum + item.amount, 0)
 
-    const total = selectedTransactions.reduce((sum: number, item: any) => sum + item.amount, 0)
+    const total = selectedExpenseTransactions.reduce((sum: number, item: any) => sum + item.amount, 0)
     const incomeTotal = selectedIncomeList.reduce((sum: number, item: any) => sum + item.amount, 0)
     const savingsRecordedTotal = selectedSavings.reduce((sum: number, item: any) => sum + item.amount, 0)
 
-    const mobileMicroTotal = selectedTransactions
+    const mobileMicroTotal = selectedExpenseTransactions
       .filter((item: any) => item.payment === '휴대폰 소액결제')
       .reduce((sum: number, item: any) => sum + item.amount, 0)
     const prepaidTopupTotal = selectedTransactions
@@ -1889,15 +1894,13 @@ function BudgetDashboard() {
       .filter((item: any) => item.transaction_type === '충전카드 사용')
       .reduce((sum: number, item: any) => sum + item.amount, 0)
     const estimatedPrepaidBalance = prepaidTopupTotal - prepaidSpendTotal
-    const actualExpenseTotal = selectedTransactions
-      .filter((item: any) => item.transaction_type !== '충전카드 충전')
-      .reduce((sum: number, item: any) => sum + item.amount, 0)
-    const telecomTotal = selectedTransactions
+    const actualExpenseTotal = total
+    const telecomTotal = selectedExpenseTransactions
       .filter((item: any) => String(item.category || '').includes('통신') || String(item.place || '').includes('통신요금'))
       .reduce((sum: number, item: any) => sum + item.amount, 0)
     const actualTelecomExpense = Math.max(telecomTotal - mobileMicroTotal, 0)
 
-    const paymentStats = selectedTransactions.reduce((acc: Record<string, number>, item: any) => {
+    const paymentStats = selectedExpenseTransactions.reduce((acc: Record<string, number>, item: any) => {
       const key = item.payment || '체크카드'
       acc[key] = (acc[key] || 0) + item.amount
       return acc
@@ -1962,7 +1965,7 @@ function BudgetDashboard() {
       selectedMonthLabel
     ])
 
-    const previousMonthExpenses = transactions
+    const previousMonthExpenses = expenseTransactions
       .filter((item: any) => isInMonth(item.date, previousYear, previousMonth))
       .reduce((sum: number, item: any) => sum + item.amount, 0)
     const previousMonthIncome = incomeList
@@ -1982,7 +1985,7 @@ function BudgetDashboard() {
       1
     )
 
-    const recurringSourceTransactions = recurringTransactions.length > 0 ? recurringTransactions : transactions
+    const recurringSourceTransactions = (recurringTransactions.length > 0 ? recurringTransactions : transactions).filter(isExpenseTransaction)
 
     const groupedByRecurringKey = recurringSourceTransactions.reduce((acc: Record<string, any[]>, item: any) => {
       const signature = getFixedExpenseSignature(item)
@@ -2116,7 +2119,7 @@ function BudgetDashboard() {
     const previousMonthSavingsRate = previousMonthIncome > 0 ? (previousMonthSavings / previousMonthIncome) * 100 : 0
   
     const topCategoryEntry = Object.entries(
-      selectedTransactions.reduce((acc, t) => {
+      selectedExpenseTransactions.reduce((acc, t) => {
         acc[t.category] = (acc[t.category] || 0) + t.amount
         return acc
       }, {} as Record<string, number>)
@@ -2169,19 +2172,19 @@ function BudgetDashboard() {
             ? '현재 흐름이면 예산이 빠르게 소진될 수 있어요. 남은 기간 지출을 조금 조절해보세요.'
             : '현재까지는 예산 흐름이 안정적이에요. 지금 패턴을 유지하면 무리가 적어요.'
     
-      const foodTotal = selectedTransactions
+      const foodTotal = selectedExpenseTransactions
           .filter((t: any) => ['식비', '카페', '배달'].includes(t.category))
           .reduce((sum: number, t: any) => sum + t.amount, 0)
 
-        const deliveryTotal = selectedTransactions
+        const deliveryTotal = selectedExpenseTransactions
           .filter((t: any) => t.category === '배달')
           .reduce((sum: number, t: any) => sum + t.amount, 0)
 
-        const cafeTotal = selectedTransactions
+        const cafeTotal = selectedExpenseTransactions
           .filter((t: any) => t.category === '카페')
           .reduce((sum: number, t: any) => sum + t.amount, 0)
 
-        const livingSuppliesTotal = selectedTransactions
+        const livingSuppliesTotal = selectedExpenseTransactions
           .filter((t: any) => t.category === '생활용품')
           .reduce((sum: number, t: any) => sum + t.amount, 0)
 
@@ -2222,9 +2225,9 @@ function BudgetDashboard() {
 
         const homeGuidance = budgetGuidance(loading || budgetLoading || guidanceCurrencyScope?.owner !== user?.id || guidanceCurrencyScope?.status === 'loading' || guidanceBudgetScope?.owner !== user?.id || guidanceBudgetScope?.month !== selectedMonth || Object.values(recordLoads).includes('loading') ? 'loading' : !recordsReady || !user || guidanceBudgetScope.error || guidanceCurrencyScope?.status !== 'ready' ? 'error' : 'ready', selectedMonth, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`, selectedTransactions.length + selectedIncomeList.length + selectedSavings.length, total, incomeTotal, monthlyBudget, { currency, topCategory: topCategoryName !== '-' ? { name: topCategoryName, amount: topCategoryAmount } : undefined, previousExpense: previousMonthExpenses })
 
-        const currentMonthExpenseItems = selectedTransactions
+        const currentMonthExpenseItems = selectedExpenseTransactions
 
-        const previousMonthExpenseItems = transactions.filter((t: any) => {
+        const previousMonthExpenseItems = expenseTransactions.filter((t: any) => {
           const d = new Date(t.date)
           return d.getFullYear() === previousYear && d.getMonth() === previousMonth
         })
@@ -2428,7 +2431,7 @@ function BudgetDashboard() {
     const payment = getQuestionPayment(q)
     const placeKeyword = getQuestionPlaceKeyword(q)
 
-    const currentFiltered = filterTransactionsByQuestion(transactions, {
+    const currentFiltered = filterTransactionsByQuestion(expenseTransactions, {
       period,
       category,
       payment,
@@ -2578,13 +2581,13 @@ function BudgetDashboard() {
       }
 
       if (compareCurrentPeriod && comparePrevPeriod) {
-        const currentItems = filterTransactionsByQuestion(transactions, {
+        const currentItems = filterTransactionsByQuestion(expenseTransactions, {
           period: compareCurrentPeriod,
           category,
           payment,
           placeKeyword
         })
-        const prevItems = filterTransactionsByQuestion(transactions, {
+        const prevItems = filterTransactionsByQuestion(expenseTransactions, {
           period: comparePrevPeriod,
           category,
           payment,
@@ -2634,12 +2637,12 @@ function BudgetDashboard() {
       body: JSON.stringify({
         question: q,
         period: selectedMonth,
-        categorySummary: selectedTransactions.reduce((acc: Record<string, number>, item: any) => {
+        categorySummary: selectedExpenseTransactions.reduce((acc: Record<string, number>, item: any) => {
           const key = item.category || '기타'
           acc[key] = (acc[key] || 0) + Number(item.amount || 0)
           return acc
         }, {}),
-        paymentSummary: selectedTransactions.reduce((acc: Record<string, number>, item: any) => {
+        paymentSummary: selectedExpenseTransactions.reduce((acc: Record<string, number>, item: any) => {
           const key = item.payment || '미분류'
           acc[key] = (acc[key] || 0) + Number(item.amount || 0)
           return acc
@@ -2649,7 +2652,7 @@ function BudgetDashboard() {
           acc[key] = (acc[key] || 0) + Number(item.amount || 0)
           return acc
         }, {}),
-        previousCategorySummary: transactions
+        previousCategorySummary: expenseTransactions
           .filter((item: any) => isInMonth(item.date, previousYear, previousMonth))
           .reduce((acc: Record<string, number>, item: any) => {
             const key = item.category || '기타'
@@ -3371,7 +3374,7 @@ return (
           </section>
 
           {(() => {
-            const catTotals = selectedTransactions.reduce((acc, item) => {
+            const catTotals = selectedExpenseTransactions.reduce((acc, item) => {
               acc[item.category] = (acc[item.category] || 0) + item.amount
               return acc
             }, {} as Record<string, number>)
@@ -4007,7 +4010,7 @@ return (
           <div style={{ background: 'rgba(19,19,28,0.75)', border: '1px solid #1A1A24', borderRadius: 16, padding: 16, marginBottom: 16 }}>
             <p style={{ color: '#C7C7D3', fontSize: 12, margin: '0 0 16px', letterSpacing: 1 }}>카테고리별 상세</p>
             {(() => {
-              const catTotals = selectedTransactions.reduce((acc, t) => { acc[t.category] = (acc[t.category] || 0) + t.amount; return acc }, {} as Record<string, number>)
+              const catTotals = selectedExpenseTransactions.reduce((acc, t) => { acc[t.category] = (acc[t.category] || 0) + t.amount; return acc }, {} as Record<string, number>)
               const sorted = Object.entries(catTotals).sort((a, b) => (b[1] as number) - (a[1] as number)) as [string, number][]
               const max = sorted[0]?.[1] || 1
               return sorted.length > 0 ? sorted.map(([cat, amt]) => {
@@ -4030,8 +4033,8 @@ return (
             <p style={{ color: '#9CA3AF', fontSize: 12, margin: '0 0 12px', letterSpacing: 1 }}>거래 현황</p>
             <div style={{ display: 'flex', justifyContent: 'space-around' }}>
               <div style={{ textAlign: 'center' }}><p style={{ color: '#FFFFFF', fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>{selectedTransactions.length}</p><p style={{ color: '#E0E0EA', fontSize: 11, margin: 0 }}>총 거래</p></div>
-              <div style={{ textAlign: 'center' }}><p style={{ color: '#FFFFFF', fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>{Object.keys(selectedTransactions.reduce((acc, t) => ({ ...acc, [t.category]: 1 }), {})).length}</p><p style={{ color: '#E0E0EA', fontSize: 11, margin: 0 }}>카테고리</p></div>
-              <div style={{ textAlign: 'center' }}><p style={{ color: '#FFFFFF', fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>{formatKRW(selectedTransactions.length > 0 ? Math.round(total / selectedTransactions.length) : 0)}</p><p style={{ color: '#E0E0EA', fontSize: 11, margin: 0 }}>평균 지출</p></div>
+              <div style={{ textAlign: 'center' }}><p style={{ color: '#FFFFFF', fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>{Object.keys(selectedExpenseTransactions.reduce((acc, t) => ({ ...acc, [t.category]: 1 }), {})).length}</p><p style={{ color: '#E0E0EA', fontSize: 11, margin: 0 }}>지출 카테고리</p></div>
+              <div style={{ textAlign: 'center' }}><p style={{ color: '#FFFFFF', fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>{formatKRW(selectedExpenseTransactions.length > 0 ? Math.round(total / selectedExpenseTransactions.length) : 0)}</p><p style={{ color: '#E0E0EA', fontSize: 11, margin: 0 }}>평균 지출</p></div>
             </div>
           </div>
 

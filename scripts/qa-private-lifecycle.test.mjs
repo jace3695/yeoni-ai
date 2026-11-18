@@ -196,52 +196,76 @@ process.exitCode=7;`);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('real same-group and finite detached pipe holders remain failed and settle inside the unchanged grace', async () => {
+test('prepared real pipe holders fail within unchanged runPrivateStage termination grace', async () => {
+  // This real-process test measures termination of an established pipe holder, not
+  // Node startup. Preparation stays inside production runStages' budget; the
+  // independent delayed-preparation test above continues to enforce that contract.
+  const { spawn } = await import('node:child_process');
   const root = await mkdtemp(join(tmpdir(), 'stage-owned-processes-'));
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const started = performance.now();
   try {
-    await Promise.all(['ordinary', 'ignore-term', 'detached-timeout', 'detached-cancel'].map(async name => {
+    const results = await Promise.allSettled(['ordinary', 'ignore-term', 'detached-timeout', 'detached-cancel'].map(async name => {
       const cwd = join(root, name); await mkdir(cwd);
       const detached = name.startsWith('detached');
-      const descendant = `const fs=require('node:fs'); setTimeout(()=>{fs.writeFileSync('finished.json','true');process.exit(0)},6500);`;
+      const descendant = `const fs=require('node:fs'); const finish=()=>{fs.writeFileSync('finished.json','true');process.exit(0)}; let timer=setTimeout(finish,15000); process.on('message',m=>{if(m==='start'){clearTimeout(timer);timer=setTimeout(finish,6500);process.disconnect()}}); process.send('ready');`;
       const body = detached ? `import {spawn} from 'node:child_process'; import {writeFileSync} from 'node:fs';
-const child=spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:['ignore','inherit','inherit']});
-writeFileSync('descendant.json',JSON.stringify({pid:child.pid})); child.unref(); setTimeout(()=>{},7500);`
-        : `${name === 'ignore-term' ? "process.on('SIGTERM',()=>{});" : ''} setTimeout(()=>{},7500);`;
+const child=spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:['ignore','inherit','inherit','ipc']});
+writeFileSync('descendant.json',JSON.stringify({pid:child.pid})); child.on('message',m=>{if(m==='ready')process.send('ready')}); process.on('message',m=>{if(m==='start')child.send('start')}); child.unref(); setTimeout(()=>process.exit(0),15000);`
+        : `${name === 'ignore-term' ? "process.on('SIGTERM',()=>{});" : ''} setTimeout(()=>process.exit(0),15000); process.send('ready');`;
       await writeFile(join(cwd, 'owned.mjs'), body);
-      const output = [], controller = new AbortController();
-      const start = performance.now();
-      const timer = name === 'detached-cancel' ? setTimeout(() => controller.abort(), 300) : undefined;
-      let code;
+      const child = spawn(process.execPath, ['owned.mjs'], { cwd, env: { PATH: process.env.PATH }, detached: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+      let timer;
       try {
-        code = await runStages([{ id: 'stage-02', command: `${JSON.stringify(process.execPath)} owned.mjs`, lifecycleDiagnostics: true }], {
-          cwd, runnerTemp: cwd, env: { PATH: process.env.PATH }, timeoutMs: name === 'detached-cancel' ? 10000 : 300,
-          signal: controller.signal, emit: line => output.push(line),
+        await new Promise((resolve, reject) => {
+          const finish = error => {
+            clearTimeout(timer); child.off('message', message); child.off('exit', exited); child.off('error', failed);
+            error ? reject(error) : resolve();
+          };
+          const message = value => { if (value === 'ready') finish(); };
+          const exited = () => finish(new Error('Owned fixture exited before readiness'));
+          const failed = () => finish(new Error('Owned fixture launch failed'));
+          child.on('message', message); child.once('exit', exited); child.once('error', failed);
+          timer = setTimeout(() => finish(new Error('Owned fixture readiness deadline exceeded')), 10000);
         });
-      } finally { clearTimeout(timer); }
-      const elapsed = performance.now() - start;
-      assert.equal(code, 1); assert.ok(elapsed < 6000, `Bounded settlement exceeded: ${Math.round(elapsed)}`);
-      assert.equal(output.at(-1), 'stage-02 failed');
-      assert.ok(output[0].includes(`reason=${name === 'detached-cancel' ? 'cancelled' : 'timeout'}`));
-      assert.ok(output[0].includes('processCleanup=unverified'));
-      if (detached) {
-        assert.ok(output[0].includes('capture=abandoned')); assert.ok(output[0].includes('closeMs=-1'));
-        // Wait for only our finite descendant; never kill or inspect another process.
-        const { pid } = JSON.parse(await readFile(join(cwd, 'descendant.json'), 'utf8'));
-        const until = performance.now() + 8000;
-        while (true) {
-          try { assert.equal(await readFile(join(cwd, 'finished.json'), 'utf8'), 'true'); break; }
-          catch (error) { if (error.code !== 'ENOENT' || performance.now() > until) throw error; await delay(25); }
+        assert.equal(child.exitCode, null); assert.equal(child.signalCode, null);
+        const controller = new AbortController();
+        const start = performance.now();
+        timer = name === 'detached-cancel' ? setTimeout(() => controller.abort(), 300) : undefined;
+        let result;
+        try {
+          result = await runPrivateStage(async control => { const watched = control.watch(child); if (detached) child.send('start'); return { code: await watched }; }, {
+            timeoutMs: name === 'detached-cancel' ? 10000 : 300, signal: controller.signal,
+          });
+        } finally { clearTimeout(timer); }
+        const elapsed = performance.now() - start;
+        assert.equal(result.code, 1); assert.ok(elapsed < 6000, `Bounded settlement exceeded: ${Math.round(elapsed)}`);
+        const line = lifecycleLine('stage-02', result.observation);
+        assert.ok(line.includes(`reason=${name === 'detached-cancel' ? 'cancelled' : 'timeout'}`));
+        assert.ok(line.includes('processCleanup=unverified'));
+        if (detached) {
+          assert.ok(line.includes('capture=abandoned')); assert.ok(line.includes('closeMs=-1'));
         }
-        await delay(100);
-        try { const stat = await readFile(`/proc/${pid}/stat`, 'utf8'); assert.equal(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0], 'Z'); }
-        catch (error) { if (error.code !== 'ENOENT') throw error; }
+      } finally {
+        clearTimeout(timer);
+        // Only the leader created by this fixture is signalled on setup failure.
+        if (child.exitCode === null && child.signalCode === null && child.pid) {
+          try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+        }
+        // Detached descendants are finite and own these files. Never remove their
+        // directory while they can write; never signal or inspect another process.
+        const record = await readFile(join(cwd, 'descendant.json'), 'utf8').then(JSON.parse, error => { if (error.code === 'ENOENT') return null; throw error; });
+        if (record) {
+          const until = performance.now() + 16000;
+          while (true) {
+            try { assert.equal(await readFile(join(cwd, 'finished.json'), 'utf8'), 'true'); break; }
+            catch (error) { if (error.code !== 'ENOENT' || performance.now() > until) throw error; await delay(25); }
+          }
+          await delay(100);
+          try { const stat = await readFile(`/proc/${record.pid}/stat`, 'utf8'); assert.equal(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0], 'Z'); }
+          catch (error) { if (error.code !== 'ENOENT') throw error; }
+        }
       }
     }));
-  } finally {
-    // Even a failed assertion cannot remove files while a finite owned child still uses them.
-    await delay(Math.max(0, 8000 - (performance.now() - started)));
-    await rm(root, { recursive: true, force: true });
-  }
+    for (const result of results) if (result.status === 'rejected') throw result.reason;
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
