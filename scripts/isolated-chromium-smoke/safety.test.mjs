@@ -1956,8 +1956,8 @@ test('resource upload append pins exact reviewed app and test while leaving old 
     let bytes = await readFile(path);
     if (path === 'tests/e2e/resource-upload-recovery.spec.ts') {
       const text = bytes.toString('utf8');
-      // Playwright infers a MIME for an empty payload type; File normalizes this non-ASCII type to empty.
-      const after = "mimeType: '\\u0100', buffer: firstBytes", before = "mimeType: '', buffer: firstBytes";
+      // Exact reviewed fixture replacement only; every other byte retains the original source pin.
+      const after = "    // Use the browser File constructor directly: Playwright infers MIME for empty payload types.\n    const firstPicker = await page.locator('#growth-resource-file').elementHandle();\n    expect(firstPicker).not.toBeNull();\n    await firstPicker!.evaluate((input: HTMLInputElement, bytes: number[]) => {\n      const selected = new File([Uint8Array.from(bytes)], 'synthetic-one.txt', { type: '' });\n      if (selected.type !== '') throw new Error('SYNTHETIC_FILE_TYPE_NOT_EMPTY');\n      const transfer = new DataTransfer(); transfer.items.add(selected);\n      input.files = transfer.files;\n      if (input.files.length !== 1 || input.files[0].type !== '') throw new Error('SYNTHETIC_PICKER_TYPE_NOT_EMPTY');\n      input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));\n      input.dispatchEvent(new Event('change', { bubbles: true }));\n    }, Array.from(firstBytes));\n    // Separate coordinates classify remount/reset failures without printing file contents.\n    expect(await firstPicker!.evaluate(input => input.isConnected)).toBe(true);\n    expect(await page.locator('#growth-resource-file').evaluate((input: HTMLInputElement) => input.files?.length)).toBe(1);\n    expect(await page.locator('#growth-resource-file').evaluate((input: HTMLInputElement) => input.files?.[0]?.name)).toBe('synthetic-one.txt');\n    expect(await page.locator('#growth-resource-file').evaluate((input: HTMLInputElement) => input.files?.[0]?.size)).toBe(firstBytes.length);\n    expect(await page.locator('#growth-resource-file').evaluate(async (input: HTMLInputElement) => Array.from(new Uint8Array(await input.files![0].arrayBuffer())))).toEqual(Array.from(firstBytes));\n    await firstPicker!.dispose();", before = "    await page.locator('#growth-resource-file').setInputFiles({ name: 'synthetic-one.txt', mimeType: '', buffer: firstBytes });";
       assert.equal(text.split(after).length, 2);
       assert.equal(text.split(before).length, 1);
       bytes = Buffer.from(text.replace(after, before));
@@ -1968,7 +1968,7 @@ test('resource upload append pins exact reviewed app and test while leaving old 
   const source = await readFile('tests/e2e/resource-upload-recovery.spec.ts', 'utf8');
   assert.equal(sources[58], 'tests/e2e/resource-upload-recovery.spec.ts');
   assert.equal(source.split('\n')[2], "test('resource upload preserves private files through response loss and reload with read-only confirmation', async ({ page, qa }) => {");
-  assert.equal((source.match(/setInputFiles\(/g) ?? []).length, 2);
+  assert.equal((source.match(/setInputFiles\(/g) ?? []).length, 1); assert.equal((source.match(/new DataTransfer\(/g) ?? []).length, 1);
   assert.equal((source.match(/Buffer.from\('Synthetic resource/g) ?? []).length, 2);
   for (const marker of ["const api = 'http://127.0.0.1:54321'", "const metadataPath = '/rest/v1/growth_resources'",
     'url.origin !== api || url.pathname !== metadataPath', 'user_id: owner, title: secondTitle',

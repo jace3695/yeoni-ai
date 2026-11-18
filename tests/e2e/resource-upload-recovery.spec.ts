@@ -46,7 +46,25 @@ test('resource upload preserves private files through response loss and reload w
     const before = await qa.read(), languageBefore = await qa.readLanguage();
     await expect(page.getByRole('button', { name: '자료 새로고침', exact: true })).toBeEnabled();
     expect(await rows()).toHaveLength(0); expect(await files()).toEqual([]);
-    await page.locator('#growth-resource-file').setInputFiles({ name: 'synthetic-one.txt', mimeType: '\u0100', buffer: firstBytes });
+    // Use the browser File constructor directly: Playwright infers MIME for empty payload types.
+    const firstPicker = await page.locator('#growth-resource-file').elementHandle();
+    expect(firstPicker).not.toBeNull();
+    await firstPicker!.evaluate((input: HTMLInputElement, bytes: number[]) => {
+      const selected = new File([Uint8Array.from(bytes)], 'synthetic-one.txt', { type: '' });
+      if (selected.type !== '') throw new Error('SYNTHETIC_FILE_TYPE_NOT_EMPTY');
+      const transfer = new DataTransfer(); transfer.items.add(selected);
+      input.files = transfer.files;
+      if (input.files.length !== 1 || input.files[0].type !== '') throw new Error('SYNTHETIC_PICKER_TYPE_NOT_EMPTY');
+      input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, Array.from(firstBytes));
+    // Separate coordinates classify remount/reset failures without printing file contents.
+    expect(await firstPicker!.evaluate(input => input.isConnected)).toBe(true);
+    expect(await page.locator('#growth-resource-file').evaluate((input: HTMLInputElement) => input.files?.length)).toBe(1);
+    expect(await page.locator('#growth-resource-file').evaluate((input: HTMLInputElement) => input.files?.[0]?.name)).toBe('synthetic-one.txt');
+    expect(await page.locator('#growth-resource-file').evaluate((input: HTMLInputElement) => input.files?.[0]?.size)).toBe(firstBytes.length);
+    expect(await page.locator('#growth-resource-file').evaluate(async (input: HTMLInputElement) => Array.from(new Uint8Array(await input.files![0].arrayBuffer())))).toEqual(Array.from(firstBytes));
+    await firstPicker!.dispose();
     // A genuinely empty picker MIME exercises the app's filename fallback.
     expect(await page.locator('#growth-resource-file').evaluate((input: HTMLInputElement) => input.files?.[0]?.type)).toBe('');
     await page.getByPlaceholder('자료 이름', { exact: true }).fill(firstTitle);
