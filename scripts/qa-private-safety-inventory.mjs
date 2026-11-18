@@ -123,6 +123,6 @@ export const safetyInventory = Object.freeze([
   Object.freeze({"source": 5, "line": 203, "column": 1, "count": 1}),
   Object.freeze({"source": 5, "line": 216, "column": 1, "count": 1}),
   Object.freeze({"source": 4, "line": 1949, "column": 1, "count": 1}),
-  Object.freeze({"source": 4, "line": 1980, "column": 1, "count": 1}),
+  Object.freeze({"source": 4, "line": 1988, "column": 1, "count": 1}),
 ]);
 export const safetyCount = safetyInventory.reduce((sum, item) => sum + item.count, 0);

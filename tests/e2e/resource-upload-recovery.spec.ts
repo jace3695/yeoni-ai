@@ -46,7 +46,7 @@ test('resource upload preserves private files through response loss and reload w
     const before = await qa.read(), languageBefore = await qa.readLanguage();
     await expect(page.getByRole('button', { name: '자료 새로고침', exact: true })).toBeEnabled();
     expect(await rows()).toHaveLength(0); expect(await files()).toEqual([]);
-    await page.locator('#growth-resource-file').setInputFiles({ name: 'synthetic-one.txt', mimeType: '', buffer: firstBytes });
+    await page.locator('#growth-resource-file').setInputFiles({ name: 'synthetic-one.txt', mimeType: '\u0100', buffer: firstBytes });
     // A genuinely empty picker MIME exercises the app's filename fallback.
     expect(await page.locator('#growth-resource-file').evaluate((input: HTMLInputElement) => input.files?.[0]?.type)).toBe('');
     await page.getByPlaceholder('자료 이름', { exact: true }).fill(firstTitle);
