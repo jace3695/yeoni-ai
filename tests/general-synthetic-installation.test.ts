@@ -12,15 +12,16 @@ test('OFF and malformed or overlong configuration never compose or access IO',as
  ].map(x=>({...env(),YEONI_OPENAI_SYNTHETIC_TRIAL:JSON.stringify(x)})),{...env(),YEONI_OPENAI_SYNTHETIC_CONFIGURATION_REVIEWED:'false'}];
  for(const e of bad){let n=0;const h=createSyntheticInstallation(e,()=>now,async()=>{n++;throw Error('never')});assert.equal((await h.POST(req())).status,503);assert.equal((await h.PREPARE(req())).status,503);assert.equal(n,0);}
 });
-test('private snapshot composes once across prepare/post and rechecks expiry before dispatch',async()=>{
+test('private snapshot composes only for prepare; execution is denied before and after prepare',async()=>{
  let time=now,loads=0,calls=0;const e=env();const h=createSyntheticInstallation(e,()=>time,async(c)=>{loads++;assert.equal(c.requestId,trial.requestId);return {available:true,POST:async()=>{calls++;return new Response('ok')},PREPARE:async()=>{calls++;return new Response('ok')}}});
  e.YEONI_OPENAI_SYNTHETIC_TRIAL='tampered';
- const result=await Promise.all([h.PREPARE(req()),h.POST(req())]);assert.deepEqual(result.map(x=>x.status),[200,200]);assert.equal(loads,1);assert.equal(calls,2);
- time=trial.expiresAt;assert.equal((await h.POST(req())).status,503);assert.equal(loads,1);assert.equal(calls,2);
+ const blocked=await h.POST(req());assert.equal(blocked.status,403);assert.equal((await blocked.json()).code,'OPENAI_SYNTHETIC_PREPARE_ONLY');assert.equal(loads,0);
+ assert.equal((await h.PREPARE(req())).status,200);assert.equal((await h.POST(req())).status,403);assert.equal(loads,1);assert.equal(calls,1);
+ time=trial.expiresAt;assert.equal((await h.PREPARE(req())).status,503);assert.equal((await h.POST(req())).status,503);assert.equal(loads,1);assert.equal(calls,1);
 });
 test('composition failure fails closed without returning secret errors or automatically retrying',async()=>{
  let loads=0;const h=createSyntheticInstallation(env(),()=>now,async()=>{loads++;throw Error('secret-do-not-return')});
- for(let i=0;i<2;i++){const r=await h.POST(req());assert.equal(r.status,503);assert.doesNotMatch(await r.text(),/secret-do-not-return/);}assert.equal(loads,1);
+ for(let i=0;i<2;i++){const r=await h.PREPARE(req());assert.equal(r.status,503);assert.doesNotMatch(await r.text(),/secret-do-not-return/);}assert.equal((await h.POST(req())).status,403);assert.equal(loads,1);
 });
 test('server routes both use same installed adapter; no browser-public trial variables',()=>{
  for(const p of ['../app/api/ai/openai-general-synthetic/route.ts','../app/api/ai/openai-general-synthetic/prepare/route.ts'])assert.match(readFileSync(new URL(p,import.meta.url),'utf8'),/INSTALLED_SYNTHETIC_SERVER/);

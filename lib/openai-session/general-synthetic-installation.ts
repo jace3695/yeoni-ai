@@ -24,10 +24,16 @@ export function readSyntheticTrialConfig(env:Env,now:number):Config|null{
  * forward automatically; durable request/grant ledger controls replay across instances. */
 export function createSyntheticInstallation(env:Env,now:()=>number=Date.now,compose:typeof composeGeneralSyntheticServer=composeGeneralSyntheticServer){
  const e=Object.freeze({...env});let loaded:Promise<Handlers>|undefined;
- const call=async(kind:'POST'|'PREPARE',r:Request)=>{
+ const prepare=async(r:Request)=>{
   const c=readSyntheticTrialConfig(e,now());
-  if(!c)return GENERAL_SYNTHETIC_SERVER[kind](r);
-  try{const handlers=loaded??(loaded=compose(c,e,now));return await (await handlers)[kind](r);}catch{return GENERAL_SYNTHETIC_SERVER[kind](r);}
+  if(!c)return GENERAL_SYNTHETIC_SERVER.PREPARE(r);
+  try{const handlers=loaded??(loaded=compose(c,e,now));return await (await handlers).PREPARE(r);}catch{return GENERAL_SYNTHETIC_SERVER.PREPARE(r);}
  };
- return Object.freeze({POST:(r:Request)=>call('POST',r),PREPARE:(r:Request)=>call('PREPARE',r)});
+ // This build is PREPARE-only even if a trial flag is enabled or mistyped.
+ // Keep disabled trials' existing OFF response and never consult the composed POST.
+ const blockExecution=async(r:Request)=>{
+  if(!readSyntheticTrialConfig(e,now()))return GENERAL_SYNTHETIC_SERVER.POST(r);
+  return Response.json({available:false,code:'OPENAI_SYNTHETIC_PREPARE_ONLY'},{status:403,headers:{'Cache-Control':'no-store'}});
+ };
+ return Object.freeze({POST:blockExecution,PREPARE:prepare});
 }
