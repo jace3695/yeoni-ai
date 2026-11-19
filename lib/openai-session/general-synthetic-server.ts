@@ -61,7 +61,7 @@ export async function composeGeneralSyntheticServer(config:Config,env:Readonly<R
  let sql:any;
  try{
   const c=readGeneralEnvironment({...env,YEONI_OPENAI_GENERAL_ENABLED:'true'},now());if(!c||c.scope.ownerId!==fixed.ownerId||fixed.expiresAt>c.scope.creditVerifiedUntil||c.allowedOrigin!==fixed.allowedOrigin)return off();
-  const m=await load();sql=m.postgres(c.databaseUrl,{max:1,prepare:false,ssl:{rejectUnauthorized:true},connect_timeout:10,idle_timeout:20});
+  const m=await load();sql=m.postgres(c.databaseUrl,{max:1,prepare:false,ssl:c.databaseTls,connect_timeout:10,idle_timeout:20});
   const store=m.createGeneralAccountingStore(sql),billing=m.createGeneralBillingResolver(store,[c.scope],now);
   const userClient=m.createGeneralBearerClient(c.supabase);
   return createGeneralSyntheticServer(fixed,c.review,{store,now,billing:()=>billing(fixed.ownerId),

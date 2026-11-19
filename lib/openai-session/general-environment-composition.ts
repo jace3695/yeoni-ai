@@ -1,3 +1,5 @@
+import {GENERAL_DATABASE_POOLER_CA} from './general-database-pooler-ca.ts';
+import {generalDatabaseTlsOptions} from './general-database-tls.ts';
 /** Server-only installation adapter. Lazy route composition; deployed service remains unchanged until approved deployment.
  * Explicit opt-in; OFF never loads drivers, secrets, auth or the database.
  */
@@ -20,7 +22,7 @@ export function readGeneralEnvironment(e:Env,now:number){
  const scope=JSON.parse(required('YEONI_OPENAI_BILLING_SCOPE'));
  if(!scope||Object.keys(scope).sort().join('|')!=='budgetId|creditVerifiedUntil|organization|ownerId|project'||![scope.ownerId,scope.budgetId,scope.organization,scope.project].every((v:unknown)=>typeof v==='string'&&v.trim()===v&&v.length>0&&v.length<=200)||!Number.isSafeInteger(scope.creditVerifiedUntil)||scope.creditVerifiedUntil<=now)throw Error('GENERAL_BILLING_SCOPE_REQUIRED');
  if(required('NEXT_PUBLIC_SUPABASE_URL')!=='https://piqqukiiacncfbztktga.supabase.co'||!isPublicSupabaseKey(publicKey))throw Error('GENERAL_USER_CLIENT_REQUIRED');
- return Object.freeze({databaseUrl,host,allowedOrigin:httpsOrigin(required('YEONI_OPENAI_ALLOWED_ORIGIN')),supabase:Object.freeze({url:httpsOrigin(required('NEXT_PUBLIC_SUPABASE_URL')),publicKey:publicKey}),review:Object.freeze({verifiedAt,expiresAt,globalStandardPricingReviewed:true}),scope:Object.freeze({...scope}),apiKey:required('YEONI_OPENAI_API_KEY')});
+ return Object.freeze({databaseUrl,host,databaseTls:generalDatabaseTlsOptions(GENERAL_DATABASE_POOLER_CA),allowedOrigin:httpsOrigin(required('YEONI_OPENAI_ALLOWED_ORIGIN')),supabase:Object.freeze({url:httpsOrigin(required('NEXT_PUBLIC_SUPABASE_URL')),publicKey:publicKey}),review:Object.freeze({verifiedAt,expiresAt,globalStandardPricingReviewed:true}),scope:Object.freeze({...scope}),apiKey:required('YEONI_OPENAI_API_KEY')});
 }
 async function defaultLoader(){const [{default:postgres},m]=await Promise.all([import('postgres'),import('./general-server-dependencies.ts')]);return {postgres,...m};}
 /** Loader is injectable solely for isolated tests; default is real official drivers.
@@ -34,7 +36,7 @@ export async function composeGeneralEnvironment(env:Env,now:()=>number=Date.now,
  try{
   const m=await load();
   // Dedicated pool only; validate TLS peer/hostname, no prepared/pipelined queries.
-  sql=m.postgres(c.databaseUrl,{max:1,prepare:false,max_pipeline:1,ssl:{rejectUnauthorized:true},connect_timeout:10,idle_timeout:20});
+  sql=m.postgres(c.databaseUrl,{max:1,prepare:false,max_pipeline:1,ssl:c.databaseTls,connect_timeout:10,idle_timeout:20});
   const store=m.createGeneralAccountingStore(sql);
   const billing=m.createGeneralBillingResolver(store,[c.scope],now);
   const credentials=m.createGeneralScopedCredentials({organization:c.scope.organization,project:c.scope.project,expiresAt:c.scope.creditVerifiedUntil},async()=>c!.apiKey,now);
