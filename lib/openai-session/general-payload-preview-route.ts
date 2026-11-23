@@ -19,6 +19,25 @@ function defaultAuthFactory(config:{url:string;publicKey:string}){
 export function isComputedPayloadPreviewEnabled(env:Env){
  return env.YEONI_OPENAI_PAYLOAD_PREVIEW_ENABLED==='true'&&uuid.test(env.YEONI_OPENAI_PAYLOAD_PREVIEW_OWNER??'');
 }
+type Stage='PAGE_ENABLED'|'PAGE_DISABLED'|'NOT_ENABLED'|'REQUEST_AUTHORITY'|'REQUEST_HEADERS'|'PUBLIC_AUTH_CONFIG'|
+ 'BODY'|'SDK'|'USER'|'OWNER'|'CLAIMS'|'AUTH_TIMEOUT'|'ACCEPTED'|'PREVIEW_ERROR';
+/** Absolute reviewed runtime window; a deployed copy becomes permanently quiet
+ * at the expiry even if its immutable environment is never updated. */
+export function isPayloadPreviewDiagnosticWindowOpen(value:string|undefined,now=Date.now()){
+ if(!value||!/^[1-9][0-9]{0,15}:[1-9][0-9]{0,15}$/.test(value)||!Number.isSafeInteger(now))return false;
+ const [start,end]=value.split(':').map(Number);
+ return Number.isSafeInteger(start)&&Number.isSafeInteger(end)&&end>start&&end-start<=15*60_000&&now>=start&&now<end;
+}
+function stageOnly(stage:Stage){
+ try{console.warn('YEONI_PAYLOAD_PREVIEW_STAGE',stage);}catch{/* observability cannot affect answers */}
+}
+/** Fixed server-only enum, once per page isolate; no owner/environment values. */
+let pageStageReported=false;
+export function reportPayloadPreviewPageStage(env:Env,enabled:boolean){
+ if(pageStageReported||!isPayloadPreviewDiagnosticWindowOpen(env.YEONI_OPENAI_PAYLOAD_PREVIEW_DIAGNOSTICS))return;
+ pageStageReported=true;
+ stageOnly(enabled?'PAGE_ENABLED':'PAGE_DISABLED');
+}
 /** Next's Node adapter supplies a stream even for a bodyless POST. Require EOF
  * before Auth, without buffering or waiting indefinitely for a first chunk. */
 async function hasNoPayload(r:Request){
@@ -46,29 +65,44 @@ async function hasNoPayload(r:Request){
 export function createComputedPayloadPreviewHandler(env:Env,createAuth:typeof defaultAuthFactory=defaultAuthFactory,mode:'preview'|'eligibility'='preview'){
  const path=mode==='eligibility'?PAYLOAD_PREVIEW_ELIGIBILITY_PATH:PAYLOAD_PREVIEW_PATH;
  const owner=isComputedPayloadPreviewEnabled(env)?env.YEONI_OPENAI_PAYLOAD_PREVIEW_OWNER:undefined;
+ const diagnosticWindow=mode==='eligibility'?env.YEONI_OPENAI_PAYLOAD_PREVIEW_DIAGNOSTICS:undefined;
  return async(r:Request)=>{
-  if(!owner||r.method!=='POST'||r.signal.aborted||r.url!==ORIGIN+path||
-   r.headers.get('origin')!==ORIGIN||r.headers.get('sec-fetch-site')!=='same-origin'||
+  // Diagnostic output is gated to canonical-looking eligibility requests, or page
+  // status above. This gate is not authentication and changes no eligibility rule.
+  const canTrace=isPayloadPreviewDiagnosticWindowOpen(diagnosticWindow)&&r.method==='POST'&&r.headers.get('origin')===ORIGIN&&
+   r.headers.get('sec-fetch-site')==='same-origin'&&/^Bearer [^\s,]+$/.test(r.headers.get('authorization')??'');
+  const trace=(stage:Stage)=>{if(canTrace&&isPayloadPreviewDiagnosticWindowOpen(diagnosticWindow))stageOnly(stage);};
+  const deny=(stage:Stage)=>{trace(stage);return unavailable();};
+  if(!owner)return deny('NOT_ENABLED');
+  if(r.method!=='POST'||r.signal.aborted)return unavailable();
+  if(r.url!==ORIGIN+path)return deny('REQUEST_AUTHORITY');
+  if(r.headers.get('origin')!==ORIGIN||r.headers.get('sec-fetch-site')!=='same-origin'||
    !/^(?:0)?$/.test(r.headers.get('content-length')??'')||
-   r.headers.has('transfer-encoding')||!/^Bearer [^\s,]+$/.test(r.headers.get('authorization')??''))return unavailable();
+   r.headers.has('transfer-encoding')||!/^Bearer [^\s,]+$/.test(r.headers.get('authorization')??''))return deny('REQUEST_HEADERS');
   const key=env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if(env.NEXT_PUBLIC_SUPABASE_URL!==AUTH_ORIGIN||!key||!isPublicSupabaseKey(key))return unavailable();
-  let timer:ReturnType<typeof setTimeout>|undefined,expired=false;
+  if(env.NEXT_PUBLIC_SUPABASE_URL!==AUTH_ORIGIN||!key||!isPublicSupabaseKey(key))return deny('PUBLIC_AUTH_CONFIG');
+  let timer:ReturnType<typeof setTimeout>|undefined,expired=false,failure:Stage='BODY';
   try{
-   if(!await hasNoPayload(r)||r.signal.aborted)return unavailable();
+   if(!await hasNoPayload(r)||r.signal.aborted)return deny('BODY');
    const check=async()=>{
+    failure='SDK';
     const client=await createAuth({url:AUTH_ORIGIN,publicKey:key})(r);
     if(expired||r.signal.aborted)return false;
+    failure='USER';
     const user=await createVerifiedUserBridge(r,async()=>client).getUser(r);
-    if(expired||r.signal.aborted||user.data.user.id!==owner)return false;
+    if(expired||r.signal.aborted)return false;
+    failure='OWNER';
+    if(user.data.user.id!==owner)return false;
     // Reuse verified claims evaluation, never the database assertAndLock method.
+    failure='CLAIMS';
     const claims=await createLiveSessionLock(r,owner,{getClaims:async()=>{if(expired||r.signal.aborted)throw Error('PREVIEW_UNAVAILABLE');return client.auth.getClaims();}},'reviewed-snapshot');
     return claims.identity.ownerId===owner&&!expired&&!r.signal.aborted;
    };
-   if(!await Promise.race([check(),new Promise<false>(resolve=>{timer=setTimeout(()=>{expired=true;resolve(false);},6000);})])||r.signal.aborted)return unavailable();
-   if(mode==='eligibility')return new Response(null,{status:204,headers});
+   if(!await Promise.race([check(),new Promise<false>(resolve=>{timer=setTimeout(()=>{expired=true;resolve(false);},6000);})])||r.signal.aborted)return deny(expired?'AUTH_TIMEOUT':failure);
+   if(mode==='eligibility'){trace('ACCEPTED');return new Response(null,{status:204,headers});}
+   failure='PREVIEW_ERROR';
    return Response.json(previewFixedGeneralPayload(),{headers});
-  }catch{return unavailable();}
+  }catch{return deny(expired?'AUTH_TIMEOUT':failure);}
   finally{clearTimeout(timer);}
  };
 }
