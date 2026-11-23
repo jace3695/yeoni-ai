@@ -7,9 +7,10 @@ type Env=Readonly<Record<string,string|undefined>>;
 export type GeneralEnvironmentHandlers={available:boolean;POST:(r:Request)=>Promise<Response>;PREPARE:(r:Request)=>Promise<Response>};
 const unavailable=async()=>Response.json({available:false,code:'OPENAI_ADVICE_NOT_CONNECTED'},{status:503,headers:{'Cache-Control':'no-store'}});
 const off=()=>Object.freeze({available:false,POST:unavailable,PREPARE:unavailable});
-export function readGeneralEnvironment(e:Env,now:number){
- if(e.YEONI_OPENAI_GENERAL_ENABLED!=='true')return null;
- const required=(k:string)=>{const v=e[k];if(!v||v.trim()!==v||/[\r\n]/.test(v))throw Error('GENERAL_CONFIGURATION_REQUIRED');return v};
+const requiredValue=(e:Env,k:string)=>{const v=e[k];if(!v||v.trim()!==v||/[\r\n]/.test(v))throw Error('GENERAL_CONFIGURATION_REQUIRED');return v};
+/** Shared DB/auth/scope validation. No provider key is needed to prepare. */
+export function readGeneralPrepareOnlyEnvironment(e:Env,now:number){
+ const required=(k:string)=>requiredValue(e,k);
  const httpsOrigin=(s:string)=>{const u=new URL(s);if(u.protocol!=='https:'||u.origin!==s||u.username||u.password)throw Error('GENERAL_CONFIGURATION_REQUIRED');return s};
  const publicKey=e.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||e.NEXT_PUBLIC_SUPABASE_ANON_KEY;
  if(!publicKey||publicKey.trim()!==publicKey||/[\r\n]/.test(publicKey)||!isPublicSupabaseKey(publicKey))throw Error('GENERAL_USER_CLIENT_REQUIRED');
@@ -22,7 +23,11 @@ export function readGeneralEnvironment(e:Env,now:number){
  const scope=JSON.parse(required('YEONI_OPENAI_BILLING_SCOPE'));
  if(!scope||Object.keys(scope).sort().join('|')!=='budgetId|creditVerifiedUntil|organization|ownerId|project'||![scope.ownerId,scope.budgetId,scope.organization,scope.project].every((v:unknown)=>typeof v==='string'&&v.trim()===v&&v.length>0&&v.length<=200)||!Number.isSafeInteger(scope.creditVerifiedUntil)||scope.creditVerifiedUntil<=now)throw Error('GENERAL_BILLING_SCOPE_REQUIRED');
  if(required('NEXT_PUBLIC_SUPABASE_URL')!=='https://piqqukiiacncfbztktga.supabase.co'||!isPublicSupabaseKey(publicKey))throw Error('GENERAL_USER_CLIENT_REQUIRED');
- return Object.freeze({databaseUrl,host,databaseTls:generalDatabaseTlsOptions(GENERAL_DATABASE_POOLER_CA),allowedOrigin:httpsOrigin(required('YEONI_OPENAI_ALLOWED_ORIGIN')),supabase:Object.freeze({url:httpsOrigin(required('NEXT_PUBLIC_SUPABASE_URL')),publicKey:publicKey}),review:Object.freeze({verifiedAt,expiresAt,globalStandardPricingReviewed:true}),scope:Object.freeze({...scope}),apiKey:required('YEONI_OPENAI_API_KEY')});
+ return Object.freeze({databaseUrl,host,databaseTls:generalDatabaseTlsOptions(GENERAL_DATABASE_POOLER_CA),allowedOrigin:httpsOrigin(required('YEONI_OPENAI_ALLOWED_ORIGIN')),supabase:Object.freeze({url:httpsOrigin(required('NEXT_PUBLIC_SUPABASE_URL')),publicKey:publicKey}),review:Object.freeze({verifiedAt,expiresAt,globalStandardPricingReviewed:true}),scope:Object.freeze({...scope})});
+}
+export function readGeneralEnvironment(e:Env,now:number){
+ if(e.YEONI_OPENAI_GENERAL_ENABLED!=='true')return null;
+ return Object.freeze({...readGeneralPrepareOnlyEnvironment(e,now),apiKey:requiredValue(e,'YEONI_OPENAI_API_KEY')});
 }
 async function defaultLoader(){const [{default:postgres},m]=await Promise.all([import('postgres'),import('./general-server-dependencies.ts')]);return {postgres,...m};}
 /** Loader is injectable solely for isolated tests; default is real official drivers.
