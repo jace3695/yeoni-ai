@@ -32,7 +32,9 @@ export function createPayloadPreviewEligibility(send:typeof fetch,show:(allowed:
     if(signal.aborted)return;
     const response=await send(PAYLOAD_PREVIEW_ELIGIBILITY_PATH,{method:'POST',headers:{Authorization:`Bearer ${ticket.session.token}`},
      credentials:'same-origin',cache:'no-store',redirect:'error',signal});
-    done(!signal.aborted&&response.status===204&&response.body===null);
+    // A network 204 may expose an empty ReadableStream in browsers.
+    // The status from this fixed same-origin, non-redirected request is the contract.
+    done(!signal.aborted&&response.status===204);
    }catch{done(false);}
    finally{clearTimeout(timer);}
   }

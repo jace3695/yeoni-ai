@@ -146,6 +146,6 @@ test('pending token refresh, logout or account switch aborts and late results/fi
 test('Settings keeps its existing AuthGate; preview is opt-in and has no execute controls',()=>{
  const read=(name:string)=>readFileSync(new URL(`../app/settings/openai-connection-test/${name}`,import.meta.url),'utf8');
  assert.match(read('TrialClient.tsx'),/<AuthGate><Trial>\{children\}<\/Trial><\/AuthGate>/);
- assert.match(read('page.tsx'),/enabled\?<PayloadPreviewAdmission\/>:null/);
+ assert.match(read('page.tsx'),/isComputedPayloadPreviewEnabled\(process\.env\)\?<PayloadPreviewAdmission\/>:null/);
  assert.doesNotMatch(read('PayloadPreviewPanel.tsx'),/localStorage|sessionStorage|\.from\(|\.rpc\(|consent|execute|response\.advice/);
 });
