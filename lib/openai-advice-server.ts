@@ -108,6 +108,11 @@ export function assertAdviceDisplayPolicy(advice: AdviceOutput): void {
   if(completionClaims.some(pattern=>pattern.test(content))) throw new OpenAiAdviceError('UNVERIFIED_ACTION_CLAIM',422);
 }
 
+export function buildOpenAiAdviceWire(grant:Pick<ApprovedAdvice,'model'|'maxOutputTokens'|'question'|'summary'>):string {
+  return JSON.stringify({model:grant.model,store:false,stream:false,max_completion_tokens:grant.maxOutputTokens,
+        response_format:{type:'json_object'},messages:[{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({question:grant.question,recordSummary:grant.summary})}]});
+}
+
 export function createOpenAiAdviceService(config: Readonly<{enabled:boolean}>, ports?: OpenAiPorts) {
   // Process-local busy guard supplements (never replaces) durable reservation uniqueness.
   const busy=new Set<string>();
@@ -139,8 +144,7 @@ export function createOpenAiAdviceService(config: Readonly<{enabled:boolean}>, p
       if(await p.claimDispatch(reservation)!==true) throw new OpenAiAdviceError('RESERVATION_ALREADY_USED',409);
       assertCurrent();
       if(!validGrant(grant,request,scope,p.now()) || !validReservation(reservation,grant,p.now())) throw new OpenAiAdviceError('EXPIRED_AUTHORIZATION');
-      const payload=JSON.stringify({model:grant.model,store:false,stream:false,max_completion_tokens:grant.maxOutputTokens,
-        response_format:{type:'json_object'},messages:[{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({question:grant.question,recordSummary:grant.summary})}]});
+      const payload=buildOpenAiAdviceWire(grant);
       const timeout=AbortSignal.timeout(25_000); const combined=AbortSignal.any([signal,timeout]);
       attempted=true;
       const response=await p.request('https://api.openai.com/v1/chat/completions', {method:'POST',cache:'no-store',redirect:'error',signal:combined,

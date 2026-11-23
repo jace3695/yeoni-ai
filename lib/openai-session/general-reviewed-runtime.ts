@@ -11,15 +11,16 @@ export function createReviewedGeneralRuntime(config:{enabled:boolean;snapshotRac
  return createGeneralRuntime(config,{...deps,
   reviewedLocalInputUpperBound:policy.acceptedInputUpperBound,
   reviewedQuoteRates:g=>policy.rates(g.maxOutputTokens),
-  prepareReviewedWire:(g,wire)=>{
-   if(g.model!==GENERAL_MODEL_REFERENCE.model||g.pricingVersion!==GENERAL_MODEL_REFERENCE.pricingVersion)throw Error('UNREVIEWED_MODEL');
-   const p=JSON.parse(wire);
-   if((p.service_tier!==undefined&&p.service_tier!=='default')||(p.reasoning_effort!==undefined&&p.reasoning_effort!=='none'))throw Error('UNREVIEWED_WIRE');
-   // Policy version already bound to disclosed quote; no content or model changes.
-   return JSON.stringify({...p,service_tier:'default',reasoning_effort:'none'});
-  },
+  prepareReviewedWire:prepareReviewedAdviceWire,
   validateReviewedResponse:readReviewedResponse,
  });
+}
+export function prepareReviewedAdviceWire(g:Pick<ApprovedAdvice,'model'|'pricingVersion'>,wire:string):string{
+ if(g.model!==GENERAL_MODEL_REFERENCE.model||g.pricingVersion!==GENERAL_MODEL_REFERENCE.pricingVersion)throw Error('UNREVIEWED_MODEL');
+ const p=JSON.parse(wire);
+ if((p.service_tier!==undefined&&p.service_tier!=='default')||(p.reasoning_effort!==undefined&&p.reasoning_effort!=='none'))throw Error('UNREVIEWED_WIRE');
+ // Policy version already bound to disclosed quote; no content or model changes.
+ return JSON.stringify({...p,service_tier:'default',reasoning_effort:'none'});
 }
 export async function readReviewedResponse(grant:ApprovedAdvice,response:Response,signal?:AbortSignal):Promise<Response>{
  if(!response.ok)return response; // existing service retains non-success as uncertain
