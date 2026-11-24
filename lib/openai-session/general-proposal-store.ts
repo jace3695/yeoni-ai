@@ -7,7 +7,7 @@ export async function saveGeneralProposal(a:Authority,p:ServerApprovalProposal){
  const saved=structuredClone(p),d=saved.disclosure;
  if(d.ownerId!==a.identity.ownerId||d.sessionId!==a.identity.sessionId||saved.binding.epoch!==a.identity.epoch)throw Error('PROPOSAL_IDENTITY_MISMATCH');
  return a.store.transaction(async tx=>{const r=await tx.query(`INSERT INTO yeoni_openai_general.proposals(request_id,owner_id,session_id,fingerprint,proposal,expires_at)
- SELECT $1,$2,$3,$4,$5::jsonb,to_timestamp($6::double precision/1000.0) WHERE to_timestamp($6::double precision/1000.0)>clock_timestamp()
+ SELECT $1,$2,$3,$4,($5::text)::jsonb,to_timestamp($6::double precision/1000.0) WHERE to_timestamp($6::double precision/1000.0)>clock_timestamp()
  ON CONFLICT DO NOTHING RETURNING request_id`,[d.requestId,d.ownerId,d.sessionId,saved.binding.consentFingerprint,JSON.stringify(saved),d.expiresAt]);if(r.rows.length!==1)throw Error('PROPOSAL_UNAVAILABLE')});
 }
 export async function confirmStoredGeneralProposal(a:Authority,r:AdviceRequest,confirmation:unknown,now:number,reviewSyntheticDisclosure?:(d:ServerApprovalProposal['disclosure'])=>void){

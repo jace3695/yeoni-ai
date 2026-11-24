@@ -27,7 +27,7 @@ export async function recordConfirmedGeneralApproval(authority:Awaited<ReturnTyp
   if(budget.rows.length!==1)throw Error('APPROVED_BUDGET_UNAVAILABLE');
   const approval=await tx.query(`INSERT INTO yeoni_openai_general.approvals
    (request_id,owner_id,session_id,disclosure,fingerprint,budget_id,approved,issued,expires_at,legacy_binding)
-   VALUES($1,$2,$3,$4::jsonb,$5,$6,true,false,to_timestamp($7::double precision/1000.0),$8::jsonb)
+   VALUES($1,$2,$3,($4::text)::jsonb,$5,$6,true,false,to_timestamp($7::double precision/1000.0),($8::text)::jsonb)
    ON CONFLICT(request_id) DO NOTHING RETURNING request_id`,[d.requestId,d.ownerId,d.sessionId,JSON.stringify(d),preview.fingerprint,b.budgetId,d.expiresAt,JSON.stringify(b)]);
   if(approval.rows.length!==1)throw Error('APPROVAL_ALREADY_EXISTS');
   const quote=await tx.query(`INSERT INTO yeoni_openai_general.quote_snapshots
