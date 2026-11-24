@@ -1,4 +1,4 @@
-import {OPENAI_RECORD_NOTICE,type AdviceRequest} from '../openai-advice-server.ts';
+import {OPENAI_RECORD_NOTICE,OpenAiSettledDisplayWithheld,type AdviceRequest} from '../openai-advice-server.ts';
 import type {createGeneralRuntime} from './general-runtime.ts';
 type Runtime = ReturnType<typeof createGeneralRuntime>;
 const MAX_BYTES=8192;
@@ -9,9 +9,10 @@ const exact=(x:Record<string,unknown>,keys:string[])=>Object.keys(x).sort().join
  * supplies auth, pricing, summary or approval authority from request fields.
  * Same-origin browser POST only; deployment and CORS remain unchanged.
  */
-export function createGeneralRouteHandler(config:Readonly<{enabled:boolean;allowedOrigin?:string;bodyTimeoutMs?:number}>={enabled:false},run?:Runtime){
+export function createGeneralRouteHandler(config:Readonly<{enabled:boolean;allowedOrigin?:string;bodyTimeoutMs?:number;syntheticSettledReceipt?:boolean}>={enabled:false},run?:Runtime){
  // Snapshot gates so a mutable caller object cannot activate an existing handler.
  const enabled=config.enabled===true;const origin=config.allowedOrigin;
+ const syntheticSettledReceipt=config.syntheticSettledReceipt===true;
  const timeoutMs=config.bodyTimeoutMs??10000;
  const validTimeout=Number.isSafeInteger(timeoutMs)&&timeoutMs>0&&timeoutMs<=10000;
  const validOrigin=(()=>{try{const u=new URL(origin??'');return u.protocol==='https:'&&u.origin===origin}catch{return false}})();
@@ -51,7 +52,9 @@ export function createGeneralRouteHandler(config:Readonly<{enabled:boolean;allow
    const advice=await run(request,Object.freeze({...r}) as AdviceRequest,Object.freeze({...c}));
    if(request.signal.aborted)return json({code:'REQUEST_CANCELLED'},409);
    return json({advice,provider:'openai',recordActionsPerformed:false,recordNotice:OPENAI_RECORD_NOTICE},200);
-  }catch{
+  }catch(error){
+   if(syntheticSettledReceipt && error instanceof OpenAiSettledDisplayWithheld && !request.signal.aborted)
+    return json({outcome:'settled_reply_withheld',provider:'openai',recordActionsPerformed:false},200);
    // Never expose SQL, provider/credential details, internal exception messages.
    return json({code:'OPENAI_REQUEST_NOT_COMPLETED',message:'승인·연결 상태를 확인해야 해요. 자동으로 다시 전송하지 않습니다.'},503);
   }

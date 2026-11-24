@@ -41,6 +41,10 @@ export class OpenAiAdviceError extends Error {
   readonly code: string; readonly status: number;
   constructor(code: string, status = 503) { super(code); this.code=code; this.status=status; this.name = 'OpenAiAdviceError'; }
 }
+// Internal marker: use only after successful settlement and active-session checks.
+export class OpenAiSettledDisplayWithheld extends OpenAiAdviceError {
+  constructor() { super('UNVERIFIED_ACTION_CLAIM',422); }
+}
 const positiveInt = (x: unknown): x is number => Number.isSafeInteger(x) && Number(x) > 0;
 const text = (x: unknown, max = 200): x is string => typeof x === 'string' && x.trim().length > 0 && x.length <= max;
 const uuid = (x: unknown): x is string => typeof x === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(x);
@@ -155,7 +159,11 @@ export function createOpenAiAdviceService(config: Readonly<{enabled:boolean}>, p
       if(output.usage.completionTokens>grant.maxOutputTokens) throw new OpenAiAdviceError('USAGE_OUTSIDE_QUOTE');
       await p.complete(reservation,output.usage); settled=true;
       assertCurrent(); if(combined.aborted) throw new OpenAiAdviceError('REQUEST_CANCELLED',409);
-      assertAdviceDisplayPolicy(output.advice);
+      try { assertAdviceDisplayPolicy(output.advice); }
+      catch (error) {
+        if(error instanceof OpenAiAdviceError && error.code==='UNVERIFIED_ACTION_CLAIM') throw new OpenAiSettledDisplayWithheld();
+        throw error;
+      }
       return output.advice;
     } catch(error) {
       if(reservation && !settled) {try {await p.retain(reservation,attempted?'uncertain':'not-sent');}catch { /* no release/refund; durable reservation stays conservative */ }}

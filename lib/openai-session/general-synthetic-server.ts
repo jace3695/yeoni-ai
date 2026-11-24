@@ -52,7 +52,7 @@ export function createGeneralSyntheticServer(config:Config,review:Review,deps:De
   const {authority,bound}=await auth(r,'prepare');
   try{return await prepareGeneralSyntheticProposal(authority,bound,deps.billing,review,deps.now);}catch(error){diagnostic('PROPOSAL_PREPARE_FAILED');throw error;}
  }),
- POST:mode==='prepare-only'?denySyntheticExecution:createGeneralRouteHandler({enabled:true,allowedOrigin:c.allowedOrigin},async(r,advice,confirmation)=>{
+ POST:mode==='prepare-only'?denySyntheticExecution:createGeneralRouteHandler({enabled:true,allowedOrigin:c.allowedOrigin,syntheticSettledReceipt:true},async(r,advice,confirmation)=>{
   if(advice.requestId!==c.requestId||advice.question!==GENERAL_SYNTHETIC_QUESTION||advice.feature!=='conversation')throw Error('SYNTHETIC_INPUT_REJECTED');
   const {client,authority,bound}=await auth(r,'execute');
   await confirmGeneralSyntheticProposal(authority,bound,confirmation,deps.now);

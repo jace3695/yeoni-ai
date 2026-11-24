@@ -15,7 +15,7 @@ function Trial({children}:{children:ReactNode}){
   return()=>{generation.current++;client.current?.invalidate();client.current=null;sub?.data.subscription.unsubscribe();};
  },[]);
  async function run(execute:boolean){if(!client.current||busy)return;const g=generation.current;setBusy(true);if(execute)setSent(true);else setStarted(true);
-  try{if(execute){const result=await client.current.execute(consent);if(g===generation.current){setAnswer(result.advice.summary.slice(0,4000));setStatus('서버에서 시험 응답을 받았어요. 전체 AI 기능 검증 완료를 뜻하지는 않아요.');}}else{const p=await client.current.prepare();if(g===generation.current){setPreview(p);setStatus('가상 시험 미리보기가 준비됐어요. 아직 OpenAI에 보내지 않았어요.');}}}
+  try{if(execute){const result=await client.current.execute(consent);if(g===generation.current){if(result.outcome==='settled_reply_withheld'){setAnswer('');setStatus('OpenAI 응답을 받았고 사용량도 확인했어요. 안전 검사를 통과하지 못해 답변 내용은 표시하지 않았어요. 자동으로 다시 전송하지 않습니다.');}else{setAnswer(result.advice.summary.slice(0,4000));setStatus('서버에서 시험 응답을 받았어요. 전체 AI 기능 검증 완료를 뜻하지는 않아요.');}}}else{const p=await client.current.prepare();if(g===generation.current){setPreview(p);setStatus('가상 시험 미리보기가 준비됐어요. 아직 OpenAI에 보내지 않았어요.');}}}
   catch(e){if(g===generation.current)setStatus(e instanceof Error&&e.message==='OPENAI_NOT_ACTIVATED'?'서버의 가상 연결 시험이 아직 활성화되지 않았어요. 실제 AI 호출은 하지 않았어요.':'시험을 완료했다고 확인할 수 없어요. 자동 재전송하지 않습니다. 이미 전송된 요청의 취소나 비용 환급은 보장되지 않아요. 상태 확인 전 다시 시도하지 마세요.');}
   finally{if(g===generation.current)setBusy(false);}
  }
