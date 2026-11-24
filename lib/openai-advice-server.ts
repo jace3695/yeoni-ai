@@ -117,7 +117,8 @@ export function buildOpenAiAdviceWire(grant:Pick<ApprovedAdvice,'model'|'maxOutp
         response_format:{type:'json_object'},messages:[{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({question:grant.question,recordSummary:grant.summary})}]});
 }
 
-export function createOpenAiAdviceService(config: Readonly<{enabled:boolean}>, ports?: OpenAiPorts) {
+export function createOpenAiAdviceService(config: Readonly<{enabled:boolean}>, ports?: OpenAiPorts, syntheticReplyBefore?:number) {
+  const boundedSyntheticReply=typeof syntheticReplyBefore==='number'&&Number.isSafeInteger(syntheticReplyBefore)&&syntheticReplyBefore>0?syntheticReplyBefore:undefined;
   // Process-local busy guard supplements (never replaces) durable reservation uniqueness.
   const busy=new Set<string>();
   return async (raw:unknown, signal:AbortSignal):Promise<AdviceOutput> => {
@@ -149,7 +150,9 @@ export function createOpenAiAdviceService(config: Readonly<{enabled:boolean}>, p
       assertCurrent();
       if(!validGrant(grant,request,scope,p.now()) || !validReservation(reservation,grant,p.now())) throw new OpenAiAdviceError('EXPIRED_AUTHORIZATION');
       const payload=buildOpenAiAdviceWire(grant);
-      const timeout=AbortSignal.timeout(25_000); const combined=AbortSignal.any([signal,timeout]);
+      const providerBudgetMs=25_000;
+      const providerStartedAt=boundedSyntheticReply===undefined?undefined:performance.now();
+      const timeout=AbortSignal.timeout(providerBudgetMs); const combined=AbortSignal.any([signal,timeout]);
       attempted=true;
       const response=await p.request('https://api.openai.com/v1/chat/completions', {method:'POST',cache:'no-store',redirect:'error',signal:combined,
         headers:{'Content-Type':'application/json','Authorization':`Bearer ${credential}`,'OpenAI-Organization':grant.organization,'OpenAI-Project':grant.project},body:payload});
@@ -157,8 +160,21 @@ export function createOpenAiAdviceService(config: Readonly<{enabled:boolean}>, p
       if(!response.ok) throw new OpenAiAdviceError(response.status===429?'OPENAI_LIMIT':'OPENAI_UNAVAILABLE');
       const output=parseOutput(await readJson(response));
       if(output.usage.completionTokens>grant.maxOutputTokens) throw new OpenAiAdviceError('USAGE_OUTSIDE_QUOTE');
+      // Preserve the 25s provider/body limit, but remember a validated response completed within it.
+      const providerElapsed=providerStartedAt===undefined?undefined:performance.now()-providerStartedAt;
+      const providerCompletedBeforeTimeout=!combined.aborted&&providerElapsed!==undefined&&
+        Number.isFinite(providerElapsed)&&providerElapsed>=0&&providerElapsed<providerBudgetMs;
       await p.complete(reservation,output.usage); settled=true;
-      assertCurrent(); if(combined.aborted) throw new OpenAiAdviceError('REQUEST_CANCELLED',409);
+      assertCurrent();
+      // Synthetic-only: the provider timer expiring during durable settlement is not a late provider response.
+      if(boundedSyntheticReply===undefined){
+        if(combined.aborted)throw new OpenAiAdviceError('REQUEST_CANCELLED',409);
+      }else{
+        const deliveryAt=p.now();
+        if(!providerCompletedBeforeTimeout||!Number.isSafeInteger(deliveryAt)||deliveryAt<=0||
+          deliveryAt>=Math.min(boundedSyntheticReply,grant.expiresAt,grant.quoteExpiresAt,grant.creditVerifiedUntil))
+          throw new OpenAiAdviceError('REQUEST_CANCELLED',409);
+      }
       try { assertAdviceDisplayPolicy(output.advice); }
       catch (error) {
         if(error instanceof OpenAiAdviceError && error.code==='UNVERIFIED_ACTION_CLAIM') throw new OpenAiSettledDisplayWithheld();

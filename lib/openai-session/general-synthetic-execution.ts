@@ -28,7 +28,7 @@ export function createGeneralSyntheticExecution(config:{enabled:boolean;requestI
    if(deps.now()>=c.expiresAt)throw Error('SYNTHETIC_SCOPE_EXPIRED');
    return deps.transport(url,init);
   }});
-  return runtime(request,advice,confirmation);
+  return runtime(request,advice,confirmation,c.expiresAt);
  };
 }
 export function assertGeneralSyntheticWire(body:unknown){

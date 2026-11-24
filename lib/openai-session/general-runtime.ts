@@ -15,7 +15,7 @@ export function createGeneralRuntime(config:Readonly<{enabled:boolean;snapshotRa
  dependencies?:{reviewSyntheticDisclosure?:(d:AdviceDisclosure)=>void;validateBoundGrant?:(grant:ApprovedAdvice)=>void;store:ReservationStore;createClient:(request:Request)=>Promise<Client>;credentials:OpenAiPorts['credentials'];transport:typeof fetch;reviewedLocalInputUpperBound:(grant:ApprovedAdvice,wireBody:string)=>Promise<number>;prepareReviewedWire?:(grant:ApprovedAdvice,wireBody:string)=>string;reviewedQuoteRates?:(grant:ApprovedAdvice)=>QuoteRates;validateReviewedResponse?:(grant:ApprovedAdvice,response:Response,signal?:AbortSignal)=>Promise<Response>;now:()=>number}){
  const enabled=config.enabled===true,snapshotAccepted=config.snapshotRaceAccepted===true;
  const capabilities=dependencies ? Object.freeze({...dependencies}) : undefined;
- return async(request:Request,advice:AdviceRequest,confirmation:unknown)=>{
+ return async(request:Request,advice:AdviceRequest,confirmation:unknown,syntheticReplyBefore?:number)=>{
   if(!enabled||!capabilities)throw Error('OPENAI_NOT_ACTIVATED');
   if(!snapshotAccepted)throw Error('SNAPSHOT_REVIEW_REQUIRED');
   // Fail malformed inputs before auth, issuance or monetary reservation.
@@ -41,6 +41,6 @@ export function createGeneralRuntime(config:Readonly<{enabled:boolean;snapshotRa
    return dep.validateReviewedResponse ? dep.validateReviewedResponse(bound.legacyGrant,response,options.signal ?? undefined) : response;
   },cost});
   // This config is private to this invocation, never mutates deployment flag.
-  return createOpenAiAdviceService({enabled:true},ports)(advice,request.signal);
+  return createOpenAiAdviceService({enabled:true},ports,syntheticReplyBefore)(advice,request.signal);
  };
 }
